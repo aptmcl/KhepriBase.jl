@@ -1,0 +1,13 @@
+name = "KhepriBase"
+uuid = "4cc0fe96-1163-46f3-ba32-de1e65d9548f"
+authors = ["António Menezes Leitão <antonio.menezes.leitao@gmail.com>"]
+version = "0.1.0"
+
+[compat]
+julia = "1.4"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
