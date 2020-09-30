@@ -1,5 +1,3 @@
 module KhepriBase
-
-# Write your package code here.
-
+include("Parameters.jl")
 end
