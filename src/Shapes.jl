@@ -404,22 +404,6 @@ end
 Base.showerror(io::IO, e::WrongTypeForParam) =
   print(io, "$(e.param) expected a $(e.expected_type) but got $(e.value) of type $(typeof(e.value))")
 
-# This is needed to support optional and keyword parameters with initializations
-replace_in(expr::Expr, replacements) =
-    if expr.head == :.
-        Expr(expr.head,
-             replace_in(expr.args[1], replacements), expr.args[2])
-    elseif expr.head == :quote
-        expr
-    else
-        Expr(expr.head,
-             map(arg -> replace_in(arg, replacements), expr.args) ...)
-    end
-replace_in(expr::Symbol, replacements) =
-    get(replacements, expr, esc(expr))
-replace_in(expr::Any, replacements) =
-    expr
-
 macro defproxy(name_typename, parent, fields...)
   (name, typename) = name_typename isa Symbol ?
     (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
