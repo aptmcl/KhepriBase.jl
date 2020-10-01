@@ -8,4 +8,5 @@ include("Utils.jl")
 include("Coords.jl")
 include("Paths.jl")
 include("Geometry.jl")
+include("Shapes.jl")
 end
