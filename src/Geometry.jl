@@ -41,15 +41,13 @@ offset_vertices(ps::Locs, d::Real, closed) =
     map(+, ps, closed ? ws : [vs[1], ws..., vs[end]])
   end
 
-offset(path::Union{Path,Shape}, d::Real) = d == 0 ? path : nonzero_offset(path, d)
+offset(path, d::Real) = d == 0 ? path : nonzero_offset(path, d)
 nonzero_offset(path::RectangularPath, d::Real) =
   rectangular_path(add_xy(path.corner, d, d), path.dx - 2d, path.dy - 2d)
 nonzero_offset(path::OpenPolygonalPath, d::Real) =
   open_polygonal_path(offset_vertices(path.vertices, d, false))
 nonzero_offset(path::ClosedPolygonalPath, d::Real) =
   closed_polygonal_path(offset_vertices(path.vertices, d, true))
-nonzero_offset(l::Line, d::Real) =
-  line(offset(l.vertices, d, false))
 nonzero_offset(path::CircularPath, d::Real) =
   circular_path(path.center, path.radius - d)
 nonzero_offset(path::ArcPath, d::Real) =
