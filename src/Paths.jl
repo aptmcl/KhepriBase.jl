@@ -63,7 +63,7 @@ end
 getindex(p::Path, i::Real) = location_at_length(p, i)
 firstindex(p::Path) = 0
 lastindex(p::Path) = path_length(p)
-getindex(p::Path, i::ClosedInterval) = subpath(p, i.left, i.right)
+#getindex(p::Path, i::ClosedInterval) = subpath(p, i.left, i.right)
 path_start(p::Path) = location_at_length(p, 0)
 path_end(p::Path) = location_at_length(p, path_length(p))
 
