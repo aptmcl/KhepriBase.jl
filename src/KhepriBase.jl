@@ -19,4 +19,5 @@ include("Coords.jl")
 include("Paths.jl")
 include("Geometry.jl")
 include("Shapes.jl")
+include("BIM.jl")
 end
