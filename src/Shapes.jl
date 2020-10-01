@@ -932,7 +932,6 @@ backend_stroke(b::Backend, path::PathSet) =
 # The default implementation for filling segmented path in the backend relies on
 # a dedicated function backend_fill_curves
 
-import Base.fill
 fill(path, backend=current_backend()) = backend_fill(backend, path)
 backend_fill(b, path) = backend_fill_curves(b, backend_stroke(b, path))
 
