@@ -1256,6 +1256,8 @@ max_displacement(results, b::Backend=current_backend()) =
 # Backend families
 # Some backends (e.g., Radiance and POVRay) can specify different materials to different parts of a family.
 # For example, a slab might have different materials for the top, the bottom, and the sides
+export BackendFamily, BackendMaterialFamily,
+       BackendSlabFamily, BackendRoofFamily, BackendWallFamily
 
 abstract type BackendFamily{Material} <: Family end
 
