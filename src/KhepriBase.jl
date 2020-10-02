@@ -6,13 +6,10 @@ using Dierckx
 using Dates
 using Sockets
 
-import Base.+, Base.-, Base.*, Base./, Base.length
-import Base.show, Base.zero, Base.iterate
-import Base.convert
-import Base.getindex, Base.firstindex, Base.lastindex, Base.broadcastable
-import Base.union
-import Base.fill
-import LinearAlgebra.cross, LinearAlgebra.dot, LinearAlgebra.norm
+import Base: +, -, *, /, length, show, zero, iterate, convert
+import Base: getindex, firstindex, lastindex, broadcastable
+import Base: union, fill
+import LinearAlgebra: cross, dot, norm
 
 include("Parameters.jl")
 include("Utils.jl")
