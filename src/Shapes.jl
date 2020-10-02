@@ -54,6 +54,9 @@ backend_name(b::Backend{K,R}) where {K,R} = typeof(b)
 
 #References can be (single) native references or union or substraction of References
 #Unions and subtractions are needed because actual backends frequently fail those operations
+export GenericRef, EmptyRef, UniversalRef, NativeRef, UnionRef, SubtractionRef,
+       ensure_ref, map_ref, collect_ref, unite_ref, intersect_ref, subtract_ref
+
 abstract type GenericRef{K,T} end
 
 struct EmptyRef{K,T} <: GenericRef{K,T} end
