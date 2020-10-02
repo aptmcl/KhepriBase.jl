@@ -4,6 +4,7 @@ using LinearAlgebra
 using StaticArrays
 using Dierckx
 using Dates
+using Sockets
 
 import Base.+, Base.-, Base.*, Base./, Base.length
 import Base.show, Base.zero, Base.iterate
