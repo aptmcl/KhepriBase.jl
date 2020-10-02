@@ -474,6 +474,7 @@ with_wall(f, args...) =
 # The protocol starts by identifying the approach to use. It can be either
 # based on Boolean operations or on the construction of polygonal elements.
 # Then, for each approach, the appropriate implementation is selected.
+export HasBooleanOps, has_boolean_ops
 
 struct HasBooleanOps{T} end
 # By default, we rely on boolean operations
