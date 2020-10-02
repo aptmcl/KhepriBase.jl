@@ -57,7 +57,7 @@ backend_name(b::Backend{K,R}) where {K,R} = typeof(b)
 #Unions and subtractions are needed because actual backends frequently fail those operations
 export GenericRef, EmptyRef, UniversalRef, NativeRef, UnionRef, SubtractionRef,
        LazyRef,
-       ensure_ref, map_ref, collect_ref, unite_ref, intersect_ref, subtract_ref
+       void_ref, ensure_ref, map_ref, collect_ref, unite_ref, intersect_ref, subtract_ref
 
 abstract type GenericRef{K,T} end
 
