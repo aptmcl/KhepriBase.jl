@@ -1,5 +1,21 @@
+export GenericRef,
+       EmptyRef,
+       UniversalRef,
+       NativeRef,
+       UnionRef,
+       SubtractionRef,
+       LazyRef,
+       void_ref,
+       ensure_ref,
+       map_ref,
+       collect_ref,
+       unite_ref,
+       intersect_ref,
+       subtract_ref
 export Shape,
        Shapes,
+       Backend,
+       LazyBackend,
        Path,
        backend,
        new_backend,
@@ -7,7 +23,6 @@ export Shape,
        current_backend,
        has_current_backend,
        switch_to_backend,
-       void_ref,
        delete_shape, delete_shapes,
        delete_all_shapes,
        set_length_unit,
@@ -30,7 +45,6 @@ export Shape,
        instantiate_block,
        reset_backend,
        connection,
-       Backend,
        @deffamily,
        @defproxy,
        dimension,
@@ -45,8 +59,6 @@ export Shape,
 
 
 #Backends are types parameterized by a key identifying the backend (e.g., AutoCAD) and by the type of reference they use
-export Backend, LazyBackend
-
 abstract type Backend{K,R} end
 
 show(io::IO, b::Backend{K,R}) where {K,R} = print(io, backend_name(b))
@@ -55,10 +67,6 @@ backend_name(b::Backend{K,R}) where {K,R} = typeof(b)
 
 #References can be (single) native references or union or substraction of References
 #Unions and subtractions are needed because actual backends frequently fail those operations
-export GenericRef, EmptyRef, UniversalRef, NativeRef, UnionRef, SubtractionRef,
-       LazyRef,
-       void_ref, ensure_ref, map_ref, collect_ref, unite_ref, intersect_ref, subtract_ref
-
 abstract type GenericRef{K,T} end
 
 struct EmptyRef{K,T} <: GenericRef{K,T} end
