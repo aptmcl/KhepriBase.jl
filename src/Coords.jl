@@ -368,7 +368,6 @@ maybe_loc_from_o_vz(o::Loc, n::Vec) =
     end
   end
 
-import Base.+, Base.-, Base.*, Base./, Base.length
 #This is not needed!
 #(+){T1,T2,T3,T4,T5,T6}(p::XYZ{T1,T2,T3},v::VXYZ{T4,T5,T6}) = xyz(p.x+v.x, p.y+v.y, p.z+v.z, p.raw+v.raw)
 

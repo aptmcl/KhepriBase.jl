@@ -96,3 +96,41 @@ path_replace_suffix(path::String, suffix::String) =
   let (base, old_suffix) = splitext(path)
     base * suffix
   end
+
+#
+
+replace_in(expr::Expr, replacements) =
+    if expr.head == :.
+        Expr(expr.head,
+             replace_in(expr.args[1], replacements), expr.args[2])
+    elseif expr.head == :quote
+        expr
+    else
+        Expr(expr.head,
+             map(arg -> replace_in(arg, replacements), expr.args) ...)
+    end
+replace_in(expr::Symbol, replacements) =
+    get(replacements, expr, esc(expr))
+replace_in(expr::Any, replacements) =
+    expr
+
+function process_named_params(def)
+  call, body = def.args[1], def.args[2]
+  name, params = call.args[1], call.args[2:end]
+  idx = findfirst(p->p.head==:(::), params)
+  mand, opts = isnothing(idx) ? ([], params) : (esc.(params[1:idx]), params[idx+1:end])
+  opt_names = map(opt -> opt.args[1].args[1], opts)
+  opt_types = map(opt -> esc(opt.args[1].args[2]), opts)
+  opt_inits = map(opt -> opt.args[2], opts)
+  opt_renames = map(Symbol ∘ string, opt_names)
+  opt_replacements = Dict(zip(opt_names, opt_renames))
+  mk_param(name,typ,init) = Expr(:kw, Expr(:(::), name, typ), init)
+  opt_params = map(mk_param, opt_renames, opt_types, map(init -> replace_in(init, opt_replacements), opt_inits))
+  key_params = map(mk_param, opt_names, opt_types, opt_renames)
+  func_name = esc(name)
+  :($(func_name)($(mand...), $(opt_params...); $(key_params...)) = $(esc(body)))
+end
+
+macro named_params(def)
+  process_named_params(def)
+end
