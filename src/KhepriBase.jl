@@ -19,4 +19,7 @@ include("Geometry.jl")
 include("Shapes.jl")
 include("BIM.jl")
 include("Camera.jl")
+
+# From ColorTypes
+export RGB, RGBA, rgb
 end
