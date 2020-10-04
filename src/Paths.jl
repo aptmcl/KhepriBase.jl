@@ -6,7 +6,6 @@ export empty_path,
        MoveOp,
        MoveToOp,
        LineOp,
-       LineToOp,
        ArcOp,
        CloseOp,
        arc_path,
@@ -484,7 +483,6 @@ meta_program(p::OpenPolygonalPath) =
 abstract type PathOp end
 #struct MoveToOp <: PathOp loc::Loc end
 #struct MoveOp <: PathOp vec::Vec end
-#struct LineToOp <: PathOp loc::Loc end
 struct LineOp <: PathOp
   vec::Vec
 end
@@ -494,8 +492,6 @@ struct ArcOp <: PathOp
     start_angle::Real
     amplitude::Real
 end
-#struct LineToXThenToYOp <: PathOp loc::Loc end
-#struct LineToYThenToXOp <: PathOp loc::Loc end
 struct LineXThenYOp <: PathOp
   vec::Vec
 end
