@@ -28,7 +28,7 @@ const undefined_backend = UndefinedBackend()
 const current_backends = Parameter{Tuple{Vararg{Backend}}}((undefined_backend,))
 # but for backward compatibility reasons, we might also select just one.
 current_backend() = current_backends()[1]
-current_backend(b::Backend) = current_backends((b))
+current_backend(b::Backend) = current_backends((b,))
 has_current_backend() = current_backend() !== undefined_backend
 
 #=
