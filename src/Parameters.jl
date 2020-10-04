@@ -1,4 +1,4 @@
-export with, Parameter, LazyParameter
+export with, Parameter, OptionParameter, LazyParameter
 
 mutable struct Parameter{T}
   value::T
@@ -21,6 +21,17 @@ with(f, p, newvalue, others...) =
   with(p, newvalue) do
     with(f, others...)
   end
+
+mutable struct OptionParameter{T}
+  value::Union{Missing,T}
+end
+OptionParameter{T}() where T = OptionParameter{T}(missing)
+
+(p::OptionParameter{T})() where T =
+  ismissing(p.value) ?
+    error("Parameter was not initialized") :
+    p.value
+(p::OptionParameter{T})(newvalue::T) where T = p.value = newvalue
 
 mutable struct LazyParameter{T}
   initializer::Union{DataType,Function} #This should be a more specific type: None->T
