@@ -34,7 +34,7 @@ maybe_replace(level::Level) = get!(levels_cache, level.height, level)
 convert(::Type{Level}, h::Real) = level(h)
 
 current_levels() = values(level_cache)
-default_level = Parameter{Level}(level())
+default_level = OptionParameter{Level}()
 default_level_to_level_height = Parameter{Real}(3)
 upper_level(lvl=default_level(), height=default_level_to_level_height()) = level(lvl.height + height, backend=backend(lvl))
 Base.:(==)(l1::Level, l2::Level) = l1.height == l2.height
@@ -354,13 +354,6 @@ realize_slab(b::Backend, contour::ClosedPath, holes::Vector{<:ClosedPath}, level
         backend_slab(b, translate(contour, base), map(c -> translate(c, base), holes), thickness, family)
     end
 
-backend_slab(b::Backend, profile, openings, thickness, family) =
-  let (mattop, matbot, matside) = slab_materials(b, family_ref(b, family))
-    realize_prism(
-      b, mattop, matbot, matside,
-      isempty(openings) ? profile : path_set(profile, openings...), thickness)
-  end
-
 # Delegate on the lower-level pyramid frustum
 realize_prism(b::Backend, top, bot, side, path::Path, h::Real) =
   realize_frustum(b, top, bot, side, path, translate(path, planar_path_normal(path)*h))
@@ -586,38 +579,6 @@ subtract_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
       inject_polygon_vertices_at_indexes(path_vertices(c_l_w_path), path_vertices(c_l_op_path), idxs))
   end
 
-backend_surface_polygon(b::Backend, mat, path::Path, acw=true) =
-  backend_surface_polygon(b, mat, path_vertices(path), acw)
-
-# A poor's man approach to deal with Z-fighting
-const support_z_fighting_factor = 0.999
-const wall_z_fighting_factor = 0.998
-
-backend_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
-  path_length(w_path) < path_tolerance() ?
-    realize(b, empty_shape()) : # not beatiful
-    let (matright, matleft) = wall_materials(b, family_ref(b, family))
-      backend_wall_with_materials(b, w_path, w_height, l_thickness, r_thickness, matright, matleft)
-    end
-
-backend_wall_with_materials(b::Backend, w_path, w_height, l_thickness, r_thickness, matright, matleft) =
-  let w_paths = subpaths(w_path),
-      r_w_paths = subpaths(offset(w_path, -r_thickness)),
-      l_w_paths = subpaths(offset(w_path, l_thickness)),
-      w_height = w_height*wall_z_fighting_factor,
-      prevlength = 0,
-      refs = []
-    for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
-      let currlength = prevlength + path_length(w_seg_path),
-          c_r_w_path = closed_path_for_height(r_w_path, w_height),
-          c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        push!(refs, realize_pyramid_frustum(b, matright, matleft, matleft, c_l_w_path, c_r_w_path))
-        prevlength = currlength
-      end
-    end
-    [refs...]
-  end
-
 realize_pyramid_frustum(b::Backend, bot_mat, top_mat, side_mat, bot_path::Path, top_path::Path) =
   realize_pyramid_frustum(b, bot_mat, top_mat, side_mat, path_vertices(bot_path), path_vertices(top_path))
 
@@ -814,13 +775,6 @@ curtain_wall_path(b::Backend, s::CurtainWall, panel_family::PanelFamily) =
     polygonal_path(pts)
   end
 
-backend_curtain_wall(b::Backend, s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol) =
-  let family = getproperty(s.family, kind),
-      mat = get_material(b, family_ref(b, family))
-    with_family_in_layer(b, family) do
-      backend_wall_with_materials(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, mat, mat)
-    end
-  end
 #
 # We need to redefine the default method (maybe add an option to the macro to avoid defining the meta_program)
 # This needs to be fixed for windows
@@ -896,9 +850,6 @@ realize(b::Backend, s::Column) =
 realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::CircularPath, cb::Loc, length::Real) =
   backend_cylinder(b, cb, profile.radius, length*support_z_fighting_factor, get_material(b, family_ref(b, s.family)))
 
-backend_cylinder(b::Backend, c::Loc, r::Real, h::Real, material) =
-  backend_cylinder(b, c, r, h)
-
 realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::RectangularPath, cb::Loc, length::Real) =
   let profile_u0 = profile.corner,
       c = add_xy(cb, profile_u0.x + profile.dx/2, profile_u0.y + profile.dy/2),
@@ -947,33 +898,11 @@ realize(b::Backend, s::Table) =
     backend_rectangular_table(b, add_z(s.loc, s.level.height), s.angle, s.family)
   end
 
-backend_rectangular_table(b::Backend, p, angle, f) =
-  realize_table(b, get_material(b, family_ref(b, f)),
-                loc_from_o_phi(p, angle), f.length, f.width, f.height, f.top_thickness, f.leg_thickness)
-
-realize_table(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
-              top_thickness::Real, leg_thickness::Real) =
-  let dx = length/2,
-      dy = width/2,
-      leg_x = dx - leg_thickness/2,
-      leg_y = dy - leg_thickness/2,
-      c = add_xy(p, -dx, -dy),
-      table_top = realize_box(b, mat, add_z(c, height - top_thickness), length, width, top_thickness),
-      pts = add_xy.(add_xy.(p, [+leg_x, +leg_x, -leg_x, -leg_x], [-leg_y, +leg_y, +leg_y, -leg_y]), -leg_thickness/2, -leg_thickness/2),
-      legs = [realize_box(b, mat, pt, leg_thickness, leg_thickness, height - top_thickness) for pt in pts]
-    [ensure_ref(b, r) for r in [table_top, legs...]]
-  end
-
 @defproxy(chair, BIMShape, loc::Loc=u0(), angle::Real=0, level::Level=default_level(), family::ChairFamily=default_chair_family())
 
 realize(b::Backend, s::Chair) =
   with_family_in_layer(b, s.family) do
     backend_chair(b, add_z(s.loc, s.level.height), s.angle, s.family)
-  end
-
-backend_chair(b::Backend, p, angle, f) =
-  let mat = get_material(b, family_ref(b, f))
-    realize_chair(b, mat, loc_from_o_phi(p, angle), f.length, f.width, f.height, f.seat_height, f.thickness)
   end
 
 realize_chair(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
@@ -987,40 +916,6 @@ realize_chair(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
 realize(b::Backend, s::TableAndChairs) =
   with_family_in_layer(b, s.family) do
     backend_rectangular_table_and_chairs(b, add_z(s.loc, s.level.height), s.angle, s.family)
-  end
-
-backend_rectangular_table_and_chairs(b::Backend, p, angle, f) =
-  let tf = f.table_family,
-      cf = f.chair_family,
-      tmat = get_material(b, realize(b, tf).material),
-      cmat = get_material(b, realize(b, cf).material)
-    realize_table_and_chairs(b,
-      loc_from_o_phi(p, angle),
-      p->realize_table(b, tmat, p, tf.length, tf.width, tf.height, tf.top_thickness, tf.leg_thickness),
-      p->realize_chair(b, cmat, p, cf.length, cf.width, cf.height, cf.seat_height, cf.thickness),
-      tf.width,
-      tf.height,
-      f.chairs_top,
-      f.chairs_bottom,
-      f.chairs_right,
-      f.chairs_left,
-      f.spacing)
-  end
-
-realize_table_and_chairs(b::Backend, p::Loc, table::Function, chair::Function,
-                         table_length::Real, table_width::Real,
-                         chairs_on_top::Int, chairs_on_bottom::Int,
-                         chairs_on_right::Int, chairs_on_left::Int,
-                         spacing::Real) =
-  let dx = table_length/2,
-      dy = table_width/2,
-      row(p, angle, n) = [loc_from_o_phi(add_pol(p, i*spacing, angle), angle+pi/2) for i in 0:n-1],
-      centered_row(p, angle, n) = row(add_pol(p, -spacing*(n-1)/2, angle), angle, n)
-    vcat(table(p),
-         chair.(centered_row(add_x(p, -dx), -pi/2, chairs_on_bottom))...,
-         chair.(centered_row(add_x(p, +dx), +pi/2, chairs_on_top))...,
-         chair.(centered_row(add_y(p, +dy), -pi, chairs_on_right))...,
-         chair.(centered_row(add_y(p, -dy), 0, chairs_on_left))...)
   end
 
 # Lights
@@ -1182,6 +1077,8 @@ process_bars(bars, processed_nodes) =
      for (i, bar) in enumerate(bars)]
   end
 
+#=
+HACK TO BE COMPLETED
 # Analysis
 @defopnamed truss_analysis(load::Vec=vz(-1e5))
 @defopnamed truss_bars_volume()
@@ -1247,6 +1144,8 @@ max_displacement(results, b::Backend=current_backend()) =
   let disp = node_displacement_function(b, results)
     maximum(map(norm∘disp, b.truss_node_data))
   end
+
+  =#
 ###################################
 # BIM
 @defop all_levels()

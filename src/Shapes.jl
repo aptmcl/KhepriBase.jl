@@ -57,14 +57,6 @@ export Shape,
        captured_shape, captured_shapes,
        revolve
 
-
-#Backends are types parameterized by a key identifying the backend (e.g., AutoCAD) and by the type of reference they use
-abstract type Backend{K,R} end
-
-show(io::IO, b::Backend{K,R}) where {K,R} = print(io, backend_name(b))
-
-backend_name(b::Backend{K,R}) where {K,R} = typeof(b)
-
 #References can be (single) native references or union or substraction of References
 #Unions and subtractions are needed because actual backends frequently fail those operations
 abstract type GenericRef{K,T} end
@@ -167,8 +159,8 @@ mutable struct LazyRef{K,R}
   deleted::Int
 end
 
-LazyRef(backend::Backend{K,R}) where {K,R} = LazyRef{K,R}(backend, void_ref(backend), 0, 0)
-LazyRef(backend::Backend{K,R}, v::GenericRef{K,R}) where {K,R} = LazyRef{K,R}(backend, v, 1, 0)
+#LazyRef{K,R}(backend::Backend{K,T}) where {K,R} = LazyRef{K,R}(backend, void_ref(backend), 0, 0)
+LazyRef(backend::Backend{K,T}, v::GenericRef{K,T}) where {K,T} = LazyRef{K,T}(backend, v, 1, 0)
 
 abstract type Proxy end
 
@@ -339,19 +331,6 @@ trace!(s) =
 maybe_trace(s) = (traceability() && trace!(s); s)
 
 ######################################################
-# The undefined backend
-struct UndefinedBackend <: Backend{Int,Int} end
-connection(b::UndefinedBackend) = throw(UndefinedBackendException())
-void_ref(b::UndefinedBackend) = EmptyRef{Int,Int}()
-const undefined_backend = UndefinedBackend()
-
-const current_backend = Parameter{Backend}(undefined_backend)
-has_current_backend() = current_backend() != undefined_backend
-
-# Side-effect full operations need to have a backend selected and will generate an exception if there is none
-
-struct UndefinedBackendException <: Exception end
-show(io::IO, e::UndefinedBackendException) = print(io, "No current backend.")
 
 realize(::UndefinedBackend, ::Shape) = throw(UndefinedBackendException())
 
@@ -450,7 +429,7 @@ macro defproxy(name_typename, parent, fields...)
     end
     # we don't need to convert anything because Julia already does that with the default constructor
     # and, by the same idea, we don't need to define parameter types.
-    @noinline $(constructor_name)($(opt_params...); $(key_params...), backend::Backend=current_backend(), ref::LazyRef=LazyRef(backend)) =
+    @noinline $(constructor_name)($(opt_params...); $(key_params...), ref::LazyRef=LazyRef(current_backend())) =
       after_init($(struct_name)(ref, $(field_converts...)))
     $(predicate_name)(v::$(struct_name)) = true
     $(predicate_name)(v::Any) = false
@@ -587,7 +566,8 @@ surface(c0::Shape, cs...) = surface([c0, cs...])
 surface_from = surface
 
 @defproxy(surface_path, Shape2D, path::ClosedPath=[circular_path()])
-realize(b::Backend, s::SurfacePath) = backend_fill(b, s.path)
+realize(b::Backend, s::SurfacePath) =
+  backend_fill(b, s.path)
 
 surface_boundary(s::Shape2D, backend::Backend=current_backend()) =
     backend_surface_boundary(backend, s)
@@ -644,14 +624,6 @@ realize(b::Backend, s::RegularPyramidFrustum) =
     b,
     regular_polygon_vertices(s.edges, s.cb, s.rb, s.angle, s.inscribed),
     regular_polygon_vertices(s.edges, add_z(s.cb, s.h), s.rt, s.angle, s.inscribed))
-backend_pyramid_frustum(b::Backend, bot_vs::Locs, top_vs::Locs) =
-  let refs = [backend_surface_polygon(b, reverse(bot_vs))]
-    push!(refs, backend_surface_polygon(b, top_vs))
-    for (v1, v2, v3, v4) in zip(bot_vs, circshift(bot_vs, -1), circshift(top_vs, -1), top_vs)
-      push!(refs, backend_surface_polygon(b, [v1, v2, v3, v4]))
-    end
-    refs
-  end
 
 @defproxy(regular_pyramid, Shape3D, edges::Integer=3, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
 regular_pyramid(edges::Integer, cb::Loc, rb::Real, angle::Real, ct::Loc, inscribed::Bool=true) =
@@ -663,14 +635,6 @@ realize(b::Backend, s::RegularPyramid) =
     b,
     regular_polygon_vertices(s.edges, s.cb, s.rb, s.angle, s.inscribed),
     add_z(s.cb, s.h))
-
-backend_pyramid(b::Backend, bot_vs::Locs, top::Loc) =
-  let refs = [backend_surface_polygon(b, reverse(bot_vs))]
-    for (v1, v2, v3) in zip(bot_vs, circshift(bot_vs, -1), repeated(top))
-      push!(refs, backend_surface_polygon(b, [v1, v2, v3]))
-    end
-    refs
-  end
 
 @defproxy(irregular_pyramid_frustum, Shape3D, bs::Locs=[ux(), uy(), uxy()], ts::Locs=[uxz(), uyz(), uxyz()])
 realize(b::Backend, s::IrregularPyramidFrustum) =
@@ -869,40 +833,12 @@ bounding_rectangle(ss::Shapes) =
 ## We might also be insterested in seeing paths
 # This is more for debuging
 
-stroke(path::Path, backend::Backend=current_backend()) = backend_stroke(backend, path)
+stroke(path::Path, backend::Backend=current_backend()) =
+  backend_stroke(backend, path)
 # We also need a colored stroke (and probably, something that changes line thickness)
-stroke(path::Path, color::RGB, backend::Backend=current_backend()) = backend_stroke_color(backend, path, color)
-# By default, we ignore the color
-backend_stroke_color(backend::Backend, path::Path, color::RGB) = backend_stroke(backend, path)
+stroke(path::Path, color::RGB, backend::Backend=current_backend()) =
+  backend_stroke_color(backend, path, color)
 
-backend_stroke(b::Backend, path::RectangularPath) =
-  let c = path.corner,
-      dx = path.dx,
-      dy = path.dy
-    backend_stroke_line(b, (c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy), c))
-  end
-
-backend_stroke(b::Backend, path::OpenPolygonalPath) =
-	backend_stroke_line(b, path.vertices)
-
-backend_stroke(b::Backend, path::ClosedPolygonalPath) =
-  backend_stroke_line(b, [path.vertices...,path.vertices[1]])
-
-# The default implementation for stroking segmented path in the backend relies on two
-# dedicated functions backend_stroke_arc and backend_stroke_line
-stroke(path::PathOps, backend::Backend=current_backend()) = backend_stroke(backend, path)
-
-backend_stroke(b::Backend, path::PathOps) =
-    begin
-        start, curr, refs = path.start, path.start, []
-        for op in path.ops
-            start, curr, refs = backend_stroke_op(b, op, start, curr, refs)
-        end
-        if path.closed
-            push!(refs, backend_stroke_line(b, [curr, start]))
-        end
-        backend_stroke_unite(b, refs)
-    end
 #=
 backend_stroke_op(b::Backend, op::MoveToOp, start::Loc, curr::Loc, refs) =
     (op.loc, op.loc, refs)
@@ -911,16 +847,6 @@ backend_stroke_op(b::Backend, op::MoveOp, start::Loc, curr::Loc, refs) =
 backend_stroke_op(b::Backend, op::LineToOp, start::Loc, curr::Loc, refs) =
     (start, op.loc, push!(refs, backend_stroke_line(b, [curr, op.loc])))
 =#
-backend_stroke_op(b::Backend, op::LineOp, start::Loc, curr::Loc, refs) =
-    (start, curr + op.vec, push!(refs, backend_stroke_line(b, [curr, curr + op.vec])))
-#backend_stroke_op(b::Backend, op::CloseOp, start::Loc, curr::Loc, refs) =
-#    (start, start, push!(refs, backend_stroke_line(b, [curr, start])))
-backend_stroke_op(b::Backend, op::ArcOp, start::Loc, curr::Loc, refs) =
-    let center = curr - vpol(op.radius, op.start_angle)
-        (start,
-         center + vpol(op.radius, op.start_angle + op.amplitude),
-         push!(refs, backend_stroke_arc(b, center, op.radius, op.start_angle, op.amplitude)))
-     end
 #=
 backend_stroke_op(b::Backend, op::LineXThenYOp, start::Loc, curr::Loc, refs) =
     (start,
@@ -937,30 +863,11 @@ backend_stroke_op(b::Backend, op::LineToYThenToXOp, start::Loc, curr::Loc, refs)
     (start, op.loc, push!(refs, backend_stroke_line(b, [curr, xy(curr.x, loc_in(op.loc, curr.cs).y, curr.cs), op.loc])))
 =#
 
-backend_stroke(b::Backend, path::PathSet) =
-    for p in path.paths
-        backend_stroke(b, p)
-    end
-
 # The default implementation for filling segmented path in the backend relies on
 # a dedicated function backend_fill_curves
 
-fill(path, backend=current_backend()) = backend_fill(backend, path)
-backend_fill(b, path) = backend_fill_curves(b, backend_stroke(b, path))
-
-backend_stroke(b::Backend, path::Union{OpenPathSequence,ClosedPathSequence}) =
-    backend_stroke_unite(b, map(path->backend_stroke(b, path), path.paths))
-backend_fill(b::Backend, path::ClosedPathSequence) =
-    backend_fill_curves(b, map(path->backend_stroke(b, path), path.paths))
-
-backend_stroke(b::Backend, m::Mesh) =
-  let vs = m.vertices
-    for face in m.faces
-      backend_stroke_line(b, vs[face.+1]) #1-indexed
-    end
-  end
-backend_fill(b::Backend, m::Mesh) =
-  backend_surface_mesh(b, m.vertices, m.faces)
+fill(path, backend=current_backend()) =
+  backend_fill(backend, path)
 
 #####################################################################
 ## Conversions
@@ -1184,7 +1091,8 @@ end
 @defop zoom_extents()
 @defop view_top()
 @defop get_layer(name::String)
-@defopnamed create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
+# Remove defopnamed ??
+#@defopnamed create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
 @defop current_layer()
 @defop current_layer(layer)
 @defop set_layer_active(layer, status)
