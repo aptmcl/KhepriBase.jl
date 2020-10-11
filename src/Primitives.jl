@@ -195,7 +195,6 @@ in a struct, as follows:
 """
 =#
 
-export remote_functions
 macro remote_functions(lang, str)
   let remotes = lang_rpc(lang.value, str)
     Expr(:tuple, [Expr(:(=), remote...) for remote in remotes]...)
