@@ -20,17 +20,6 @@ abstract type Backend{K,T} end
 
 show(io::IO, b::Backend{K,T}) where {K,T} = print(io, backend_name(b))
 
-# The undefined backend
-struct UndefinedBackend <: Backend{Union{},Union{}} end
-const undefined_backend = UndefinedBackend()
-
-# We can have several backends active at the same time
-const current_backends = Parameter{Tuple{Vararg{Backend}}}((undefined_backend,))
-# but for backward compatibility reasons, we might also select just one.
-current_backend() = current_backends()[1]
-current_backend(b::Backend) = current_backends((b,))
-has_current_backend() = current_backend() !== undefined_backend
-
 #=
 Operations that rely on a backend need to have a backend selected and will
 generate an exception if there is none.
@@ -39,6 +28,26 @@ generate an exception if there is none.
 struct UndefinedBackendException <: Exception end
 showerror(io::IO, e::UndefinedBackendException) = print(io, "No current backend.")
 
+# We can have several backends active at the same time
+const current_backends = Parameter{Tuple{Vararg{Backend}}}(())
+# but for backward compatibility reasons, we might also select just one.
+current_backend() =
+	let bs = current_backends()
+		isempty(bs) ?
+			throw(UndefinedBackendException()) :
+			bs[1]
+	end
+current_backend(b::Backend) = current_backends((b,))
+has_current_backend() = !isempty(current_backends())
+
+# Backends need to implement operations or an exception is triggered
+struct UnimplementedBackendOperationException <: Exception
+	backend
+	operation
+end
+showerror(io::IO, e::UnimplementedBackendOperationException) =
+	print(io, "Operation $(e.operation) is not implemented for backend $(e.backend).")
+
 # backend define
 macro bdef(name_params)
   name = name_params.args[1]
@@ -46,39 +55,60 @@ macro bdef(name_params)
   backend_name = esc(Symbol("backend_$name"))
   quote
     export $(backend_name)
-    $(backend_name)(::Backend, $(params...)) = throw(UndefinedBackendException())
+    $(backend_name)(b::Backend, $(params...)) =
+	  throw(UnimplementedBackendOperationException(b, $(backend_name)))
   end
 end
-
 # backend call
 macro bcall(backend, name_args)
   name = name_args.args[1]
   args = name_args.args[2:end]
   backend_name = esc(Symbol("backend_$name"))
   quote
-    $(backend_name)(backend, $(args...))
+    $(backend_name)($(esc(backend)), $(esc.(args)...))
   end
 end
 
 # backends call
 macro bscall(backends, name_args)
+	name = name_args.args[1]
+  args = name_args.args[2:end]
+	backend_name = esc(Symbol("backend_$name"))
   quote
-    map($(backends)) do backend
-      @bcall(backend, $(name_args))
+    for backend in $(esc(backends))
+	  $(backend_name)(backend, $(esc.(args)...))
     end
   end
 end
 
 # current backends call
 macro cbscall(name_args)
-  :(@bscall(current_backends(), $(name_args)))
+	name = name_args.args[1]
+  args = name_args.args[2:end]
+	backend_name = esc(Symbol("backend_$name"))
+  quote
+    for backend in current_backends()
+	  $(backend_name)(backend, $(esc.(args)...))
+    end
+  end
 end
 
 #=
 @macroexpand @bdef(stroke(path::Path))
-@macroexpand @bcall(backend, stroke(my_path))
-@macroexpand @bscall(backends, stroke(my_path))
+@macroexpand @bcall(Base.backend, stroke(Main.my_path))
+@macroexpand @bscall(Base.backends, stroke(Main.my_path))
 @macroexpand @cbscall(stroke(path))
+=#
+
+#=
+
+Each shape can have a material and a classification.
+A material might be just a color or something more complex
+a classification might be a layer in some CAD tools or something else
+Some backends will ignore this information, some use it in a dynamic
+fashion. For performance reasons, operations that create shapes can
+also be used without materials or classification.
+
 =#
 
 #@bdef add_door(w::Wall, loc::Loc, family::DoorFamily)
@@ -103,6 +133,9 @@ backend_curtain_wall(b::Backend, s, path::Path, bottom::Real, height::Real, l_th
   end
 @bdef curtain_wall(s, path::Path, bottom::Real, height::Real, thickness::Real, kind::Symbol)
 
+
+@bdef sphere(c::Loc, r::Real)
+#@bdef sphere(c::Loc, r::Real, material, layer)
 @bdef cylinder(cb::Loc, r::Real, h::Real)
 
 #@bdef cylinder(cb::Loc, r::Real, h::Real, material)
@@ -221,6 +254,7 @@ realize_table_and_chairs(b::Backend, p::Loc, table::Function, chair::Function,
          chair.(centered_row(add_y(p, -dy), 0, chairs_on_left))...)
   end
 
+@bdef render_view(path::String)
 
 #@bdef revolve_curve(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
 #@bdef revolve_point(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
