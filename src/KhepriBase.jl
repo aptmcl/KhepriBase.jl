@@ -27,4 +27,7 @@ include("Camera.jl")
 
 # From ColorTypes
 export RGB, RGBA, rgb
+
+
+export encode, decode, @encode_decode_as
 end
