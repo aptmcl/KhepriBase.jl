@@ -91,7 +91,7 @@ cull(template, as) =
   [a for (a, t) in zip(as, cycle(template)) if t]
 
 # To create paths from paths
-
+export path_replace_suffix
 path_replace_suffix(path::String, suffix::String) =
   let (base, old_suffix) = splitext(path)
     base * suffix
