@@ -388,8 +388,3 @@ decode_id(c::IO) =
       id
     end
   end
-
-encode_BIMLevel = encode_int
-decode_BIMLevel = decode_int_or_error
-encode_FloorFamily = encode_int
-decode_FloorFamily = decode_int_or_error
