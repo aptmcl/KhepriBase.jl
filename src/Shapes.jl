@@ -4,7 +4,8 @@ export GenericRef,
        NativeRef,
        UnionRef,
        SubtractionRef,
-       LazyRef,
+       DynRef,
+       DynRefs,
        void_ref,
        ensure_ref,
        map_ref,
@@ -24,7 +25,8 @@ export Shape,
        has_current_backend,
        switch_to_backend,
        delete_shape, delete_shapes,
-       delete_all_shapes,
+       delete_all_shapes, mark_deleted,
+       force_realize,
        set_length_unit,
        is_collecting_shape,
        collecting_shapes,
@@ -152,23 +154,28 @@ subtract_ref(b::Backend{K,T}, r0::UnionRef{K,T}, r1::GenericRef{K,T}) where {K,T
 
 # References need to be created, deleted, and recreated, depending on the way the backend works
 # For example, each time a shape is consumed, it becomes deleted and might need to be recreated
-mutable struct LazyRef{K,R}
+mutable struct DynRef{K,R}
   backend::Backend{K,R}
   value::GenericRef{K,R}
   created::Int
   deleted::Int
 end
 
-#LazyRef{K,R}(backend::Backend{K,T}) where {K,R} = LazyRef{K,R}(backend, void_ref(backend), 0, 0)
-LazyRef(backend::Backend{K,T}, v::GenericRef{K,T}) where {K,T} = LazyRef{K,T}(backend, v, 1, 0)
+#DynRef{K,R}(backend::Backend{K,T}) where {K,R} = DynRef{K,R}(backend, void_ref(backend), 0, 0)
+DynRef(backend::Backend{K,T}, v::GenericRef{K,T}) where {K,T} = DynRef{K,T}(backend, v, 1, 0)
+
+
+const DynRefs = IdDict{Backend, Any}
+dyn_refs() = DynRefs()
 
 abstract type Proxy end
 
 backend(s::Proxy) = s.ref.backend
-realized(s::Proxy) = s.ref.created == s.ref.deleted + 1
+
+realized_in(s::Proxy, b::Backend) = s.ref.created == s.ref.deleted + 1
 # This is so stupid. We need call-next-method.
 really_mark_deleted(s::Proxy) = really_mark_deleted(s.ref)
-really_mark_deleted(ref::LazyRef) = ref.deleted = ref.created
+really_mark_deleted(ref::DynRef) = ref.deleted = ref.created
 really_mark_deleted(s::Any) = nothing
 mark_deleted(s::Proxy) = really_mark_deleted(s)
 # We also need to propagate this to all dependencies
@@ -191,9 +198,6 @@ ref(s::Proxy) =
 
 ensure_ref(b::Backend{K,T}, v::Proxy) where {K,T} = ref(v)
 
-#This is a dangerous operation. I'm not sure it should exist.
-set_ref!(s::Proxy, value) = s.ref.value = value
-
 abstract type Shape <: Proxy end
 show(io::IO, s::Shape) =
     print(io, "$(typeof(s))(...)")
@@ -215,16 +219,13 @@ The protocol after_init takes care of that.
 =#
 
 after_init(a::Any) = a
-after_init(s::Shape) = maybe_trace(maybe_collect(maybe_realize(maybe_replace(s))))
-
-#=
-Shapes might need to be replaced with other shapes. For example, when elements
-join at precise locations, it might be easier, from the programming point of
-view, to just duplicate the joining element. However, from the constructive
-point of view, just one joining element needs to be produced.
-=#
-
-maybe_replace(s::Any) = s
+after_init(s::Shape) =
+  begin
+    maybe_realize(s)
+    maybe_collect(s)
+    maybe_trace(s)
+    s
+  end
 
 #=
 Backends might need to immediately realize a shape while supporting further modifications
@@ -233,21 +234,37 @@ shapes by request, presumably, when they have complete information about them.
 A middle term might be a backend that supports both modes.
 =#
 
-delay_realize(b::Backend, s::Shape) = s
-force_realize(b::Backend, s::Shape) = (ref(s); s)
+delay_realize(b::Backend, s::Shape) =
+  nothing
+force_realize(b::Backend, s::Shape) =
+  haskey(s.ref, b) ?
+    error("Shape was already realized in $(b)") :
+    s.ref[b] = ensure_ref(b, realize(b, s))
+mark_deleted(b::Backend, s::Shape) =
+  delete!(s.ref, b)
 
-maybe_realize(s::Shape, b::Backend=backend(s)) = maybe_realize(b, s)
+
+
+delaying_realize = Parameter(false)
+with_transaction(fn) =
+  maybe_realize(with(fn, delaying_realize, true))
+
+maybe_realize(s::Shape) =
+  delaying_realize() ?
+    for b in current_backends()
+      delay_realize(b, s)
+    end :
+    for b in current_backends()
+      maybe_realize(b, s)
+    end
 
 #=
 Even if a backend is eager, it might be necessary to temporarily delay the
 realization of shapes, particularly, when the construction is incremental.
 =#
 
-delaying_realize = Parameter(false)
 maybe_realize(b::Backend, s::Shape) =
-  delaying_realize() ?
-    delay_realize(b, s) :
-    force_realize(b, s)
+  force_realize(b, s)
 
 abstract type LazyBackend{K,T} <: Backend{K,T} end
 maybe_realize(b::LazyBackend, s::Shape) = delay_realize(b, s)
@@ -255,10 +272,6 @@ delay_realize(b::LazyBackend, s::Shape) = save_shape!(b, s)
 
 # By default, save_shape! assumes there is a field in the backend to store shapes
 save_shape!(b::Backend, s::Shape) = (push!(b.shapes, s); s)
-
-
-with_transaction(fn) =
-  maybe_realize(with(fn, delaying_realize, true))
 
 #=
 Frequently, we need to collect all shapes that are created:
@@ -277,7 +290,6 @@ collecting_shapes(fn) =
         collected_shapes()
     end
 maybe_collect(s::Shape) = (in_shape_collection() && collect_shape!(s); s)
-
 
 ######################################################
 #Traceability
@@ -328,11 +340,9 @@ trace!(s) =
     s
   end
 
-maybe_trace(s) = (traceability() && trace!(s); s)
+maybe_trace(s) = traceability() && trace!(s)
 
 ######################################################
-
-realize(::UndefinedBackend, ::Shape) = throw(UndefinedBackendException())
 
 # Many functions default the backend to the current_backend and throw an error if there is none.
 # We will simplify their definition with a macro:
@@ -377,8 +387,12 @@ macro defshapeop(name_params)
     end
 end
 
-backend(backend::Backend) = switch_to_backend(current_backend(), backend)
-switch_to_backend(from::Backend, to::Backend) = current_backend(to)
+backend(backend::Backend) =
+  has_current_backend() ?
+    switch_to_backend(current_backend(), backend) :
+    current_backend(backend)
+switch_to_backend(from::Backend, to::Backend) =
+  current_backend(to)
 
 @defop current_backend_name()
 @defop delete_all_shapes()
@@ -424,12 +438,12 @@ macro defproxy(name_typename, parent, fields...)
   quote
     export $(constructor_name), $(struct_name), $(predicate_name) #, $(selector_names...)
     struct $struct_name <: $parent
-      ref::LazyRef
+      ref::DynRefs
       $(struct_fields...)
     end
     # we don't need to convert anything because Julia already does that with the default constructor
     # and, by the same idea, we don't need to define parameter types.
-    @noinline $(constructor_name)($(opt_params...); $(key_params...), ref::LazyRef=LazyRef(current_backend())) =
+    @noinline $(constructor_name)($(opt_params...); $(key_params...), ref::DynRefs=dyn_refs()) =
       after_init($(struct_name)(ref, $(field_converts...)))
     $(predicate_name)(v::$(struct_name)) = true
     $(predicate_name)(v::Any) = false
@@ -532,12 +546,22 @@ closed_spline(v0, v1, vs...) = closed_spline([v0, v1, vs...])
 @defproxy(ellipse, Shape1D, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
 @defproxy(polygon, Shape1D, vertices::Locs=[u0(), ux(), uy()])
 polygon(v0, v1, vs...) = polygon([v0, v1, vs...])
+realize(b::Backend, s::Polygon) =
+  backend_polygon(b, s.vertices)
 @defproxy(regular_polygon, Shape1D, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true)
+realize(b::Backend, s::RegularPolygon) =
+  backend_polygon(b, regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))
 @defproxy(rectangle, Shape1D, corner::Loc=u0(), dx::Real=1, dy::Real=1)
 rectangle(p::Loc, q::Loc) =
   let v = in_cs(q - p, p.cs)
     rectangle(p, v.x, v.y)
   end
+realize(b::Backend, s::Rectangle) =
+  backend_polygon(b, [
+    s.corner,
+    add_x(s.corner, s.dx),
+    add_xy(s.corner, s.dx, s.dy),
+    add_y(s.corner, s.dy)])
 @defproxy(surface_circle, Shape2D, center::Loc=u0(), radius::Real=1)
 @defproxy(surface_arc, Shape2D, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
 @defproxy(surface_elliptic_arc, Shape2D, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
@@ -1229,7 +1253,7 @@ select_many_with_prompt(prompt::String, b::Backend, f::Function) =
 export render_view
 render_view(name::String="View") =
   let path = prepare_for_saving_file(render_pathname(name))
-    render_view(path, current_backend())
+    @cbscall(render_view(path))
     path
   end
 export save_view
