@@ -368,13 +368,13 @@ encode_float3(c::IO, v0::Real, v1::Real, v2::Real) = begin
 end
 =#
 
-encode(ns::Val{NS}, ::Val{:float3}, c::IO, (v1, v2, v3)) = begin
+encode(ns::Val{NS}, ::Val{:float3}, c::IO, (v1, v2, v3)) where {NS} = begin
   encode(ns, Val(:float), c, v1)
   encode(ns, Val(:float), c, v2)
   encode(ns, Val(:float), c, v3)
 end
 
-decode(ns::Val{NS}, ::Val{:float3}, c::IO) = begin
+decode(ns::Val{NS}, ::Val{:float3}, c::IO) where {NS} = begin
   decode(ns, Val(:float), c),
   decode(ns, Val(:float), c),
   decode(ns, Val(:float), c)
