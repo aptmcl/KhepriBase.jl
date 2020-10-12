@@ -424,6 +424,19 @@ struct SocketBackend{K,T} <: Backend{K,T}
   remote::NamedTuple
 end
 
+create_backend_connection(backend::AbstractString, port::Integer) =
+  for i in 1:10
+    try
+      return connect(port)
+    catch e
+      @info("Please, start/restart $(backend).")
+      sleep(8)
+      if i == 9
+        throw(e)
+      end
+    end
+  end
+
 # To simplify remote calls
 macro remote(b, call)
   let op = call.args[1],
