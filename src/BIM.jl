@@ -195,6 +195,8 @@ family_registry(WallFamily) -> Vector{WallFamily}
 register_family(family)
 =#
 
+export Family, FamilyInstance, family, family_ref
+
 abstract type Family <: Proxy end
 abstract type FamilyInstance <: Family end
 
