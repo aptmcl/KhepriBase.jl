@@ -39,7 +39,9 @@ export Loc, Locs, LocOrZ,
        regular_polygon_vertices,
        norm,
        angle_between,
-       rotate_vector
+       rotate_vector,
+       raw_point,
+       raw_plane
 
 #=
 Some useful terminology:

@@ -34,5 +34,13 @@ export @remote_functions,
        parse_signature,
        encode,
        decode,
-       @encode_decode_as
+       @encode_decode_as,
+       SocketBackend,
+       create_backend_connection,
+       @remote,
+       @get_remote,
+       connection,
+       reset_backend,
+       IOBufferBackend
+
 end
