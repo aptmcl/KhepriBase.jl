@@ -5,6 +5,7 @@ using StaticArrays
 using Dierckx
 using Dates
 using Sockets
+using Base.Iterators
 
 import Base:
     +, -, *, /, length,
@@ -37,10 +38,38 @@ export @remote_functions,
        @encode_decode_as,
        SocketBackend,
        create_backend_connection,
+       current_backends,
        @remote,
        @get_remote,
        connection,
        reset_backend,
-       IOBufferBackend
+       IOBufferBackend,
+       backend_frame_at,
+       acad_revolution,
+       backend_bounding_box,
+       backend_delete_shapes,
+       backend_fill_curves,
+       backend_loft_curve_point,
+       backend_loft_curves,
+       backend_loft_surface_point,
+       backend_loft_surfaces,
+       backend_map_division,
+       backend_panel,
+       backend_revolve_curve,
+       backend_revolve_point,
+       backend_revolve_surface,
+       backend_surface_boundary,
+       backend_surface_domain,
+       captured_shape,
+       captured_shapes,
+       create_block,
+       dimension,
+       generate_captured_shape,
+       generate_captured_shapes,
+       pre_selected_shapes_from_se,
+       ref,
+       save_file,
+       shape_from_ref,
+       slice_ref
 
 end
