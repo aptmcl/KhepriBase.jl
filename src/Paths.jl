@@ -305,8 +305,8 @@ translate(path::ArcPath, v::Vec) = ArcPath(path.center + v, path.radius, path.st
 translate(path::RectangularPath, v::Vec) = RectangularPath(path.corner + v, path.dx, path.dy)
 translate(path::OpenPolygonalPath, v::Vec) = OpenPolygonalPath(translate(path.vertices, v))
 translate(path::ClosedPolygonalPath, v::Vec) = ClosedPolygonalPath(translate(path.vertices, v))
-translate(path::OpenSplinePath, v::Vec) = OpenSplinePath(translate(path.vertices, v), path.v0, path.v1)
-translate(path::ClosedSplinePath, v::Vec) = ClosedSplinePath(translate(path.vertices, v))
+translate(path::OpenSplinePath, v::Vec) = OpenSplinePath(translate(path.vertices, v), path.v0, path.v1, path.interpolator)
+translate(path::ClosedSplinePath, v::Vec) = ClosedSplinePath(translate(path.vertices, v), path.interpolator)
 translate(ps::Locs, v::Vec) = map(p->p+v, ps)
 
 in_cs(path::PointPath, cs::CS) = PointPath(in_cs(path.location, cs))
