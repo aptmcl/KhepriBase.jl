@@ -166,7 +166,7 @@ DynRef(backend::Backend{K,T}, v::GenericRef{K,T}) where {K,T} = DynRef{K,T}(back
 
 
 const DynRefs = IdDict{Backend, Any}
-dyn_refs() = DynRefs()
+const dyn_refs = DynRefs
 
 abstract type Proxy end
 
@@ -174,39 +174,43 @@ backend(s::Proxy) = s.ref.backend
 
 realized_in(s::Proxy, b::Backend) = s.ref.created == s.ref.deleted + 1
 # This is so stupid. We need call-next-method.
-really_mark_deleted(s::Proxy) = really_mark_deleted(s.ref)
-really_mark_deleted(ref::DynRef) = ref.deleted = ref.created
-really_mark_deleted(s::Any) = nothing
-mark_deleted(s::Proxy) = really_mark_deleted(s)
+really_mark_deleted(b::Backend, s::Proxy) = really_mark_deleted(b, s.ref)
+really_mark_deleted(b::Backend, ref::DynRefs) = delete!(ref, b)
+really_mark_deleted(b::Backend, s::Any) = nothing
+mark_deleted(b::Backend, s::Proxy) = really_mark_deleted(b, s)
 # We also need to propagate this to all dependencies
-mark_deleted(ss::Array{<:Proxy}) = foreach(mark_deleted, ss)
-mark_deleted(s::Any) = nothing
-marked_deleted(s::Proxy) = s.ref.deleted == s.ref.created
+mark_deleted(b::Backend, ss::Array{<:Proxy}) = foreach(s->mark_deleted(b, s), ss)
+mark_deleted(b::Backend, s::Any) = nothing
+marked_deleted(b::Backend, s::Proxy) = !haskey(s.ref, b)
 
-ref(s::Proxy) =
-  if s.ref.created == s.ref.deleted
-    s.ref.value = ensure_ref(s.ref.backend, realize(s.ref.backend, s))
-    s.ref.created += 1
-    s.ref.value
-  elseif s.ref.created == s.ref.deleted + 1
-    s.ref.value
-  else
-    error("Inconsistent creation and deletion")
+#=
+The protocol is this:
+ref(b, s) calls
+  force_realize(b, s)
+=#
+
+ref(b::Backend, s::Proxy) =
+  force_realize(b, s)
+
+force_realize(s::Proxy) =
+  for b in current_backends()
+    force_realize(b, s)
   end
 
 # We can also use a shape as a surrogate for another shape
 
-ensure_ref(b::Backend{K,T}, v::Proxy) where {K,T} = ref(v)
+ensure_ref(b::Backend{K,T}, v::Proxy) where {K,T} =
+  ref(b, v)
 
 abstract type Shape <: Proxy end
 show(io::IO, s::Shape) =
-    print(io, "$(typeof(s))(...)")
+  print(io, "$(typeof(s))(...)")
 
 Shapes = Vector{<:Shape}
 
-map_ref(f::Function, s::Shape) = map_ref(s.ref.backend, f, ref(s))
-collect_ref(s::Shape) = collect_ref(s.ref.backend, ref(s))
-collect_ref(ss::Shapes) = mapreduce(collect_ref, vcat, ss, init=[])
+map_ref(f::Function, b::Backend, s::Shape) = map_ref(b, f, ref(b, s))
+collect_ref(s::Shape) = error("collect_ref(s.ref.backend, ref(s))")
+collect_ref(ss::Shapes) = error("mapreduce(collect_ref, vcat, ss, init=[])")
 
 #=
 Whenever a shape is created, it might be replaced by another shape (e.g., when
@@ -238,12 +242,8 @@ delay_realize(b::Backend, s::Shape) =
   nothing
 force_realize(b::Backend, s::Shape) =
   haskey(s.ref, b) ?
-    error("Shape was already realized in $(b)") :
+    s.ref[b] : #error("Shape was already realized in $(b)") :
     s.ref[b] = ensure_ref(b, realize(b, s))
-mark_deleted(b::Backend, s::Shape) =
-  delete!(s.ref, b)
-
-
 
 delaying_realize = Parameter(false)
 with_transaction(fn) =
@@ -264,13 +264,16 @@ realization of shapes, particularly, when the construction is incremental.
 =#
 
 maybe_realize(b::Backend, s::Shape) =
-  force_realize(b, s)
+  if ! haskey(s.ref, b)
+    force_realize(b, s)
+  end
 
 abstract type LazyBackend{K,T} <: Backend{K,T} end
 maybe_realize(b::LazyBackend, s::Shape) = delay_realize(b, s)
 delay_realize(b::LazyBackend, s::Shape) = save_shape!(b, s)
 
 # By default, save_shape! assumes there is a field in the backend to store shapes
+export save_shape!
 save_shape!(b::Backend, s::Shape) = (push!(b.shapes, s); s)
 
 #=
@@ -354,29 +357,78 @@ maybe_trace(s) = traceability() && trace!(s)
 # delete_all_shapes(backend::Backend) = throw(UndefinedBackendException())
 # Hopefully, backends will specialize the function for each specific backend
 
-macro defop(name_params)
-    name, params = name_params.args[1], name_params.args[2:end]
+#macro defop(name_params)
+#    name, params = name_params.args[1], name_params.args[2:end]
+#    quote
+#        export $(esc(name))
+#        $(esc(name))($(map(esc,params)...), backend::Backend=current_backend()) =
+#          throw(UndefinedBackendException())
+#    end
+#end
+
+param_data(p) =
+  p isa Symbol ?
+    (p, :Any, missing) :
+    p isa Expr ?
+      (p.head == :kw ?
+         (param_data(p.args[1])[1:2]..., p.args[2]) :
+         p.head == :(::) ?
+           (p.args..., missing) :
+           error("Unknown syntax $p")) :
+      error("Unknown syntax $p")
+
+def_data(expr) =
+  let (name_params, body) =
+        expr isa Expr ?
+          (expr.head == :(=) ?
+             expr.args :
+             (expr.head == :call ?
+                (expr, :(throw(UndefinedBackendException()))) :
+                error("Unknown syntax $p"))) :
+          error("Unknown syntax $p")
+    name_params.args[1], name_params.args[2:end], body
+  end
+
+# Define for (just the) current backend
+macro defcb(expr)
+  name, params, body = def_data(expr)
+  params_data = map(param_data, params)
+  backend_name = Symbol("backend_", name)
+  esc(
     quote
-        export $(esc(name))
-        $(esc(name))($(map(esc,params)...), backend::Backend=current_backend()) =
-          throw(UndefinedBackendException())
-    end
+      export $(name), $(backend_name)
+      $(name)($(params...), backend::Backend=current_backend()) =
+          $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
+      $(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
+          $(body)
+    end)
 end
 
-macro defopnamed(name_params)
-    name, params = name_params.args[1], name_params.args[2:end]
-    par_names = map(par -> par.args[1].args[1], params)
-    par_types = map(par -> par.args[1].args[2], params)
-    par_inits = map(par -> par.args[2], params)
-    backend_call = Symbol("backend_", name)
+# Define for (all the) current backends
+macro defcbs(expr)
+  name, params, body = def_data(expr)
+  params_data = map(param_data, params)
+  backend_name = Symbol("backend_", name)
+  esc(
     quote
-        export $(name)
-        $(process_named_params(:($(name)($(params...), backend::Backend=current_backend()) =
-            $(backend_call)(backend, $(par_names...)))))
-        $(esc(:($(backend_call)(backend::Backend, $(map((name, typ)->Expr(:(::), name, typ), par_names, par_types)...)) =
-            UndefinedBackendException())))
-    end
+      export $(name), $(backend_name)
+      $(name)($(params...), backends::Backends=current_backends()) =
+        for backend in backends
+          $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
+        end
+      $(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
+          $(body)
+    end)
 end
+
+
+#=
+@macroexpand @defcbs foo() =  x + 1
+@macroexpand @defcbs foo(bar)
+@macroexpand @defcbs foo(bar::Baz)
+@macroexpand @defcbs foo(bar=quux)
+@macroexpand @defcbs foo(bar::Baz=quux)
+=#
 
 macro defshapeop(name_params)
     name, params = name_params.args[1], name_params.args[2:end]
@@ -394,11 +446,15 @@ backend(backend::Backend) =
 switch_to_backend(from::Backend, to::Backend) =
   current_backend(to)
 
-@defop current_backend_name()
-@defop delete_all_shapes()
-@defop set_length_unit(unit::String)
-@defop reset_backend()
-@defop save_as(pathname::String, format::String)
+
+@defcb current_backend_name()
+@defcbs delete_all_shapes()
+@defcbs set_length_unit(unit::String="")
+@defcb reset_backend()
+@defcb save_as(pathname::String, format::String)
+
+@defcbs dimension(p0::Loc, p1::Loc, p::Loc, scale::Real, style::Symbol)
+@defcbs dimension(p0::Loc, p1::Loc, sep::Real, scale::Real, style::Symbol)
 
 new_backend(b::Backend = current_backend()) = backend(b)
 
@@ -449,15 +505,34 @@ macro defproxy(name_typename, parent, fields...)
     $(predicate_name)(v::Any) = false
     $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
           selector_names, field_names)...)
-    KhepriBase.mark_deleted(v::$(struct_name)) =
-      if ! marked_deleted(v)
-        really_mark_deleted(v)
-        $(map(field_name -> :(mark_deleted(v.$(field_name))), field_names)...)
+    KhepriBase.mark_deleted(b::Backend, v::$(struct_name)) =
+      if ! marked_deleted(b, v)
+        really_mark_deleted(b, v)
+        $(map(field_name -> :(mark_deleted(b, v.$(field_name))), field_names)...)
       end
     KhepriBase.meta_program(v::$(struct_name)) =
         Expr(:call, $(Expr(:quote, name)), $(map(field_name -> :(meta_program(v.$(field_name))), field_names)...))
   end
 end
+
+#=
+Layers are just a classification mechanism.
+Some backends, however, can colorize the shapes that have that layer, or can make
+those shapes appear and disappear by activating or deactivating the layer.
+=#
+
+@defproxy(layer, Proxy, name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
+
+realize(b::Backend, l::Layer) =
+  backend_layer(b, l.name, l.active, l.color)
+
+@defcbs create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
+@defcb current_layer()
+@defcbs current_layer(layer)
+@defcbs set_layer_active(layer, status)
+@defcbs switch_to_layer(layer)
+
+
 
 abstract type Shape0D <: Shape end
 abstract type Shape1D <: Shape end
@@ -761,6 +836,10 @@ revolve(profile::Shape=point(x(1)), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle:
     error("Profile is neither a point nor a curve nor a surface")
   end
 
+backend_revolve_point(b::Backend, profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real) = error("Finish this")
+backend_revolve_curve(b::Backend, profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real) = error("Finish this")
+backend_revolve_surface(b::Backend, profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real) = error("Finish this")
+
 realize(b::Backend, s::RevolvePoint) =
   backend_revolve_point(b, s.profile, s.p, s.n, s.start_angle, s.amplitude)
 realize(b::Backend, s::RevolveCurve) =
@@ -812,7 +891,7 @@ realize(b::Backend, s::LoftSurfacePoint) = backend_loft_surface_point(backend(s)
 
 backend_loft_points(b::Backend, profiles::Shapes, rails::Shapes, ruled::Bool, closed::Bool) =
   let f = (ruled ? (closed ? polygon : line) : (closed ? closed_spline : spline))
-    and_delete_shapes(ref(f(map(point_position, profiles), backend=b)),
+    and_delete_shapes(ref(b, f(map(point_position, profiles), backend=b)),
                       vcat(profiles, rails))
   end
 
@@ -1052,44 +1131,47 @@ bounding_box(shapes::Shapes=Shape[]) =
     backend_bounding_box(backend(shapes[1]), shapes)
   end
 
-delete_shape(shape::Shape) =
-  delete_shapes([shape])
+delete_shape(shape::Shape, bs=current_backends()) =
+  delete_shapes([shape], bs)
 
-delete_shapes(shapes::Shapes=Shape[]) =
+delete_shapes(shapes::Shapes=Shape[], bs=current_backends()) =
   if ! isempty(shapes)
-    to_delete = filter(realized, shapes)
-    backend_delete_shapes(backend(shapes[1]), to_delete)
-    foreach(mark_deleted, shapes)
+    for b in bs
+      backend_delete_shapes(b, shapes)
+      foreach(s->mark_deleted(b, s), shapes)
+    end
   end
 
-and_delete_shape(r::Any, shape::Shape) =
+@bdef delete_shapes(shapes::Shapes)
+
+and_delete_shape(b::Backend, r::Any, shape::Shape) =
   begin
-    delete_shape(shape)
+    delete_shape(b, shape)
     r
   end
 
-and_delete_shapes(r::Any, shapes::Shapes) =
+and_delete_shapes(b::Backend, r::Any, shapes::Shapes) =
   begin
-    delete_shapes(shapes)
+    delete_shapes(b, shapes)
     r
   end
 
-and_mark_deleted(r::Any, shape) =
+and_mark_deleted(b::Backend, r::Any, shape) =
   begin
-    mark_deleted(shape)
+    mark_deleted(b, shape)
     r
   end
 
-realize_and_delete_shapes(shape::Shape, shapes::Shapes) =
-    and_delete_shapes(ref(shape), shapes)
+realize_and_delete_shapes(b::Backend, shape::Shape, shapes::Shapes) =
+    and_delete_shapes(b, ref(b, shape), shapes)
 
 # Common implementations for realize function
 
 realize(b::Backend, s::UnionShape) =
-    unite_refs(b, map(ref, s.shapes))
+  unite_refs(b, UnionRef(tuple(map(s->ref(b, s), s.shapes)...)))
 
 realize(b::Backend, s::Union{SubtractionShape2D,SubtractionShape3D}) =
-    subtract_ref(b, ref(s.shape), unite_refs(b, map(ref, s.shapes)))
+    subtract_ref(b, ref(b, s.shape), unite_refs(b, map(s->ref(b, s), s.shapes)))
 
 function startSketchup(port)
   ENV["ROSETTAPORT"] = port
@@ -1103,30 +1185,23 @@ function startSketchup(port)
 end
 
 # CAD
-@defop all_shapes()
-@defop all_shapes_in_layer(layer)
-@defop delete_all_shapes_in_layer(layer)
-@defop disable_update()
-@defop enable_update()
-@defop set_view(camera::Loc, target::Loc, lens::Real=50, aperture::Real=32)
-@defop get_view()
-@defop set_sun(altitude::Real, azimuth::Real)
-@defop add_ground_plane()
-@defop zoom_extents()
-@defop view_top()
-@defop get_layer(name::String)
-# Remove defopnamed ??
-#@defopnamed create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
-@defop current_layer()
-@defop current_layer(layer)
-@defop set_layer_active(layer, status)
-@defop switch_to_layer(layer)
-@defop get_material(name::String)
-@defop create_material(name::String)
-@defop current_material()
-@defop current_material(material)
-@defop set_normal_sky()
-@defop set_overcast_sky()
+@defcb all_shapes()
+@defcb all_shapes_in_layer(layer)
+@defcbs delete_all_shapes_in_layer(layer)
+@defcb disable_update()
+@defcb enable_update()
+@defcbs set_view(camera::Loc, target::Loc, lens::Real=50, aperture::Real=32)
+@defcb get_view()
+@defcbs set_sun(altitude::Real, azimuth::Real)
+@defcbs add_ground_plane()
+@defcbs zoom_extents()
+@defcbs view_top()
+@defcb get_material(name::String)
+@defcbs create_material(name::String)
+@defcb current_material()
+@defcbs current_material(material)
+@defcbs set_normal_sky()
+@defcbs set_overcast_sky()
 
 function dolly_effect(camera, target, lens, new_camera)
   cur_dist = distance(camera, target)
@@ -1142,23 +1217,23 @@ dolly_effect_pull_back(delta) = begin
   dolly_effect(camera, target, lens, new_camera)
 end
 
-@defop select_position(prompt::String="Select a position")
-@defop select_positions(prompt::String="Select positions")
-@defop select_point(prompt::String="Select a point")
-@defop select_points(prompt::String="Select points")
-@defop select_curve(prompt::String="Select a curve")
-@defop select_curves(prompt::String="Select curves")
-@defop select_surface(prompt::String="Select a surface")
-@defop select_surfaces(prompt::String="Select surfaces")
-@defop select_solid(prompt::String="Select a solid")
-@defop select_solids(prompt::String="Select solids")
-@defop select_shape(prompt::String="Select a shape")
-@defop select_shapes(prompt::String="Select shapes")
+@defcb select_position(prompt::String="Select a position")
+@defcb select_positions(prompt::String="Select positions")
+@defcb select_point(prompt::String="Select a point")
+@defcb select_points(prompt::String="Select points")
+@defcb select_curve(prompt::String="Select a curve")
+@defcb select_curves(prompt::String="Select curves")
+@defcb select_surface(prompt::String="Select a surface")
+@defcb select_surfaces(prompt::String="Select surfaces")
+@defcb select_solid(prompt::String="Select a solid")
+@defcb select_solids(prompt::String="Select solids")
+@defcb select_shape(prompt::String="Select a shape")
+@defcb select_shapes(prompt::String="Select shapes")
 @defshapeop highlight_shape()
-@defshapeop register_for_changes()
-@defshapeop unregister_for_changes()
+@defshapeop register_shape_for_changes(s::Shape)
+@defshapeop unregister_shape_for_changes(s::Shape)
 @defshapeop waiting_for_changes()
-@defop changed_shape(shapes::Shapes)
+@defcb changed_shape(shapes::Shapes)
 
 export highlight_shapes
 highlight_shapes(shapes::Shapes) =
@@ -1172,14 +1247,16 @@ capture_shape(s=select_shape("Select shape to be captured")) =
 capture_shapes(ss=select_shapes("Select shapes to be captured")) =
     generate_captured_shapes(ss, backend(ss[1]))
 
+export register_for_changes
 register_for_changes(shapes::Shapes) =
   map(shapes) do shape
-    register_for_changes(shape, backend(shape))
+    register_shape_for_changes(shape, backend(shape))
   end
 
+export unregister_for_changes
 unregister_for_changes(shapes::Shapes) =
   map(shapes) do shape
-    unregister_for_changes(shape, backend(shape))
+    unregister_shape_for_changes(shape, backend(shape))
   end
 
 waiting_for_changes(shapes::Shapes) =
