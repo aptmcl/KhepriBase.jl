@@ -833,26 +833,26 @@ free_column(cb::Loc, ct::Loc, Angle::Real=0, Family::ColumnFamily=default_column
 
 realize(b::Backend, s::Beam) =
   with_family_in_layer(b, s.family) do
-    realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
+    backend_realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
   end
 
 realize(b::Backend, s::FreeColumn) =
   with_family_in_layer(b, s.family) do
-    realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
+    backend_realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
   end
 
 realize(b::Backend, s::Column) =
   with_family_in_layer(b, s.family) do
     let base_height = s.bottom_level.height,
         height = s.top_level.height - base_height
-      realize_beam_profile(b, s, s.family.profile, add_z(s.cb, base_height), height)
+      backend_realize_beam_profile(b, s, s.family.profile, add_z(s.cb, base_height), height)
     end
   end
 
-realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::CircularPath, cb::Loc, length::Real) =
+backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::CircularPath, cb::Loc, length::Real) =
   backend_cylinder(b, cb, profile.radius, length*support_z_fighting_factor, get_material(b, family_ref(b, s.family)))
 
-realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::RectangularPath, cb::Loc, length::Real) =
+backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::RectangularPath, cb::Loc, length::Real) =
   let profile_u0 = profile.corner,
       c = add_xy(cb, profile_u0.x + profile.dx/2, profile_u0.y + profile.dy/2),
       # need to test whether it is rotation on center or on axis
@@ -860,7 +860,7 @@ realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::Rect
     backend_right_cuboid(b, o, profile.dx, profile.dy, length, get_material(b, family_ref(b, s.family)))
   end
 
-realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::ClosedPolygonalPath, cb::Loc, length::Real) =
+backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::ClosedPolygonalPath, cb::Loc, length::Real) =
   let ps = path_vertices(profile),
       bot_vs = [add_xy(cb, p.x, p.y) for p in ps],
       top_vs = [add_xyz(cb, p.x, p.y, length) for p in ps],
@@ -918,6 +918,59 @@ realize_chair(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
 realize(b::Backend, s::TableAndChairs) =
   with_family_in_layer(b, s.family) do
     backend_rectangular_table_and_chairs(b, add_z(s.loc, s.level.height), s.angle, s.family)
+  end
+
+#@bdef rectangular_table(c, angle, family)
+@defcbs rectangular_table(p, angle, f) =
+  realize_table(b, get_material(b, family_ref(b, f)),
+                loc_from_o_phi(p, angle), f.length, f.width, f.height, f.top_thickness, f.leg_thickness)
+
+realize_table(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
+              top_thickness::Real, leg_thickness::Real) =
+  let dx = length/2,
+      dy = width/2,
+      leg_x = dx - leg_thickness/2,
+      leg_y = dy - leg_thickness/2,
+      c = add_xy(p, -dx, -dy),
+      table_top = realize_box(b, mat, add_z(c, height - top_thickness), length, width, top_thickness),
+      pts = add_xy.(add_xy.(p, [+leg_x, +leg_x, -leg_x, -leg_x], [-leg_y, +leg_y, +leg_y, -leg_y]), -leg_thickness/2, -leg_thickness/2),
+      legs = [realize_box(b, mat, pt, leg_thickness, leg_thickness, height - top_thickness) for pt in pts]
+    [ensure_ref(b, r) for r in [table_top, legs...]]
+  end
+
+#@bdef rectangular_table_and_chairs(c, angle, family)
+@defcbs rectangular_table_and_chairs(p, angle, f) =
+  let tf = f.table_family,
+      cf = f.chair_family,
+      tmat = get_material(b, realize(b, tf).material),
+      cmat = get_material(b, realize(b, cf).material)
+    realize_table_and_chairs(b,
+      loc_from_o_phi(p, angle),
+      p->realize_table(b, tmat, p, tf.length, tf.width, tf.height, tf.top_thickness, tf.leg_thickness),
+      p->realize_chair(b, cmat, p, cf.length, cf.width, cf.height, cf.seat_height, cf.thickness),
+      tf.width,
+      tf.height,
+      f.chairs_top,
+      f.chairs_bottom,
+      f.chairs_right,
+      f.chairs_left,
+      f.spacing)
+  end
+
+realize_table_and_chairs(b::Backend, p::Loc, table::Function, chair::Function,
+                         table_length::Real, table_width::Real,
+                         chairs_on_top::Int, chairs_on_bottom::Int,
+                         chairs_on_right::Int, chairs_on_left::Int,
+                         spacing::Real) =
+  let dx = table_length/2,
+      dy = table_width/2,
+      row(p, angle, n) = [loc_from_o_phi(add_pol(p, i*spacing, angle), angle+pi/2) for i in 0:n-1],
+      centered_row(p, angle, n) = row(add_pol(p, -spacing*(n-1)/2, angle), angle, n)
+    vcat(table(p),
+         chair.(centered_row(add_x(p, -dx), -pi/2, chairs_on_bottom))...,
+         chair.(centered_row(add_x(p, +dx), +pi/2, chairs_on_top))...,
+         chair.(centered_row(add_y(p, +dy), -pi, chairs_on_right))...,
+         chair.(centered_row(add_y(p, -dy), 0, chairs_on_left))...)
   end
 
 # Lights
@@ -1082,8 +1135,8 @@ process_bars(bars, processed_nodes) =
 #=
 HACK TO BE COMPLETED
 # Analysis
-@defopnamed truss_analysis(load::Vec=vz(-1e5))
-@defopnamed truss_bars_volume()
+@defcb truss_analysis(load::Vec=vz(-1e5))
+@defcb truss_bars_volume()
 
 #HACK using LazyBackend just to avoid redefinitions.
 backend_truss_bars_volume(b::LazyBackend) =
@@ -1091,7 +1144,7 @@ backend_truss_bars_volume(b::LazyBackend) =
 
 # To visualize results:
 
-@defopnamed show_truss_deformation(
+@defcb show_truss_deformation(
     displacement::Any=nothing,
     visualizer::Backend=autocad,
     node_radius::Real=0.08, bar_radius::Real=0.02, factor::Real=100,
@@ -1150,9 +1203,13 @@ max_displacement(results, b::Backend=current_backend()) =
   =#
 ###################################
 # BIM
-@defop all_levels()
-@defop all_walls()
-@defop all_walls_at_level(level)
+@defcb all_levels()
+@defcb all_walls()
+@defcb all_walls_at_level(level)
+@defcbs realize_beam_profile(s::BIMShape, profile::Path, cb::Loc, length::Real)
+#@defcbs slab(profile, holes, thickness, family)
+#@defcbs wall(path, height, l_thickness, r_thickness, family)
+#@defcbs panel(bot::Locs, top::Locs, family)
 
 ####################################
 # Backend families
