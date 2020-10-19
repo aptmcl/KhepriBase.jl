@@ -347,6 +347,9 @@ encode(ns::Val{:CS}, ::Val{:String}, c::IO, v) =
 decode(ns::Val{:CS}, ::Val{:String}, c::IO) =
   decode(ns, Val(:string), c)
 
+decode(ns::Val{:CS}, t::Val{:void}, c::IO) =
+  decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
+
 # Useful CS types
 const Guid = Vector{UInt8}
 const Guids = Vector{Guid}
