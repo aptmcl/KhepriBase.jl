@@ -42,6 +42,7 @@ rgb_radiance(c::RGB) = 0.265*red(c)+0.67*green(c)+0.065*blue(c)
 required() = error("Required parameter")
 
 #########################################
+export division, map_division
 
 division(t0, t1, n::Real, include_last::Bool=true) =
   let n = convert(Int, n), iter = range(t0, stop=t1, length=n + 1)
