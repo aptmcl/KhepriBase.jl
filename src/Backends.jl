@@ -29,7 +29,8 @@ struct UndefinedBackendException <: Exception end
 showerror(io::IO, e::UndefinedBackendException) = print(io, "No current backend.")
 
 # We can have several backends active at the same time
-const current_backends = Parameter{Tuple{Vararg{Backend}}}(())
+const Backends = Tuple{Vararg{Backend}}
+const current_backends = Parameter{Backends}(())
 # but for backward compatibility reasons, we might also select just one.
 current_backend() =
 	let bs = current_backends()
@@ -121,7 +122,7 @@ backend_chair(b::Backend, p, angle, f) =
     realize_chair(b, mat, loc_from_o_phi(p, angle), f.length, f.width, f.height, f.seat_height, f.thickness)
   end
 
-@bdef create_layer(name::String, active::Bool, color::RGB)
+#@bdef create_layer(name::String, active::Bool, color::RGB)
 
 #@bdef curtain_wall(s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol)
 backend_curtain_wall(b::Backend, s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol) =
@@ -200,59 +201,6 @@ backend_pyramid_frustum(b::Backend, bot_vs::Locs, top_vs::Locs) =
 
 @bdef realistic_sky(altitude, azimuth, turbidity, withsun)
 @bdef realistic_sky(date, latitude, longitude, meridian, turbidity, withsun)
-
-#@bdef rectangular_table(c, angle, family)
-backend_rectangular_table(b::Backend, p, angle, f) =
-  realize_table(b, get_material(b, family_ref(b, f)),
-                loc_from_o_phi(p, angle), f.length, f.width, f.height, f.top_thickness, f.leg_thickness)
-
-realize_table(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
-              top_thickness::Real, leg_thickness::Real) =
-  let dx = length/2,
-      dy = width/2,
-      leg_x = dx - leg_thickness/2,
-      leg_y = dy - leg_thickness/2,
-      c = add_xy(p, -dx, -dy),
-      table_top = realize_box(b, mat, add_z(c, height - top_thickness), length, width, top_thickness),
-      pts = add_xy.(add_xy.(p, [+leg_x, +leg_x, -leg_x, -leg_x], [-leg_y, +leg_y, +leg_y, -leg_y]), -leg_thickness/2, -leg_thickness/2),
-      legs = [realize_box(b, mat, pt, leg_thickness, leg_thickness, height - top_thickness) for pt in pts]
-    [ensure_ref(b, r) for r in [table_top, legs...]]
-  end
-
-#@bdef rectangular_table_and_chairs(c, angle, family)
-backend_rectangular_table_and_chairs(b::Backend, p, angle, f) =
-  let tf = f.table_family,
-      cf = f.chair_family,
-      tmat = get_material(b, realize(b, tf).material),
-      cmat = get_material(b, realize(b, cf).material)
-    realize_table_and_chairs(b,
-      loc_from_o_phi(p, angle),
-      p->realize_table(b, tmat, p, tf.length, tf.width, tf.height, tf.top_thickness, tf.leg_thickness),
-      p->realize_chair(b, cmat, p, cf.length, cf.width, cf.height, cf.seat_height, cf.thickness),
-      tf.width,
-      tf.height,
-      f.chairs_top,
-      f.chairs_bottom,
-      f.chairs_right,
-      f.chairs_left,
-      f.spacing)
-  end
-
-realize_table_and_chairs(b::Backend, p::Loc, table::Function, chair::Function,
-                         table_length::Real, table_width::Real,
-                         chairs_on_top::Int, chairs_on_bottom::Int,
-                         chairs_on_right::Int, chairs_on_left::Int,
-                         spacing::Real) =
-  let dx = table_length/2,
-      dy = table_width/2,
-      row(p, angle, n) = [loc_from_o_phi(add_pol(p, i*spacing, angle), angle+pi/2) for i in 0:n-1],
-      centered_row(p, angle, n) = row(add_pol(p, -spacing*(n-1)/2, angle), angle, n)
-    vcat(table(p),
-         chair.(centered_row(add_x(p, -dx), -pi/2, chairs_on_bottom))...,
-         chair.(centered_row(add_x(p, +dx), +pi/2, chairs_on_top))...,
-         chair.(centered_row(add_y(p, +dy), -pi, chairs_on_right))...,
-         chair.(centered_row(add_y(p, -dy), 0, chairs_on_left))...)
-  end
 
 @bdef render_view(path::String)
 
