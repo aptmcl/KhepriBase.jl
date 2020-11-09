@@ -977,3 +977,14 @@ union(m::Mesh, ms...) =
             vcat(m.faces, [face.+n for face in ms[1].faces])),
         ms[2:end]...)
     end
+
+# The inverse of location_at_length
+export length_at_location
+length_at_location(path::Path, p::Loc, t0=0, t1=path_length(path)) =
+  t1 - t0 < epsilon() ?
+    (t0+t1)/2 :
+    let ts = division(t0, t1, 10),
+        pts = map(t->location_at_length(path, t), ts),
+        idx = argmin(map(p1 -> distance(p, p1), pts))
+      length_at_location(path, p, ts[max(1, idx-1)], ts[min(length(ts), idx+1)])
+    end
