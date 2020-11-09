@@ -47,7 +47,19 @@ end
 #=
 We parameterize signatures to support different programming languages, e.g.
 Val{:CPP} is for C++ functions, while Val{:CS} is for C# static methods
+
+A basic type is represented with an identically-named symbol, e.g.,
+int -> :int
+An array type is represented with a tuple, e.g.,
+int[] -> (:array, :int)
+A parametric type is represented with a tuple, e.g.,
+Dict<int, string> -> (:Dict, :int, :string)
 =#
+
+parse_parameter(::Val{:CPP}, param::AbstractString) =
+  let m = match(r"^ *((?:\w|:|<|>)+) *([\[\]]*) *(\w+)$", decl)
+    (type_name(m.captures[1]), count(c -> c=='[', something(m.captures[2], "")), Symbol(m.captures[3]))
+  end
 
 # C++
 parse_signature(::Val{:CPP}, sig::AbstractString) =
@@ -255,10 +267,10 @@ decode(ns::Val{NS}, t::Vector{T}, c::IO) where {NS,T} = begin
   [decode(ns, sub, c) for i in 1:len]
 end
 
-# Some generic conversions for C#
-encode(ns::Val{:CS}, t::Val{:size}, c::IO, v) =
+# Some generic conversions for C# and C++
+encode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:size}, c::IO, v) =
   encode(ns, Val(:int), c, v)
-decode(ns::Val{:CS}, t::Val{:size}, c::IO) =
+decode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:size}, c::IO) =
   decode_or_error(ns, Val(:int), c, -1)
 
 encode(ns::Val{:CS}, t::Val{:bool}, c::IO, v::Bool) =
@@ -271,31 +283,36 @@ encode(::Val{:CS}, t::Val{:byte}, c::IO, v) =
 decode(::Val{:CS}, t::Val{:byte}, c::IO) =
   convert(UInt8, read(c, UInt8))
 
-encode(::Val{:CS}, t::Val{:int}, c::IO, v) =
+# Assuming int is four bytes in C++
+encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:int}, c::IO, v) =
   write(c, convert(Int32, v))
-decode(::Val{:CS}, t::Val{:int}, c::IO) =
+decode(::Union{Val{:CS},Val{:CPP}}, t::Val{:int}, c::IO) =
   convert(Int, read(c, Int32))
 
-encode(::Val{:CS}, t::Val{:long}, c::IO, v) =
+# Assuming long is eight bytes in C++
+encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:long}, c::IO, v) =
   write(c, convert(Int64, v))
-decode(::Val{:CS}, t::Val{:long}, c::IO) =
+decode(::Union{Val{:CS},Val{:CPP}}, t::Val{:long}, c::IO) =
   convert(Int, read(c, Int64))
 
-encode(::Val{:CS}, t::Val{:float}, c::IO, v) =
+# Assuming float is four bytes in C++
+encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:float}, c::IO, v) =
   write(c, convert(Float32, v))
-decode(ns::Val{:CS}, t::Val{:float}, c::IO) =
+decode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:float}, c::IO) =
   let d = read(c, Float32)
     isnan(d) ? backend_error(ns, c) : convert(Float64, d)
   end
 
-encode(::Val{:CS}, t::Val{:double}, c::IO, v) =
+# Assuming double is eight bytes in C++
+encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:double}, c::IO, v) =
   write(c, convert(Float64, v))
-decode(ns::Val{:CS}, t::Val{:double}, c::IO) =
+decode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:double}, c::IO) =
   let d = read(c, Float64)
     isnan(d) ? backend_error(ns, c) : d
   end
 
-encode(::Val{:CS}, ::Val{:string}, c::IO, v) = begin
+# The binary_stream we use with C++ replicates C# behavior
+encode(::Union{Val{:CS},Val{:CPP}}, ::Union{Val{:string},Val{:String}}, c::IO, v) = begin
   str = string(v)
   size = length(str)
   array = UInt8[]
@@ -327,7 +344,7 @@ decode(::Val{:CS}, ::Val{:string}, c::IO) = begin
   loop(0, 0)
 end
 =#
-decode(::Val{:CS}, ::Val{:string}, c::IO) = begin
+decode(::Union{Val{:CS},Val{:CPP}}, ::Union{Val{:string},Val{:String}}, c::IO) = begin
   size::Int = 0
   shift::Int = 0
   while true
@@ -340,12 +357,6 @@ decode(::Val{:CS}, ::Val{:string}, c::IO) = begin
     end
   end
 end
-
-# C# uses two different names for strings
-encode(ns::Val{:CS}, ::Val{:String}, c::IO, v) =
-  encode(ns, Val(:string), c, v)
-decode(ns::Val{:CS}, ::Val{:String}, c::IO) =
-  decode(ns, Val(:string), c)
 
 decode(ns::Val{:CS}, t::Val{:void}, c::IO) =
   decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
@@ -370,8 +381,8 @@ decode(ns::Val{:CS}, ::Val{:Guid}, c::IO) =
 macro encode_decode_as(ns, from, to)
   esc(
     quote
-      encode(ns::Val{$ns}, ::Val{$from}, c::IO, v) = encode(ns, Val($to), c, v)
-      decode(ns::Val{$ns}, ::Val{$from}, c::IO) = decode(ns, Val($to), c)
+      encode(ns::Val{$ns}, ::$from, c::IO, v) = encode(ns, $to(), c, v)
+      decode(ns::Val{$ns}, ::$from, c::IO) = decode(ns, $to(), c)
     end)
 end
 
@@ -422,3 +433,9 @@ decode_id(c::IO) =
       id
     end
   end
+
+encode(ns::Val{NS}, ::Val{RGB}, c::IO, v) where {NS} =
+  encode(ns, Val(:float3), c, (v.red, v.green, v.blue))
+
+decode(ns::Val{NS}, ::Val{RGB}, c::IO) where {NS} =
+  rgb(decode(ns, Val(:float3), c)...)
