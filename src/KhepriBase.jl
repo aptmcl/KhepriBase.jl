@@ -27,6 +27,9 @@ include("Primitives.jl")
 include("BIM.jl")
 include("Camera.jl")
 
+export khepribase_interface_file
+khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
+
 # From ColorTypes
 export RGB, RGBA, rgb
 
