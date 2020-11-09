@@ -34,9 +34,9 @@ maybe_replace(level::Level) = get!(levels_cache, level.height, level)
 convert(::Type{Level}, h::Real) = level(h)
 
 current_levels() = values(level_cache)
-default_level = OptionParameter{Level}()
+default_level = OptionParameter{Level}(level())
 default_level_to_level_height = Parameter{Real}(3)
-upper_level(lvl=default_level(), height=default_level_to_level_height()) = level(lvl.height + height, backend=backend(lvl))
+upper_level(lvl=default_level(), height=default_level_to_level_height()) = level(lvl.height + height)
 Base.:(==)(l1::Level, l2::Level) = l1.height == l2.height
 
 #default implementation
