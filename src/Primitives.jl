@@ -362,6 +362,7 @@ decode(ns::Val{:CS}, t::Val{:void}, c::IO) =
   decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
 
 # Useful CS types
+export Guid, Guids
 const Guid = Vector{UInt8}
 const Guids = Vector{Guid}
 
