@@ -316,8 +316,6 @@ backend_surface_polygon(b::Backend, mat, path::Path, acw) =
 @bdef surface_polygon(mat, vs::Locs, acw::Bool)
 @bdef surface_polygon(vs::Locs)
 #@bdef sweep(path::Shape, profile::Shape, rotation::Real, scale::Real)
-@bdef truss_analysis(load::Vec)
-
 
 #@bdef wall(path, height, l_thickness, r_thickness, family)
 

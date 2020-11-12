@@ -1002,7 +1002,7 @@ Base.@kwdef struct TrussNodeSupport
     rz::Bool=false
 end
 
-truss_node_support = TrussNodeSupport
+const truss_node_support = TrussNodeSupport
 
 @deffamily(truss_node_family, Family,
     radius::Real=0.2,
@@ -1031,13 +1031,21 @@ fixed_truss_node_family =
 
 realize(b::Backend, s::TrussNode) =
   with_family_in_layer(b, s.family) do
-    sphere(s.p, s.family.radius)
+    let rs = backend_sphere(b, s.p, s.family.radius)
+      truss_node_is_supported(s) ?
+        [rs, backend_regular_pyramid(b, 4, add_z(s.p, -2*s.family.radius),
+                                     s.family.radius, 0, 2*s.family.radius, false)] :
+        rs
+    end
   end
 realize(b::Backend, s::TrussBar) =
   with_family_in_layer(b, s.family) do
-    cylinder(s.p0, s.family.radius, s.p1)
+    let (c, h) = position_and_height(s.p0, s.p1)
+      backend_cylinder(b, c, s.family.radius, h)
+    end
   end
 
+export truss_node_is_supported
 truss_node_is_supported(n) =
   let s = n.family.support
     s != false && (s.ux || s.uy || s.uz || s.rx || s.ry || s.rz)
@@ -1050,6 +1058,12 @@ truss_bar_volume(s::TrussBar) =
 
 
 # Should we merge coincident nodes?
+export merge_coincident_truss_nodes,
+       coincident_truss_nodes_distance,
+       merge_coincident_truss_bars,
+       maybe_merged_node,
+       maybe_merged_bar
+
 const merge_coincident_truss_nodes = Parameter(true)
 const coincident_truss_nodes_distance = Parameter(1e-6)
 
@@ -1091,6 +1105,8 @@ maybe_merged_bar(b::Backend, s::TrussBar) =
 # Many analysis tools prefer a simplified node-and-bar representation.
 # To merge nodes and bars we need a different structure. Maybe we should merge
 # this with the BIM information
+export TrussNodeData, truss_node_data, TrussBarData, truss_bar_data
+
 struct TrussNodeData
     id::Int
     loc::Loc
@@ -1113,6 +1129,7 @@ end
 truss_bar_data(id::Int, node0::TrussNodeData, node1::TrussNodeData, rotation::Real, family::Any) =
   TrussBarData(id, node0, node1, rotation, family)
 
+export process_nodes, process_bars
 process_nodes(nodes, load=vz(0)) =
   [truss_node_data(i, in_world(node.p), node.family, load)
    for (i, node) in enumerate(nodes)]
@@ -1132,18 +1149,18 @@ process_bars(bars, processed_nodes) =
      for (i, bar) in enumerate(bars)]
   end
 
-#=
-HACK TO BE COMPLETED
 # Analysis
 @defcb truss_analysis(load::Vec=vz(-1e5))
 @defcb truss_bars_volume()
 
+#=
+HACK TO BE COMPLETED
 #HACK using LazyBackend just to avoid redefinitions.
 backend_truss_bars_volume(b::LazyBackend) =
   sum(truss_bar_volume, b.truss_bars)
 
 # To visualize results:
-
+=#
 @defcb show_truss_deformation(
     displacement::Any=nothing,
     visualizer::Backend=autocad,
@@ -1153,18 +1170,19 @@ backend_truss_bars_volume(b::LazyBackend) =
     no_deformation_name::String="No deformation",
     no_deformation_color::RGB=rgb(0, 1, 0))
 
-#HACK using LazyBackend just to avoid redefinitions.
-backend_show_truss_deformation(b::LazyBackend,
+@defcb node_displacement_function(res::Any)
+
+backend_show_truss_deformation(b::Backend{K,T},
     results::Any,
     visualizer::Backend,
     node_radius::Real, bar_radius::Real, factor::Real,
     deformation_name::String, deformation_color::RGB,
-    no_deformation_name::String, no_deformation_color::RGB) =
+    no_deformation_name::String, no_deformation_color::RGB) where {K,T} =
   with(current_backend, visualizer) do
     delete_all_shapes()
-    let deformation_layer = create_layer(deformation_name, color=deformation_color),
-        no_deformation_layer = create_layer(no_deformation_name, color=no_deformation_color),
-        disp = node_displacement_function(b, results)
+    let deformation_layer = backend_create_layer(visualizer, deformation_name, true, deformation_color),
+        no_deformation_layer = backend_create_layer(visualizer, no_deformation_name, true, no_deformation_color),
+        disp = backend_node_displacement_function(b, results)
       with(current_layer, no_deformation_layer) do
         for node in b.truss_node_data
           p = node.loc
@@ -1200,7 +1218,6 @@ max_displacement(results, b::Backend=current_backend()) =
     maximum(map(norm∘disp, b.truss_node_data))
   end
 
-  =#
 ###################################
 # BIM
 @defcb all_levels()
