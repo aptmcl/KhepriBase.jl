@@ -526,10 +526,10 @@ those shapes appear and disappear by activating or deactivating the layer.
 realize(b::Backend, l::Layer) =
   backend_layer(b, l.name, l.active, l.color)
 
-@defcbs create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
+@defcb create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
 @defcb current_layer()
 
-@defcbs current_layer(layer)
+@defcb current_layer(layer)
 @defcbs set_layer_active(layer, status)
 @defcbs switch_to_layer(layer)
 
