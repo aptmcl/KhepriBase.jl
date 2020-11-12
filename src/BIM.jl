@@ -1161,29 +1161,21 @@ backend_truss_bars_volume(b::LazyBackend) =
 
 # To visualize results:
 =#
-@defcb show_truss_deformation(
-    displacement::Any=nothing,
-    visualizer::Backend=autocad,
+@defcb node_displacement_function(res::Any)
+
+export show_truss_deformation
+show_truss_deformation(
+    results::Any=nothing,
+    visualizer::Backend=autocad;
     node_radius::Real=0.08, bar_radius::Real=0.02, factor::Real=100,
     deformation_name::String="Deformation",
     deformation_color::RGB=rgb(1, 0, 0),
     no_deformation_name::String="No deformation",
-    no_deformation_color::RGB=rgb(0, 1, 0))
-
-@defcb node_displacement_function(res::Any)
-
-backend_show_truss_deformation(b::Backend{K,T},
-    results::Any,
-    visualizer::Backend,
-    node_radius::Real, bar_radius::Real, factor::Real,
-    deformation_name::String, deformation_color::RGB,
-    no_deformation_name::String, no_deformation_color::RGB) where {K,T} =
-  with(current_backend, visualizer) do
-    delete_all_shapes()
-    let deformation_layer = backend_create_layer(visualizer, deformation_name, true, deformation_color),
-        no_deformation_layer = backend_create_layer(visualizer, no_deformation_name, true, no_deformation_color),
-        disp = backend_node_displacement_function(b, results)
-      with(current_layer, no_deformation_layer) do
+    no_deformation_color::RGB=rgb(0, 1, 0)) =
+  let disp = node_displacement_function(results),
+      b = current_backend()
+    with(current_backend, visualizer) do
+      with(current_layer, create_layer(no_deformation_name, true, no_deformation_color)) do
         for node in b.truss_node_data
           p = node.loc
           sphere(p, node_radius)
@@ -1195,7 +1187,7 @@ backend_show_truss_deformation(b::Backend{K,T},
           end
         end
       end
-      with(current_layer, deformation_layer) do
+      with(current_layer, create_layer(deformation_name, true, deformation_color)) do
         for node in b.truss_node_data
           d = disp(node)*factor
           p = node.loc

@@ -58,7 +58,7 @@ export @remote_functions,
        backend_loft_surface_point,
        backend_loft_surfaces,
        backend_map_division,
-       backend_node_displacement_function
+       backend_node_displacement_function,
        backend_panel,
        backend_sphere,
        backend_regular_pyramid,

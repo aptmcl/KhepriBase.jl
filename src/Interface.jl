@@ -82,7 +82,6 @@ import KhepriBase:
   #backend_set_length_unit,
   backend_set_view,
   #backend_shape_from_ref,
-  backend_show_truss_deformation,
   backend_slab,
   backend_sphere,
   #backend_spotlight,
