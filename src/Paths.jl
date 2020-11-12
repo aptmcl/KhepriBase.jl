@@ -362,28 +362,28 @@ location_at_length(path::RectangularPath, d::Real) =
         end
     end
 location_at_length(path::OpenPolygonalPath, d::Real) =
-    let p = path.vertices[1]
-        for i in 2:length(path.vertices)
-            pp = path.vertices[i]
-            delta = distance(p, pp)
-            if d - delta < path_tolerance()
-                phi = pol_phi(pp - p)
-                return loc_from_o_phi(add_pol(p, d, phi), phi)
-            else
-                p = pp
-                d -= delta
-            end
-        end
-        error("Exceeded path length by ", d)
+  let p = path.vertices[1]
+    for i in 2:length(path.vertices)
+      pp = path.vertices[i]
+      delta = distance(p, pp)
+      if d - delta < path_tolerance()
+        v = unitized(pp - p)
+        return loc_from_o_vz(p+v*delta, v)
+      else
+        p = pp
+        d -= delta
+      end
     end
+    error("Exceeded path length by ", d)
+  end
 location_at_length(path::ClosedPolygonalPath, d::Real) =
   let p = path.vertices[1]
     for i in countfrom(1)
       pp = path.vertices[i%length(path.vertices)+1]
       delta = distance(p, pp)
       if d - delta < path_tolerance()
-        phi = pol_phi(pp - p)
-        return loc_from_o_phi(add_pol(p, d, phi), phi)
+        v = unitized(pp - p)
+        return loc_from_o_vz(p+v*delta, v)
       else
         p = pp
         d -= delta
