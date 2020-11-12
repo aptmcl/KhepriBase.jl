@@ -170,7 +170,7 @@ const dyn_refs = DynRefs
 
 abstract type Proxy end
 
-backend(s::Proxy) = s.ref.backend
+backend(s::Proxy) = first(first(s.ref))
 
 realized_in(s::Proxy, b::Backend) = s.ref.created == s.ref.deleted + 1
 # This is so stupid. We need call-next-method.
@@ -528,6 +528,7 @@ realize(b::Backend, l::Layer) =
 
 @defcbs create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
 @defcb current_layer()
+
 @defcbs current_layer(layer)
 @defcbs set_layer_active(layer, status)
 @defcbs switch_to_layer(layer)
@@ -706,6 +707,8 @@ text_centered(str::String="", center::Loc=u0(), height::Real=1) =
 @defproxy(unknown, Shape3D, baseref::Any=required())
 
 @defproxy(sphere, Shape3D, center::Loc=u0(), radius::Real=1)
+realize(b::Backend, s::Sphere) =
+  backend_sphere(b, s.center, s.radius)
 @defproxy(torus, Shape3D, center::Loc=u0(), re::Real=1, ri::Real=1/2)
 @defproxy(cuboid, Shape3D,
   b0::Loc=u0(),        b1::Loc=add_x(b0,1), b2::Loc=add_y(b1,1), b3::Loc=add_x(b2,-1),
@@ -719,10 +722,13 @@ regular_pyramid_frustum(edges::Integer, cb::Loc, rb::Real, angle::Real, ct::Loc,
     regular_pyramid_frustum(edges, c, rb, angle, h, rt, inscribed)
   end
 realize(b::Backend, s::RegularPyramidFrustum) =
+  backend_regular_pyramid_frustum(b, s.edges, s.cb, s.rb, s.angle, s.h, s.rt, s.inscribed)
+
+backend_regular_pyramid_frustum(b::Backend, edges, cb, rb, angle, h, rt, inscribed) =
   backend_pyramid_frustum(
     b,
-    regular_polygon_vertices(s.edges, s.cb, s.rb, s.angle, s.inscribed),
-    regular_polygon_vertices(s.edges, add_z(s.cb, s.h), s.rt, s.angle, s.inscribed))
+    regular_polygon_vertices(edges, cb, rb, angle, inscribed),
+    regular_polygon_vertices(edges, add_z(cb, h), rt, angle, inscribed))
 
 @defproxy(regular_pyramid, Shape3D, edges::Integer=3, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
 regular_pyramid(edges::Integer, cb::Loc, rb::Real, angle::Real, ct::Loc, inscribed::Bool=true) =
@@ -730,10 +736,11 @@ regular_pyramid(edges::Integer, cb::Loc, rb::Real, angle::Real, ct::Loc, inscrib
     regular_pyramid(edges, c, rb, angle, h, inscribed)
   end
 realize(b::Backend, s::RegularPyramid) =
-  backend_pyramid(
-    b,
-    regular_polygon_vertices(s.edges, s.cb, s.rb, s.angle, s.inscribed),
-    add_z(s.cb, s.h))
+  backend_regular_pyramid(b, s.edges, s.cb, s.rb, s.angle, s.h, s.inscribed)
+backend_regular_pyramid(b, edges, cb, rb, angle, h, inscribed) =
+  backend_pyramid(b,
+    regular_polygon_vertices(edges, cb, rb, angle, inscribed),
+    add_z(cb, h))
 
 @defproxy(irregular_pyramid_frustum, Shape3D, bs::Locs=[ux(), uy(), uxy()], ts::Locs=[uxz(), uyz(), uxyz()])
 realize(b::Backend, s::IrregularPyramidFrustum) =
@@ -1130,6 +1137,9 @@ bounding_box(shapes::Shapes=Shape[]) =
   else
     backend_bounding_box(backend(shapes[1]), shapes)
   end
+
+backend_bounding_box(backend::Backend, shape::Shape) =
+  throw(UndefinedBackendException())
 
 delete_shape(shape::Shape, bs=current_backends()) =
   delete_shapes([shape], bs)
