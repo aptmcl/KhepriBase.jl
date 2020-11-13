@@ -1175,6 +1175,7 @@ show_truss_deformation(
   let disp = node_displacement_function(results),
       b = current_backend()
     with(current_backend, visualizer) do
+      delete_all_shapes()
       with(current_layer, create_layer(no_deformation_name, true, no_deformation_color)) do
         for node in b.truss_node_data
           p = node.loc
