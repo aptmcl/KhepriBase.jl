@@ -92,8 +92,7 @@ save_film_frame(obj::Any=true; render_view=render_view, backend=current_backend(
   begin
     if saving_film_frames()
       with(render_kind_dir, "Film") do
-        render_view(prepare_for_saving_file(render_pathname(frame_filename(film_filename(), film_frame()))),
-                    backend)
+        backend_render_view(backend, prepare_for_saving_file(render_pathname(frame_filename(film_filename(), film_frame()))))
         film_frame(film_frame() + 1)
       end
     end
