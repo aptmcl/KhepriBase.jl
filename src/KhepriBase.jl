@@ -19,6 +19,7 @@ import LinearAlgebra:
 include("Parameters.jl")
 include("Utils.jl")
 include("Coords.jl")
+include("Regions.jl")
 include("Paths.jl")
 include("Geometry.jl")
 include("Backends.jl")
