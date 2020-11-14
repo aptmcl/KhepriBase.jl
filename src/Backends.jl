@@ -41,6 +41,15 @@ current_backend() =
 current_backend(b::Backend) = current_backends((b,))
 has_current_backend() = !isempty(current_backends())
 
+export @backend
+macro backend(b, expr)
+  quote
+	with(current_backend, $(esc(b))) do
+	  $(esc(expr))
+    end
+  end
+end
+
 # Backends need to implement operations or an exception is triggered
 struct UnimplementedBackendOperationException <: Exception
 	backend
