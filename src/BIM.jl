@@ -1005,11 +1005,11 @@ end
 const truss_node_support = TrussNodeSupport
 
 @deffamily(truss_node_family, Family,
-    radius::Real=0.2,
+    radius::Real=0.03,
     support::Any=false) #(Option node_support)
 
 @deffamily(truss_bar_family, Family,
-    radius::Real=0.03,
+    radius::Real=0.02,
     inner_radius::Real=0)
 
 truss_bar_family_cross_section_area(f::TrussBarFamily) =
@@ -1033,8 +1033,8 @@ realize(b::Backend, s::TrussNode) =
   with_family_in_layer(b, s.family) do
     let rs = backend_sphere(b, s.p, s.family.radius)
       truss_node_is_supported(s) ?
-        [rs, backend_regular_pyramid(b, 4, add_z(s.p, -2*s.family.radius),
-                                     s.family.radius, 0, 2*s.family.radius, false)] :
+        rs : #[rs, backend_regular_pyramid(b, 4, add_z(s.p, -2*s.family.radius),
+              #                       s.family.radius, 0, 2*s.family.radius, false)] :
         rs
     end
   end
@@ -1162,6 +1162,29 @@ backend_truss_bars_volume(b::LazyBackend) =
 # To visualize results:
 =#
 @defcb node_displacement_function(res::Any)
+
+export view_truss_deformation
+view_truss_deformation(
+  results::Any=nothing,
+  visualizer::Backend=autocad;
+  factor::Real=100) =
+  let disp = node_displacement_function(results),
+      b = current_backend()
+    with(current_backend, visualizer) do
+      for node in b.truss_node_data
+        d = disp(node)*factor
+        p = node.loc
+        truss_node(p+d, family=node.family)
+      end
+      for bar in b.truss_bar_data
+        let (node1, node2) = (bar.node1, bar.node2),
+            (p1, p2) = (node1.loc, node2.loc),
+            (d1, d2) = (disp(node1)*factor, disp(node2)*factor)
+          truss_bar(p1+d1, p2+d2, family=bar.family)
+        end
+      end
+    end
+  end
 
 export show_truss_deformation
 show_truss_deformation(
