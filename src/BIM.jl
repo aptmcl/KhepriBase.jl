@@ -1137,8 +1137,11 @@ process_nodes(nodes, load=vz(0)) =
 process_bars(bars, processed_nodes) =
   let epsilon = coincident_truss_nodes_distance(),
       node_data_near(loc) =
-        for nd in processed_nodes
-          distance(loc, nd.loc) < epsilon && return nd
+        begin
+          for nd in processed_nodes
+            distance(loc, nd.loc) < epsilon && return nd
+          end
+          error("Bar without corresponding node at location $(loc)!")
         end
     [truss_bar_data(
       i,
@@ -1230,7 +1233,7 @@ show_truss_deformation(
 
 export max_displacement
 max_displacement(results, b::Backend=current_backend()) =
-  let disp = node_displacement_function(b, results)
+  let disp = node_displacement_function(results)
     maximum(map(norm∘disp, b.truss_node_data))
   end
 
