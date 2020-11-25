@@ -34,7 +34,7 @@ import KhepriBase:
   backend_extrusion,
   backend_fill,
   #backend_fill_curves,
-  #backend_frame_at,
+  backend_frame_at,
   #backend_generate_captured_shape,
   #backend_generate_captured_shapes,
   backend_get_family_ref,
@@ -110,5 +110,6 @@ import KhepriBase:
   save_shape!,
   subtract_ref,
   switch_to_layer,
+  truss_bar_family_cross_section_area,
   unite_ref
   #unite_refs,
