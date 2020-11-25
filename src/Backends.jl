@@ -31,6 +31,10 @@ showerror(io::IO, e::UndefinedBackendException) = print(io, "No current backend.
 # We can have several backends active at the same time
 const Backends = Tuple{Vararg{Backend}}
 const current_backends = Parameter{Backends}(())
+
+export add_current_backend
+add_current_backend(b::Backend) =
+  current_backends(tuple(b, current_backends()...))
 # but for backward compatibility reasons, we might also select just one.
 current_backend() =
 	let bs = current_backends()
@@ -45,6 +49,15 @@ export @backend
 macro backend(b, expr)
   quote
 	with(current_backend, $(esc(b))) do
+	  $(esc(expr))
+    end
+  end
+end
+
+export @backends
+macro backends(b, expr)
+  quote
+	with(current_backends, $(esc(b))) do
 	  $(esc(expr))
     end
   end
