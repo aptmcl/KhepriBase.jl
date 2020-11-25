@@ -176,6 +176,9 @@ backend_cylinder(b::Backend, c::Loc, r::Real, h::Real, material) =
 backend_fill(b, path) =
   backend_fill_curves(b, backend_stroke(b, path))
 
+backend_frame_at(b, c, t) = throw(UndefinedBackendException())
+backend_fill_curves(b, ids) = throw(UndefinedBackendException())
+
 #@bdef fill(m::Mesh)
 backend_fill(b::Backend, m::Mesh) =
   backend_surface_mesh(b, m.vertices, m.faces)
