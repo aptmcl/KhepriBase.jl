@@ -1,5 +1,3 @@
-import LinearAlgebra.cross, LinearAlgebra.dot, LinearAlgebra.norm
-
 export Loc, Locs, LocOrZ,
        Vec, Vecs, VecOrZ,
        XYZ, xyz, cyl, sph,
@@ -24,9 +22,17 @@ export Loc, Locs, LocOrZ,
        cs_from_o_vx_vy,
        cs_from_o_vz,
        cs_from_o_phi,
+       cs_from_o_rot_x,
+       cs_from_o_rot_y,
+       cs_from_o_rot_z,
+       cs_from_o_rot_zyx,
        loc_from_o_vx_vy,
        loc_from_o_vz,
        loc_from_o_phi,
+       loc_from_o_rot_x,
+       loc_from_o_rot_y,
+       loc_from_o_rot_z,
+       loc_from_o_rot_zyx,
        min_loc, max_loc,
        is_world_cs,
        in_cs, in_world,
@@ -78,18 +84,48 @@ struct CS
 end
 
 translated_cs(cs::CS, x::Real, y::Real, z::Real) =
-    CS(cs.transform * Mat4f([
-        1 0 0 x;
-        0 1 0 y;
-        0 0 1 z;
-        0 0 0 1]))
+  CS(cs.transform * Mat4f([
+      1 0 0 x;
+      0 1 0 y;
+      0 0 1 z;
+      0 0 0 1]))
 
 scaled_cs(cs::CS, x::Real, y::Real, z::Real) =
+  CS(cs.transform * Mat4f([
+      x 0 0 0;
+      0 y 0 0;
+      0 0 z 0;
+      0 0 0 1]))
+
+rotated_x_cs(cs::CS, α::Real) =
+  let (s, c) = sincos(α)
     CS(cs.transform * Mat4f([
-        x 0 0 0;
-        0 y 0 0;
-        0 0 z 0;
+        1 0  0 0;
+        0 c -s 0;
+        0 s  c 0;
+        0 0  0 1]))
+  end
+rotated_y_cs(cs::CS, α::Real) =
+  let (s, c) = sincos(α)
+    CS(cs.transform * Mat4f([
+        c 0 s 0;
+        0 1 0 0;
+       -s 0 c 0;
         0 0 0 1]))
+  end
+rotated_z_cs(cs::CS, α::Real) =
+  let (s, c) = sincos(α)
+    CS(cs.transform * Mat4f([
+        c -s 0 0;
+        s  c 0 0;
+        0  0 1 0;
+        0  0 0 1]))
+  end
+rotated_zyx_cs(cs::CS, x::Real, y::Real, z::Real) =
+  rotated_x_cs(rotated_y_cs(rotated_z_cs(cs, z), y), x)
+
+export rotated_x_cs, rotated_y_cs, rotated_z_cs, rotated_zyx_cs
+
 
 center_scaled_cs(cs::CS, x::Real, y::Real, z::Real) =
     let xt = cs.transform[4,1]
@@ -320,7 +356,10 @@ in_world(p) = in_cs(p, world_cs)
 export inverse_transformation
 inverse_transformation(p::Loc) = xyz(0,0,0, CS(inv(translated_cs(p.cs, p.x, p.y, p.z).transform)))
 
-
+transform(p, trans::Loc) =
+  let pw = in_world(p)
+    xyz(pw.x, pw.y, pw.z, trans.cs)
+  end
 cs_from_o_vx_vy_vz(o::Loc, ux::Vec, uy::Vec, uz::Vec) =
   CS(SMatrix{4,4,Float64}(ux.x, ux.y, ux.z, 0, uy.x, uy.y, uy.z, 0, uz.x, uz.y, uz.z, 0, o.x, o.y, o.z, 1))
 
@@ -347,7 +386,7 @@ cs_from_o_vz(o::Loc, n::Vec) =
       vz = unitized(n)
     cs_from_o_vx_vy_vz(o, vx, vy, vz)
   end
-
+#=
 cs_from_o_phi(o::Loc, phi::Real) =
   let vx = in_world(vcyl(1, phi, 0, o.cs))
       vy = in_world(vcyl(1, phi + pi/2, 0, o.cs))
@@ -355,10 +394,19 @@ cs_from_o_phi(o::Loc, phi::Real) =
       o = in_world(o)
       cs_from_o_vx_vy_vz(o, vx, vy, vz)
   end
+  =#
+cs_from_o_phi(o::Loc, phi::Real) =
+  rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), phi)
+
 
 loc_from_o_vx_vy(o::Loc, vx::Vec, vy::Vec) = u0(cs_from_o_vx_vy(o, vx, vy))
 loc_from_o_vz(o::Loc, vz::Vec) = u0(cs_from_o_vz(o, vz))
 loc_from_o_phi(o::Loc, phi::Real) = u0(cs_from_o_phi(o, phi))
+loc_from_o_rot_x(o::Loc, phi::Real) = u0(rotated_x_cs(translated_cs(o.cs, o.x, o.y, o.z), phi))
+loc_from_o_rot_y(o::Loc, phi::Real) = u0(rotated_y_cs(translated_cs(o.cs, o.x, o.y, o.z), phi))
+loc_from_o_rot_z(o::Loc, phi::Real) = u0(rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), phi))
+loc_from_o_rot_zyx(o::Loc, z::Real, y::Real, x::Real) =
+  u0(rotated_x_cs(rotated_y_cs(rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), z), y), x))
 
 #To handle the common case
 maybe_loc_from_o_vz(o::Loc, n::Vec) =
