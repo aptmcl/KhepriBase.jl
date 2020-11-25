@@ -1052,7 +1052,7 @@ truss_node_is_supported(n) =
   end
 
 truss_bar_cross_section_area(s::TrussBar) =
-  truss_bar_family_cross_section_area(backend_family(backend(s), s.family))
+  truss_bar_family_cross_section_area(family_ref(current_backend(), s.family))
 truss_bar_volume(s::TrussBar) =
   truss_bar_cross_section_area(s)*distance(s.p0, s.p1)
 
@@ -1153,17 +1153,9 @@ process_bars(bars, processed_nodes) =
   end
 
 # Analysis
-@defcb truss_analysis(load::Vec=vz(-1e5))
-@defcb truss_bars_volume()
+@defcb truss_analysis(load::Vec=vz(-1e5), self_weight::Bool=false)
+@defcb truss_bars_volume() = sum(truss_bar_volume, backend.truss_bars)
 
-#=
-HACK TO BE COMPLETED
-#HACK using LazyBackend just to avoid redefinitions.
-backend_truss_bars_volume(b::LazyBackend) =
-  sum(truss_bar_volume, b.truss_bars)
-
-# To visualize results:
-=#
 @defcb node_displacement_function(res::Any)
 
 export view_truss_deformation
