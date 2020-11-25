@@ -33,7 +33,7 @@ import KhepriBase:
   backend_enable_update,
   backend_extrusion,
   backend_fill,
-  #backend_fill_curves,
+  backend_fill_curves,
   backend_frame_at,
   #backend_generate_captured_shape,
   #backend_generate_captured_shapes,
