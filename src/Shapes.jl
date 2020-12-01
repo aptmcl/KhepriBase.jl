@@ -1004,6 +1004,8 @@ surface_domain(s::SurfaceRectangle) = (0, s.dx, 0, s.dy)
 surface_domain(s::SurfaceCircle) = (0, s.radius, 0, 2pi)
 surface_domain(s::SurfaceArc) = (0, s.radius, s.start_angle, s.amplitude)
 
+export backend_frame_at
+backend_frame_at(b::Backend, s::Shape2D, u::Real, v::Real) = error("BUM")
 
 frame_at(c::Shape1D, t::Real) = backend_frame_at(backend(c), c, t)
 frame_at(s::Shape2D, u::Real, v::Real) = backend_frame_at(backend(s), s, u, v)
