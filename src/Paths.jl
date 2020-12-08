@@ -54,7 +54,9 @@ export empty_path,
        mirrored_path,
        mirrored_on_x,
        mirrored_on_y,
-       mirrored_on_z
+       mirrored_on_z,
+       ClosedPath,
+       OpenPath
 
 path_tolerance = Parameter(1e-10)
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < path_tolerance()
