@@ -35,10 +35,12 @@ khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
 export RGB, RGBA, rgb
 
 
-export @remote_functions,
+export and_mark_deleted,
+       @remote_functions,
        parse_signature,
        encode,
        decode,
+       decode_or_error,
        @encode_decode_as,
        SocketBackend,
        create_backend_connection,
@@ -81,5 +83,14 @@ export @remote_functions,
        shape_from_ref,
        show_truss_deformation,
        slice_ref
+
+# Ports for socket-based backends are defined here to avoid conflicts
+export autocad_port, rhino_port, unity_port, unreal_port, blender_port
+const autocad_port = 11000
+const rhino_port = 12000
+const unity_port = 11002
+const unreal_port = 11010
+const blender_port = 11003
+
 
 end
