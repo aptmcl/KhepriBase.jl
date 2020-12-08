@@ -55,12 +55,7 @@ int[] -> (:array, :int)
 A parametric type is represented with a tuple, e.g.,
 Dict<int, string> -> (:Dict, :int, :string)
 =#
-
-parse_parameter(::Val{:CPP}, param::AbstractString) =
-  let m = match(r"^ *((?:\w|:|<|>)+) *([\[\]]*) *(\w+)$", decl)
-    (type_name(m.captures[1]), count(c -> c=='[', something(m.captures[2], "")), Symbol(m.captures[3]))
-  end
-
+#=
 # C++
 parse_signature(::Val{:CPP}, sig::AbstractString) =
   let func_name(name) = replace(name, ":" => "_"),
@@ -91,8 +86,105 @@ parse_signature(::Val{:CS}, sig::AbstractString) =
     (name, name, [parse_c_decl(decl) for decl in params], (ret, array_level))
   end
 
-parse_signature(::Val{:Python}, sig::AbstractString) =
-  (:yeah, :whatever)
+# Python
+parse_signature(::Val{:PY}, sig::AbstractString) =
+  let m = match(r"^ *def +(\w+) *(\(.*\)) *-> *(.+) *: *", sig),
+      name = m.captures[1],
+      params = m.captures[2],
+      ret = m.captures[3],
+      parse_type(t) =
+        if t isa Symbol
+          (t, 0)
+        elseif t.head === :ref
+          if t.args[1] === :List
+            (s, l) = parse_type(t.args[2])
+            (s, l + 1)
+          elseif t.args[1] === :Tuple
+            (Symbol(:T, join(t.args[2:end], "_"), :T), 0)
+          else
+            error("Uknown expression $(t)")
+          end
+        else
+          error("Uknown expression $(t)")
+        end,
+      parse_params(ast) =
+        let parse_param(p) = (parse_type(p.args[3])..., p.args[2])
+          if ast.head === :tuple
+            map(parse_param, ast.args)
+          elseif ast.head === :call
+            [parse_param(ast)]
+          else
+            error("Uknown expression $(t)")
+          end
+        end
+    (name, name, parse_params(Meta.parse(params)), parse_type(Meta.parse(ret)))
+  end
+=#
+###########################################################
+# New version
+# C++
+parse_signature(::Val{:CPP}, sig::AbstractString) =
+  let func_name(name) = replace(name, ":" => "_"),
+      type_name(name) = replace(name, r"[:<>]" => "_"),
+      packtype(t, n) = foldr((i,v)->Vector{v}, 1:n, init=Val{Symbol(t)}),
+      m = match(r"^ *(public|) *(\w+) *([\[\]]*) +((?:\w|:|<|>)+) *\( *(.*) *\)", sig),
+      ret = packtype(type_name(m.captures[2]), count(c -> c=='[', something(m.captures[3], ""))),
+      name = m.captures[4],
+      params = split(m.captures[5], r" *, *", keepempty=false),
+      parse_c_decl(decl) =
+        let m = match(r"^ *((?:\w|:|<|>)+) *([\[\]]*) *(\w+)$", decl)
+          (packtype(type_name(m.captures[1]), count(c -> c=='[', something(m.captures[2], ""))), Symbol(m.captures[3]))
+        end
+    (func_name(name), name, [parse_c_decl(decl) for decl in params], ret)
+  end
+
+# C#
+parse_signature(::Val{:CS}, sig::AbstractString) =
+  let packtype(t, n) = foldr((i,v)->Vector{v}, 1:n, init=Val{Symbol(t)}),
+      m = match(r"^ *(public|) *(\w+) *([\[\]]*) +(\w+) *\( *(.*) *\)", sig),
+      ret = packtype(m.captures[2], count(c -> c=='[', something(m.captures[3], ""))),
+      name = m.captures[4],
+      params = split(m.captures[5], r" *, *", keepempty=false),
+      parse_c_decl(decl) =
+        let m = match(r"^ *(\w+) *([\[\]]*) *(\w+)$", decl)
+          (packtype(m.captures[1], count(c -> c=='[', something(m.captures[2], ""))), Symbol(m.captures[3]))
+    end
+    (name, name, [parse_c_decl(decl) for decl in params], ret)
+  end
+
+# Python
+parse_signature(::Val{:PY}, sig::AbstractString) =
+  let m = match(r"^ *def +(\w+) *(\(.*\)) *-> *(.+) *: *", sig),
+      name = m.captures[1],
+      params = m.captures[2],
+      ret = m.captures[3],
+      parse_type(t) =
+        if t isa Symbol
+          Val{t}
+        elseif t.head === :ref
+          if t.args[1] === :List
+            Vector{parse_type(t.args[2])}
+          elseif t.args[1] === :Tuple
+            Tuple{map(parse_type, t.args[2:end])...}
+          else
+            error("Uknown expression $(t)")
+          end
+        else
+          error("Uknown expression $(t)")
+        end,
+      parse_params(ast) =
+        let parse_param(p) = (parse_type(p.args[3]), p.args[2])
+          if ast.head === :tuple
+            map(parse_param, ast.args)
+          elseif ast.head === :call
+            [parse_param(ast)]
+          else
+            error("Uknown expression $(t)")
+          end
+        end
+    (name, name, parse_params(Meta.parse(params)), parse_type(Meta.parse(ret)))
+  end
+
 
 #=
 A remote function encapsulates the information needed for communicating with remote
@@ -127,7 +219,7 @@ remote_function(ns::T,
 request_operation(f::RemoteFunction{T}, conn::IO) where {T} = begin
   encode(f.namespace, Val(:int), conn, 0)
   encode(f.namespace, Val(:string), conn, f.remote_name)
-  op = decode(f.namespace, Val(:int), conn)
+  op = decode(f.namespace, Val(:size), conn)
   if op == -1
     error(f.remote_name * " is not available")
   else
@@ -156,9 +248,12 @@ The most important part is the lang_rpc function. It parses the string describin
 signature of the remote function, generates a function to encode arguments and
 retrieve results and, finally, creates the remote_function object.
 =#
-
+#=
 remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
-  let packtype(t, n) = foldr((i,v)->:(Vector{$v}), 1:n, init=:(Val{$(QuoteNode(Symbol(t)))})),
+  let packtype(t, n) =
+        let init = t isa Tuple ? :(Tuple{$(t...)}) : t
+          foldr((i,v)->:(Vector{$v}), 1:n, init=:(Val{$(QuoteNode(Symbol(t)))}))
+        end,
       namespace = :(Val{$(nssym)}())
     :(remote_function(
            $(namespace),
@@ -178,6 +273,31 @@ remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
               complete_rpc_call(conn, opcode,
                 decode($(namespace),
                        $(packtype(ret[1], ret[2]))(), conn))
+            end))
+  end
+=#
+###################################################
+# New version
+remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
+  let namespace = :(Val{$(nssym)}())
+    :(remote_function(
+           $(namespace),
+           $(sig),
+           $(local_name),
+           $(remote_name),
+           (opcode, conn, buf, $([p[2] for p in params]...)) -> begin
+              initiate_rpc_call(conn, opcode, $(remote_name))
+              take!(buf) # Reset the buffer just in case there was an encoding error on a previous call
+              encode($(namespace), Val(:int), buf, opcode)
+              $([:(encode($(namespace),
+                          $(p[1])(),
+                          buf,
+                          $(p[2])))
+                 for p in params]...)
+              write(conn, take!(buf))
+              complete_rpc_call(conn, opcode,
+                decode($(namespace),
+                       $(ret)(), conn))
             end))
   end
 
@@ -267,10 +387,10 @@ decode(ns::Val{NS}, t::Vector{T}, c::IO) where {NS,T} = begin
   [decode(ns, sub, c) for i in 1:len]
 end
 
-# Some generic conversions for C# and C++
-encode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:size}, c::IO, v) =
+# Some generic conversions for C#, C++, and Python
+encode(ns::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:size}, c::IO, v) =
   encode(ns, Val(:int), c, v)
-decode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:size}, c::IO) =
+decode(ns::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:size}, c::IO) =
   decode_or_error(ns, Val(:int), c, -1)
 
 encode(ns::Val{:CS}, t::Val{:bool}, c::IO, v::Bool) =
@@ -278,15 +398,15 @@ encode(ns::Val{:CS}, t::Val{:bool}, c::IO, v::Bool) =
 decode(ns::Val{:CS}, t::Val{:bool}, c::IO) =
   decode_or_error(ns, Val(:byte), c, UInt8(127)) == UInt8(1)
 
-encode(::Val{:CS}, t::Val{:byte}, c::IO, v) =
+encode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:byte}, c::IO, v) =
   write(c, convert(UInt8, v))
-decode(::Val{:CS}, t::Val{:byte}, c::IO) =
+decode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:byte}, c::IO) =
   convert(UInt8, read(c, UInt8))
 
-# Assuming int is four bytes in C++
-encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:int}, c::IO, v) =
+# Assuming int is four bytes in C++ and Python
+encode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:int}, c::IO, v) =
   write(c, convert(Int32, v))
-decode(::Union{Val{:CS},Val{:CPP}}, t::Val{:int}, c::IO) =
+decode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:int}, c::IO) =
   convert(Int, read(c, Int32))
 
 # Assuming long is eight bytes in C++
@@ -303,6 +423,14 @@ decode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:float}, c::IO) =
     isnan(d) ? backend_error(ns, c) : convert(Float64, d)
   end
 
+# Assuming float is eight bytes in Python
+encode(::Val{:PY}, t::Val{:float}, c::IO, v) =
+  write(c, convert(Float64, v))
+decode(ns::Val{:PY}, t::Val{:float}, c::IO) =
+  let d = read(c, Float64)
+    isnan(d) ? backend_error(ns, c) : convert(Float64, d)
+  end
+
 # Assuming double is eight bytes in C++
 encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:double}, c::IO, v) =
   write(c, convert(Float64, v))
@@ -311,8 +439,8 @@ decode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:double}, c::IO) =
     isnan(d) ? backend_error(ns, c) : d
   end
 
-# The binary_stream we use with C++ replicates C# behavior
-encode(::Union{Val{:CS},Val{:CPP}}, ::Union{Val{:string},Val{:String}}, c::IO, v) = begin
+# The binary_stream we use with C++ and Python replicates C# behavior
+encode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO, v) = begin
   str = string(v)
   size = length(str)
   array = UInt8[]
@@ -344,14 +472,17 @@ decode(::Val{:CS}, ::Val{:string}, c::IO) = begin
   loop(0, 0)
 end
 =#
-decode(::Union{Val{:CS},Val{:CPP}}, ::Union{Val{:string},Val{:String}}, c::IO) = begin
+decode(ns::Union{Val{:CS},Val{:CPP},Val{:PY}}, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO) = begin
   size::Int = 0
   shift::Int = 0
   while true
     b = convert(Int, read(c, UInt8))
     size = size | ((b & 0x7f) << shift)
     if (b & 0x80) == 0
-      return String(read(c, size))
+      str = String(read(c, size))
+      str == "This an error!" ?
+        backend_error(ns, c) :
+        return str
     else
       shift += 7
     end
@@ -359,6 +490,9 @@ decode(::Union{Val{:CS},Val{:CPP}}, ::Union{Val{:string},Val{:String}}, c::IO) =
 end
 
 decode(ns::Val{:CS}, t::Val{:void}, c::IO) =
+  decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
+
+decode(ns::Val{:PY}, t::Val{:None}, c::IO) =
   decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
 
 # Useful CS types
