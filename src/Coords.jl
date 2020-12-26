@@ -322,11 +322,11 @@ cyl_z(p::Union{Loc,Vec}) = p.z
 pol_rho = cyl_rho
 pol_phi = cyl_phi
 
-const min_norm = 1e-15
+const min_norm = 1e-20
 
 unitized(v::Vec) =
   let r = sqrt(sum(abs2, v.raw))
-    @assert r > min_norm
+    @assert r > min_norm "The vector $(v) is too small (norm: $(r)) to be unitized."
     vxyz(v.raw./r, v.cs)
   end
 
