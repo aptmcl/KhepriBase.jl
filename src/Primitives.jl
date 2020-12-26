@@ -154,10 +154,10 @@ parse_signature(::Val{:CS}, sig::AbstractString) =
 
 # Python
 parse_signature(::Val{:PY}, sig::AbstractString) =
-  let m = match(r"^ *def +(\w+) *(\(.*\)) *-> *(.+) *: *", sig),
+  let m = match(r"^ *def +(\w+) *(\(.*\)) *(-> *(.+) *)?: *", sig),
       name = m.captures[1],
       params = m.captures[2],
-      ret = m.captures[3],
+      ret = m.captures[4],
       parse_type(t) =
         if t isa Symbol
           Val{t}
@@ -167,21 +167,24 @@ parse_signature(::Val{:PY}, sig::AbstractString) =
           elseif t.args[1] === :Tuple
             Tuple{map(parse_type, t.args[2:end])...}
           else
-            error("Uknown expression $(t)")
+            error("Unknown expression type $(t) in signature $(sig)")
           end
         else
-          error("Uknown expression $(t)")
+          error("Unknown expression type $(t) in signature $(sig)")
         end,
       parse_params(ast) =
         let parse_param(p) = (parse_type(p.args[3]), p.args[2])
-          if ast.head === :tuple
+          if ast isa Symbol
+            error("Missing type information in parameter $(ast) in signature $(sig)")
+          elseif ast.head === :tuple
             map(parse_param, ast.args)
           elseif ast.head === :call
             [parse_param(ast)]
           else
-            error("Uknown expression $(t)")
+            error("Uknown kind of parameter $(ast) in signature $(sig)")
           end
         end
+    isnothing(ret) && error("Missing return type information in signature $(sig)")
     (name, name, parse_params(Meta.parse(params)), parse_type(Meta.parse(ret)))
   end
 
@@ -278,6 +281,11 @@ remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
 =#
 ###################################################
 # New version
+type_constructor(t) =
+  t <: Tuple ?
+    Expr(:tuple, map(type_constructor, t.types)...) :
+    Expr(:call, t)
+
 remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
   let namespace = :(Val{$(nssym)}())
     :(remote_function(
@@ -290,14 +298,14 @@ remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
               take!(buf) # Reset the buffer just in case there was an encoding error on a previous call
               encode($(namespace), Val(:int), buf, opcode)
               $([:(encode($(namespace),
-                          $(p[1])(),
+                          $(type_constructor(p[1])),
                           buf,
                           $(p[2])))
                  for p in params]...)
               write(conn, take!(buf))
+              #flush(conn)
               complete_rpc_call(conn, opcode,
-                decode($(namespace),
-                       $(ret)(), conn))
+                decode($(namespace), $(type_constructor(ret)), conn))
             end))
   end
 
@@ -351,6 +359,10 @@ end
   int add(int a, int b)
   int sub(int a, int b)
 """
+
+@macroexpand @remote_functions :PY """
+def get_view()->Tuple[Point3d, Point3d, float]:
+"""
 =#
 
 # We need to detect errors by recognizing a particular value
@@ -387,60 +399,86 @@ decode(ns::Val{NS}, t::Vector{T}, c::IO) where {NS,T} = begin
   [decode(ns, sub, c) for i in 1:len]
 end
 
+# Encoding and decoding vectors of tuples
+encode(ns::Val{NS}, t::Vector{Tuple{T1,T2}}, c::IO, v) where {NS,T1,T2} = begin
+  sub1 = T1()
+  sub2 = T2()
+  encode(ns, Val(:size), c, length(v))
+  for (e1, e2) in v
+    encode(ns, sub1, c, e1)
+    encode(ns, sub2, c, e2)
+  end
+end
+decode(ns::Val{NS}, t::Vector{Tuple{T1,T2}}, c::IO) where {NS,T1,T2} = begin
+  sub1 = T1()
+  sub2 = T2()
+  len = decode(ns, Val(:size), c)
+  [(decode(ns, sub1, c), decode(ns, sub2, c)) for i in 1:len]
+end
+
 # Some generic conversions for C#, C++, and Python
-encode(ns::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:size}, c::IO, v) =
+const SizeIsInt = Union{Val{:CS},Val{:CPP},Val{:PY}}
+encode(ns::SizeIsInt, t::Val{:size}, c::IO, v) =
   encode(ns, Val(:int), c, v)
-decode(ns::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:size}, c::IO) =
+decode(ns::SizeIsInt, t::Val{:size}, c::IO) =
   decode_or_error(ns, Val(:int), c, -1)
 
-encode(ns::Val{:CS}, t::Val{:bool}, c::IO, v::Bool) =
-  encode(ns, Val(:byte), c, v ? UInt8(1) : UInt8(0))
-decode(ns::Val{:CS}, t::Val{:bool}, c::IO) =
+const BoolIsByte = Union{Val{:CS},Val{:PY}}
+encode(ns::BoolIsByte, t::Val{:bool}, c::IO, v::Bool) =
+  encode(ns, Val(:byte), c, v ? 1 : 0)
+decode(ns::BoolIsByte, t::Val{:bool}, c::IO) =
   decode_or_error(ns, Val(:byte), c, UInt8(127)) == UInt8(1)
 
-encode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:byte}, c::IO, v) =
+const ByteIsUInt8 = Union{Val{:CS},Val{:CPP},Val{:PY}}
+encode(::ByteIsUInt8, t::Val{:byte}, c::IO, v) =
   write(c, convert(UInt8, v))
-decode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:byte}, c::IO) =
+decode(::ByteIsUInt8, t::Val{:byte}, c::IO) =
   convert(UInt8, read(c, UInt8))
 
 # Assuming int is four bytes in C++ and Python
-encode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:int}, c::IO, v) =
+const IntIsInt32 = Union{Val{:CS},Val{:CPP},Val{:PY}}
+encode(::IntIsInt32, t::Val{:int}, c::IO, v) =
   write(c, convert(Int32, v))
-decode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, t::Val{:int}, c::IO) =
+decode(::IntIsInt32, t::Val{:int}, c::IO) =
   convert(Int, read(c, Int32))
 
 # Assuming long is eight bytes in C++
-encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:long}, c::IO, v) =
+const LongIsInt64 = Union{Val{:CS},Val{:CPP}}
+encode(::LongIsInt64, t::Val{:long}, c::IO, v) =
   write(c, convert(Int64, v))
 decode(::Union{Val{:CS},Val{:CPP}}, t::Val{:long}, c::IO) =
   convert(Int, read(c, Int64))
 
 # Assuming float is four bytes in C++
-encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:float}, c::IO, v) =
+const FloatIsFloat32 = Union{Val{:CS},Val{:CPP}}
+encode(::FloatIsFloat32, t::Val{:float}, c::IO, v) =
   write(c, convert(Float32, v))
-decode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:float}, c::IO) =
+decode(ns::FloatIsFloat32, t::Val{:float}, c::IO) =
   let d = read(c, Float32)
     isnan(d) ? backend_error(ns, c) : convert(Float64, d)
   end
 
 # Assuming float is eight bytes in Python
-encode(::Val{:PY}, t::Val{:float}, c::IO, v) =
+const FloatIsFloat64 = Union{Val{:PY}}
+encode(::FloatIsFloat64, t::Val{:float}, c::IO, v) =
   write(c, convert(Float64, v))
-decode(ns::Val{:PY}, t::Val{:float}, c::IO) =
+decode(ns::FloatIsFloat64, t::Val{:float}, c::IO) =
   let d = read(c, Float64)
     isnan(d) ? backend_error(ns, c) : convert(Float64, d)
   end
 
 # Assuming double is eight bytes in C++
-encode(::Union{Val{:CS},Val{:CPP}}, t::Val{:double}, c::IO, v) =
+const DoubleIsFloat64 = Union{Val{:CS},Val{:CPP}}
+encode(::DoubleIsFloat64, t::Val{:double}, c::IO, v) =
   write(c, convert(Float64, v))
-decode(ns::Union{Val{:CS},Val{:CPP}}, t::Val{:double}, c::IO) =
+decode(ns::DoubleIsFloat64, t::Val{:double}, c::IO) =
   let d = read(c, Float64)
     isnan(d) ? backend_error(ns, c) : d
   end
 
 # The binary_stream we use with C++ and Python replicates C# behavior
-encode(::Union{Val{:CS},Val{:CPP},Val{:PY}}, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO, v) = begin
+const StringIsCSString = Union{Val{:CS},Val{:CPP},Val{:PY}}
+encode(::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO, v) = begin
   str = string(v)
   size = length(str)
   array = UInt8[]
@@ -472,7 +510,7 @@ decode(::Val{:CS}, ::Val{:string}, c::IO) = begin
   loop(0, 0)
 end
 =#
-decode(ns::Union{Val{:CS},Val{:CPP},Val{:PY}}, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO) = begin
+decode(ns::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO) = begin
   size::Int = 0
   shift::Int = 0
   while true
@@ -489,10 +527,8 @@ decode(ns::Union{Val{:CS},Val{:CPP},Val{:PY}}, ::Union{Val{:string},Val{:String}
   end
 end
 
-decode(ns::Val{:CS}, t::Val{:void}, c::IO) =
-  decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
-
-decode(ns::Val{:PY}, t::Val{:None}, c::IO) =
+const VoidIsByte = Union{Val{:CS},Val{:PY}}
+decode(ns::VoidIsByte, t::Union{Val{:void},Val{:None}}, c::IO) =
   decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
 
 # Useful CS types
@@ -536,29 +572,47 @@ encode_float3(c::IO, v0::Real, v1::Real, v2::Real) = begin
 end
 =#
 
-encode(ns::Val{NS}, ::Val{:float3}, c::IO, (v1, v2, v3)) where {NS} = begin
-  encode(ns, Val(:float), c, v1)
-  encode(ns, Val(:float), c, v2)
-  encode(ns, Val(:float), c, v3)
-end
+const SupportsTuples = Union{Val{:CS},Val{:CPP},Val{:PY}}
+encode(ns::SupportsTuples, t::Tuple{T1,T2}, c::IO, v) where {T1,T2} =
+  begin
+    encode(ns, T1(), c, v[1])
+    encode(ns, T2(), c, v[2])
+  end
+decode(ns::SupportsTuples, t::Tuple{T1,T2}, c::IO) where {T1,T2} =
+  (decode(ns, T1(), c),
+   decode(ns, T2(), c))
+encode(ns::SupportsTuples, t::Tuple{T1,T2,T3}, c::IO, v) where {T1,T2,T3} =
+  begin
+    encode(ns, T1(), c, v[1])
+    encode(ns, T2(), c, v[2])
+    encode(ns, T3(), c, v[3])
+  end
+decode(ns::SupportsTuples, t::Tuple{T1,T2,T3}, c::IO) where {T1,T2,T3} =
+  (decode(ns, T1(), c),
+   decode(ns, T2(), c),
+   decode(ns, T3(), c))
+encode(ns::SupportsTuples, t::Tuple{T1,T2,T3,T4}, c::IO, v) where {T1,T2,T3,T4} =
+  begin
+    encode(ns, T1(), c, v[1])
+    encode(ns, T2(), c, v[2])
+    encode(ns, T3(), c, v[3])
+    encode(ns, T4(), c, v[4])
+  end
+decode(ns::SupportsTuples, t::Tuple{T1,T2,T3,T4}, c::IO) where {T1,T2,T3,T4} =
+  (decode(ns, T1(), c),
+   decode(ns, T2(), c),
+   decode(ns, T3(), c),
+   decode(ns, T4(), c))
 
-decode(ns::Val{NS}, ::Val{:float3}, c::IO) where {NS} = begin
-  decode(ns, Val(:float), c),
-  decode(ns, Val(:float), c),
-  decode(ns, Val(:float), c)
-end
+encode(ns::SupportsTuples, ::Val{:float3}, c::IO, v) =
+  encode(ns, (Val(:float),Val(:float),Val(:float)), c, v)
+decode(ns::SupportsTuples, ::Val{:float3}, c::IO) =
+  decode(ns, (Val(:float),Val(:float),Val(:float)), c)
 
-encode(ns::Val{NS}, ::Val{:double3}, c::IO, (v1, v2, v3)) where {NS} = begin
-  encode(ns, Val(:double), c, v1)
-  encode(ns, Val(:double), c, v2)
-  encode(ns, Val(:double), c, v3)
-end
-
-decode(ns::Val{NS}, ::Val{:double3}, c::IO) where {NS} = begin
-  decode(ns, Val(:double), c),
-  decode(ns, Val(:double), c),
-  decode(ns, Val(:double), c)
-end
+encode(ns::SupportsTuples, ::Val{:double3}, c::IO, v) =
+  encode(ns, (Val(:double),Val(:double),Val(:double)), c, v)
+decode(ns::SupportsTuples, ::Val{:double3}, c::IO) =
+  decode(ns, (Val(:double),Val(:double),Val(:double)), c)
 
 decode_id(c::IO) =
   let id = decode_int(c)
@@ -569,8 +623,12 @@ decode_id(c::IO) =
     end
   end
 
-encode(ns::Val{NS}, ::Val{RGB}, c::IO, v) where {NS} =
-  encode(ns, Val(:float3), c, (v.red, v.green, v.blue))
+encode(ns::SupportsTuples, ::Val{:RGB}, c::IO, v) =
+  encode(ns, (Val(:float),Val(:float),Val(:float)), c, (red(v), green(v), blue(v)))
+decode(ns::SupportsTuples, ::Val{:RGB}, c::IO) =
+  RGB(decode(ns, (Val(:float),Val(:float),Val(:float)), c)...)
 
-decode(ns::Val{NS}, ::Val{RGB}, c::IO) where {NS} =
-  rgb(decode(ns, Val(:float3), c)...)
+encode(ns::SupportsTuples, ::Val{:RGBA}, c::IO, v) =
+  encode(ns, (Val(:float),Val(:float),Val(:float),Val(:float)), c, (red(v), green(v), blue(v), alpha(v)))
+decode(ns::SupportsTuples, ::Val{:RGBA}, c::IO) =
+  RGBA(decode(ns, Val(:float4), c)...)
