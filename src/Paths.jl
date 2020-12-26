@@ -56,7 +56,11 @@ export empty_path,
        mirrored_on_y,
        mirrored_on_z,
        ClosedPath,
-       OpenPath
+       OpenPath,
+       Region,
+       region,
+       outer_path,
+       inner_paths
 
 path_tolerance = Parameter(1e-10)
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < path_tolerance()
@@ -162,6 +166,8 @@ rectangular_path(corner::Loc=u0(), dx::Real=1, dy::Real=1) =
   RectangularPath(corner, dx, dy)
 centered_rectangular_path(p, dx, dy) =
   rectangular_path(p-vxy(dx/2, dy/2), dx, dy)
+path_domain(path::RectangularPath) = (0, path_length(path))
+location_at(path::RectangularPath, d::Real) = location_at_length(path, d)
 planar_path_normal(path::RectangularPath) = uvz(path.corner.cs)
 
 struct OpenPolygonalPath <: OpenPath
@@ -186,7 +192,7 @@ polygonal_path(v::Loc, vs...) = polygonal_path([v, vs...])
 
 ensure_no_repeated_locations(locs) =
     begin
-        @assert (locs[1] != locs[end])
+        @assert ! coincident_path_location(locs[1], locs[end])
         locs
     end
 
@@ -370,7 +376,7 @@ location_at_length(path::OpenPolygonalPath, d::Real) =
       delta = distance(p, pp)
       if d - delta < path_tolerance()
         v = unitized(pp - p)
-        return loc_from_o_vz(p+v*delta, v)
+        return loc_from_o_vz(p+v*d, v)
       else
         p = pp
         d -= delta
@@ -385,7 +391,7 @@ location_at_length(path::ClosedPolygonalPath, d::Real) =
       delta = distance(p, pp)
       if d - delta < path_tolerance()
         v = unitized(pp - p)
-        return loc_from_o_vz(p+v*delta, v)
+        return loc_from_o_vz(p+v*d, v)
       else
         p = pp
         d -= delta
@@ -718,6 +724,23 @@ end
 path_set(paths...) =
   PathSet([paths...])
 
+# Regions are areas delimited by paths. They are assumed to be planar and might contain holes.
+struct Region
+  paths::Vector{<:ClosedPath}
+end
+
+region(outer, inners...) =
+  Region([convert(ClosedPath, outer), convert.(ClosedPath, inners)...])
+
+outer_path(region::Region) = region.paths[1]
+inner_paths(region::Region) = region.paths[2:end]
+
+# Convertions from/to paths
+convert(::Type{Region}, vs::Locs) =
+  region(closed_polygonal_path(vs))
+convert(::Type{Region}, path::ClosedPath) =
+  region(path)
+
 # Operations on path containers
 translate(path::T, v::Vec) where T<:Union{PathSequence,PathSet} =
   T(translate.(path.paths, v))
@@ -780,7 +803,7 @@ path_interpolated_lengths(path, t0=0, t1=path_length(path), epsilon=collinearity
   end
 
 convert(::Type{ClosedPolygonalPath}, path::CircularPath) =
-  closed_polygonal_path(path_interpolated_frames(path))
+  closed_polygonal_path(path_interpolated_frames(path)[1:end-1])
 convert(::Type{OpenPolygonalPath}, path::CircularPath) =
   open_polygonal_path(path_interpolated_frames(path))
 convert(::Type{OpenPolygonalPath}, path::ArcPath) =
@@ -914,16 +937,16 @@ export rectangular_profile,
        bottom_aligned_rectangular_profile,
        i_profile, plus_profile
 
-rectangular_profile(Width::Real=1, Height::Real=1; width::Real=Width, height::Real=Height) =
+rectangular_profile(Width::Real=0.1, Height::Real=0.1; width::Real=Width, height::Real=Height) =
   centered_rectangular_path(u0(), width, height)
 
-circular_profile(Radius::Real=1; radius::Real=Radius) =
+circular_profile(Radius::Real=0.1; radius::Real=Radius) =
   circular_path(u0(), radius)
 
-top_aligned_rectangular_profile(Width::Real=1, Height::Real=1; width::Real=Width, height::Real=Height) =
+top_aligned_rectangular_profile(Width::Real=0.1, Height::Real=0.1; width::Real=Width, height::Real=Height) =
   rectangular_path(xy(-width/2,-height), width, height)
 
-bottom_aligned_rectangular_profile(Width::Real=1, Height::Real=1; width::Real=Width, height::Real=Height) =
+bottom_aligned_rectangular_profile(Width::Real=0.1, Height::Real=0.1; width::Real=Width, height::Real=Height) =
   rectangular_path(xy(-width/2, 0), width, height)
 
 i_profile(Width::Real=0.1, Height::Real=Width; width::Real=Width, height::Real=Height, web_thickness::Real=width/5, flange_thickness::Real=width/10) =
@@ -946,6 +969,11 @@ plus_profile(Width::Real=0.1, Height::Real=Width; width::Real=Width, height::Rea
           open_polygonal_path([
             x(w2), xy(w2, t2), xy(t2, t2), xy(t2, h2), y(h2)])))
     end
+
+export path_vertices_on
+path_vertices_on(path::Path, p) =
+  [add_xyz(p, raw_point(v)...) for v in path_vertices(path)]
+
 
 ## Utility operations
 

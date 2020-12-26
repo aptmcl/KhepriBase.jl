@@ -32,8 +32,9 @@ random_range(x0, x1) =
 
 #########################################
 
-export RGB, rgb, rgb_radiance
+export RGB, rgb, rgba, rgb_radiance
 const rgb = RGB
+const rgba = RGBA
 
 rgb_radiance(c::RGB) = 0.265*red(c)+0.67*green(c)+0.065*blue(c)
 

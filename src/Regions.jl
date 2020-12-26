@@ -4,16 +4,17 @@ Regions include points, curves, surfaces, and volumes
 A ParametricRegion and an ImplicitRegion are examples of a Region.
 =#
 
-abstract type Region end
-show(io::IO, s::Region) =
+
+abstract type AbstractRegion end
+show(io::IO, s::AbstractRegion) =
   print(io, "$(typeof(s))(...)")
 
-Regions = Vector{<:Region}
+AbstractRegions = Vector{<:AbstractRegion}
 
-abstract type Region0D <: Region end
-abstract type Region1D <: Region end
-abstract type Region2D <: Region end
-abstract type Region3D <: Region end
+abstract type Region0D <: AbstractRegion end
+abstract type Region1D <: AbstractRegion end
+abstract type Region2D <: AbstractRegion end
+abstract type Region3D <: AbstractRegion end
 
 macro defregion(name_typename, parent, fields...)
   (name, typename) = name_typename isa Symbol ?
