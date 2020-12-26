@@ -261,14 +261,16 @@ macro deffamily(name, parent, fields...)
       based_on::Union{Family, Nothing}
       implemented_as::IdDict{<:Backend, <:Family}
       ref::IdDict{<:Backend, Any}
+      data::BackendParameter
     end
     $(constructor_name)($(opt_params...);
                         $(key_params...),
                         based_on=nothing,
-                        implemented_as=IdDict{Backend, Family}()) =
-      $(struct_name)($(field_names...), based_on, implemented_as, IdDict{Backend, Any}())
+                        implemented_as=IdDict{Backend, Family}(),
+                        data=BackendParameter()) =
+      $(struct_name)($(field_names...), based_on, implemented_as, IdDict{Backend, Any}(), BackendParameter())
     $(instance_name)(family:: Family, implemented_as=copy(family.implemented_as); $(instance_params...)) =
-      $(struct_name)($(field_names...), family, implemented_as, IdDict{Backend, Any}())
+      $(struct_name)($(field_names...), family, implemented_as, IdDict{Backend, Any}(), copy(family.data))
     $(default_name) = Parameter{$struct_name}($(constructor_name)())
     $(predicate_name)(v::$(struct_name)) = true
     $(predicate_name)(v::Any) = false
@@ -282,6 +284,12 @@ macro deffamily(name, parent, fields...)
         Expr(:call, $(Expr(:quote, default_name)))
   end
 end
+
+export set_family
+const set_family = set_on!
+
+#family_ref(b::Backend, m::Family) = ref(b, m).value
+#family_ref(b::Backend, s::BIMShape) = family_ref(b, s.family)
 
 #=
 
@@ -341,39 +349,12 @@ slab_family_elevation(b::Backend, family::SlabFamily) =
 slab_family_thickness(b::Backend, family::SlabFamily) =
   family.coating_thickness + family.thickness
 
-@defproxy(slab, BIMShape, contour::ClosedPath=rectangular_path(),
-          level::Level=default_level(), family::SlabFamily=default_slab_family(),
-          openings::Vector{<:ClosedPath}=ClosedPath[])
+@defproxy(slab, BIMShape, region::Region=rectangular_path(),
+          level::Level=default_level(), family::SlabFamily=default_slab_family())
 
 # Default implementation: dispatch on the slab elements
 realize(b::Backend, s::Slab) =
-    realize_slab(b, s.contour, s.openings, s.level, s.family)
-
-realize_slab(b::Backend, contour::ClosedPath, holes::Vector{<:ClosedPath}, level::Level, family::Family) =
-    let base = vz(level.height + slab_family_elevation(b, family)),
-        thickness = slab_family_thickness(b, family)
-        # Change this to a better named protocol?
-        backend_slab(b, translate(contour, base), map(c -> translate(c, base), holes), thickness, family)
-    end
-
-# Delegate on the lower-level pyramid frustum
-realize_prism(b::Backend, top, bot, side, path::Path, h::Real) =
-  realize_frustum(b, top, bot, side, path, translate(path, planar_path_normal(path)*h))
-
-realize_prism(b::Backend, top, bot, side, path::PathSet, h::Real) =
-  let v = planar_path_normal(path)*h,
-      refs = [ensure_ref(b, realize_frustum(b, top, bot, side, path, translate(path, v)))
-              for path in path.paths]
-    subtract_ref(b, refs[1], unite_refs(b, refs[2:end]))
-  end
-
-# If we don't know how to process a path, we convert it to a sequence of vertices
-realize_frustum(b::Backend, top, bot, side, bot_path::Path, top_path::Path, closed=true) =
-  realize_pyramid_frustum(b, top, bot, side, path_vertices(bot_path), path_vertices(top_path), closed)
-# and then, if we don't know what to do with the materials, we simply ignore them
-realize_pyramid_frustum(b::Backend, bot_mat, top_mat, side_mat, bot_vs::Locs, top_vs::Locs, closed=true) =
-  backend_pyramid_frustum(b, bot_vs, top_vs)
-
+  b_slab(b, s.region, s.level, s.family)
 
 #
 export add_slab_opening
@@ -419,22 +400,63 @@ realize(b::Backend, s::Roof) =
 @deffamily(panel_family, Family,
     thickness::Real=0.02)
 
-@defproxy(panel, BIMShape, contour::ClosedPath=rectangular_path(),
-          level::Level=default_level(), family::PanelFamily=default_panel_family(),
-          openings::Vector{<:ClosedPath}=ClosedPath[])
+@defproxy(panel, BIMShape, path::Path=rectangular_path(), family::PanelFamily=default_panel_family())
+
+#=
+panel(outline, openings; family=default_panel_family()) =
+  let outline=convert(ClosedPath, outline)
+    panel(isnothing(openings) ?
+            outline :
+            region(outline, openings),
+          family)
+  end
+=#
 
 realize(b::Backend, s::Panel) =
   let thickness = s.family.thickness,
-      v = planar_path_normal(s.contour)*-thickness/2,
-      contour = translate(s.contour, v),
-      openings = map(c -> translate(c, v), s.openings),
-      mat = panel_material(b, family_ref(b, s.family))
+    # THIS IS WRONG!!!! Panels should be based on planar paths, like the rest
+      ps = path_vertices(s.path),
+      cs = cs_from_o_vz(ps[1], vertices_normal(ps)),
+      v = vz(-thickness/2, cs),
+      ps = translate(ps, v),
+      path = closed_polygonal_path([xy(p.x, p.y) for p in in_cs(ps, cs)]),
+      mats = material_refs(b, family_materials(b, s.family)[1:3])
     with_family_in_layer(b, s.family) do
-      realize_prism(
-        b, mat, mat, mat,
-        isempty(openings) ? contour : path_set(contour, openings...), thickness)
+      b_extrude_profile(
+        b,
+        u0(cs),
+        thickness,
+        path,
+        mats...)
     end
   end
+
+realize_slab(b::Backend, region::Region, level::Level, family::Family) =
+  let base = vz(level.height + slab_family_elevation(b, family)),
+      thickness = slab_family_thickness(b, family)
+      # Change this to a better named protocol?
+    backend_slab(b, translate(region, base), thickness, family)
+  end
+
+# Delegate on the lower-level pyramid frustum
+realize_prism(b::Backend, top, bot, side, path::Path, h::Real) =
+  realize_frustum(b, top, bot, side, path, translate(path, planar_path_normal(path)*h))
+
+realize_prism(b::Backend, top, bot, side, path::PathSet, h::Real) =
+  let v = planar_path_normal(path)*h,
+      refs = [ensure_ref(b, realize_frustum(b, top, bot, side, path, translate(path, v)))
+              for path in path.paths]
+    subtract_ref(b, refs[1], unite_refs(b, refs[2:end]))
+  end
+
+# If we don't know how to process a path, we convert it to a sequence of vertices
+realize_frustum(b::Backend, top, bot, side, bot_path::Path, top_path::Path, closed=true) =
+  realize_pyramid_frustum(b, top, bot, side, path_vertices(bot_path), path_vertices(top_path), closed)
+# and then, if we don't know what to do with the materials, we simply ignore them
+realize_pyramid_frustum(b::Backend, bot_mat, top_mat, side_mat, bot_vs::Locs, top_vs::Locs, closed=true) =
+  backend_pyramid_frustum(b, bot_vs, top_vs)
+
+
 
 #=
 
@@ -526,12 +548,13 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
       l_w_paths = subpaths(offset(w_path, l_thickness)),
       openings = [w.doors..., w.windows...],
       prevlength = 0,
-      (matright, matleft) = wall_materials(b, family_ref(b, w.family))
+      (matright, matleft, _) = material_refs(b, family_materials(b, w.family)),
+      refs = []
     for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
       let currlength = prevlength + path_length(w_seg_path),
           c_r_w_path = closed_path_for_height(r_w_path, w_height),
           c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        realize_frustum(b, matright, matleft, matright, c_l_w_path, c_r_w_path, false)
+        append!(refs, b_pyramid_frustum(b, path_vertices(c_l_w_path), path_vertices(c_r_w_path), matright, matleft, matright))
         openings = filter(openings) do op
           if prevlength <= op.loc.x < currlength ||
              prevlength <= op.loc.x + op.family.width <= currlength # contained (at least, partially)
@@ -551,7 +574,7 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
                                        path_end(op_at_end ? l_w_path : l_op_path)]),
                 c_r_op_path = closed_path_for_height(translate(fixed_r_op_path, vz(op.loc.y)), op_height),
                 c_l_op_path = closed_path_for_height(translate(fixed_l_op_path, vz(op.loc.y)), op_height)
-              realize_frustum(b, matright, matleft, matright, c_r_op_path, c_l_op_path, false)
+              append!(refs, b_pyramid_frustum(b, path_vertices(c_r_op_path), path_vertices(c_l_op_path), matright, matleft, matright))
               c_r_w_path, c_l_w_path = subtract_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
               # preserve if not totally contained
               ! (op.loc.x >= prevlength && op.loc.x + op.family.width <= currlength)
@@ -561,11 +584,12 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
           end
         end
         prevlength = currlength
-        backend_surface_polygon(b, matleft, c_l_w_path, false)
-        backend_surface_polygon(b, matright, c_r_w_path, true)
+        # Isn't this already done by the pyramid_frustum?
+        #push!(refs, b_surface_polygon(b, path_vertices(c_l_w_path), matleft))
+        #push!(refs, b_surface_polygon(b, reverse(path_vertices(c_r_w_path)), matright))
       end
     end
-    void_ref(b)
+    refs
   end
 
 closed_path_for_height(path, h) =
@@ -769,6 +793,7 @@ realize(b::Backend, s::CurtainWall) =
 # By default, curtain wall panels are planar
 curtain_wall_path(b::Backend, s::CurtainWall, panel_family::Family) =
   s.path
+
 curtain_wall_path(b::Backend, s::CurtainWall, panel_family::PanelFamily) =
   let path_length = path_length(s.path),
       x_panels = ceil(Int, path_length/s.family.max_panel_dx),
@@ -801,9 +826,13 @@ meta_program(w::Wall) =
 # Beam
 # Beams are mainly horizontal elements. By default, a beam is aligned along its top axis
 @deffamily(beam_family, Family,
-#  width::Real=1.0,
-#  height::Real=2.0,
   profile::ClosedPath=top_aligned_rectangular_profile(1, 2))
+
+family_profile(b::Backend{K,T}, family) where {K,T} =
+  family.profile
+family_materials(b::Backend{K,T}, family) where {K,T} =
+  family.data(b).materials
+
 #beam_family(Width::Real=1.0, Height::Real=2.0; width=Width, height=Height) =
 #  beam_family(rectangular_path(xy(-width/2,-height), width, height))
 
@@ -817,8 +846,6 @@ beam(cb::Loc, ct::Loc, Angle::Real=0, Family::BeamFamily=default_beam_family(); 
 # Columns are mainly vertical elements. A column has its center axis aligned with a line defined by two points
 
 @deffamily(column_family, Family,
-    #width::Real=1.0,
-    #height::Real=2.0,
   profile::ClosedPath=rectangular_profile(0.2, 0.2))
 
 @defproxy(free_column, BIMShape, cb::Loc=u0(), h::Real=1, angle::Real=0, family::ColumnFamily=default_column_family())
@@ -837,20 +864,25 @@ realize(b::Backend, s::Beam) =
   end
 
 realize(b::Backend, s::FreeColumn) =
-  with_family_in_layer(b, s.family) do
-    backend_realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
-  end
+  b_beam(b, s.cb, s.h, s.family)
+#  with_family_in_layer(b, s.family) do
+#    backend_realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
+#  end
 
 realize(b::Backend, s::Column) =
-  with_family_in_layer(b, s.family) do
-    let base_height = s.bottom_level.height,
-        height = s.top_level.height - base_height
-      backend_realize_beam_profile(b, s, s.family.profile, add_z(s.cb, base_height), height)
-    end
+  let base_height = level_height(s.bottom_level),
+      top_height = level_height(s.top_level)
+    b_beam(b, add_z(s.cb, base_height), top_height-base_height, s.family)
   end
+  # with_family_in_layer(b, s.family) do
+  #   let base_height = s.bottom_level.height,
+  #       height = s.top_level.height - base_height
+  #     backend_realize_beam_profile(b, s, s.family.profile, add_z(s.cb, base_height), height)
+  #   end
+  # end
 
 backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::CircularPath, cb::Loc, length::Real) =
-  backend_cylinder(b, cb, profile.radius, length*support_z_fighting_factor, get_material(b, family_ref(b, s.family)))
+  b_cylinder(b, cb, profile.radius, length*support_z_fighting_factor, get_material(b, family_ref(b, s.family)))
 
 backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::RectangularPath, cb::Loc, length::Real) =
   let profile_u0 = profile.corner,
@@ -1031,7 +1063,7 @@ fixed_truss_node_family =
 
 realize(b::Backend, s::TrussNode) =
   with_family_in_layer(b, s.family) do
-    let rs = backend_sphere(b, s.p, s.family.radius)
+    let rs = b_sphere(b, s.p, s.family.radius, nothing)
       truss_node_is_supported(s) ?
         rs : #[rs, backend_regular_pyramid(b, 4, add_z(s.p, -2*s.family.radius),
               #                       s.family.radius, 0, 2*s.family.radius, false)] :

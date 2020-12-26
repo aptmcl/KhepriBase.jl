@@ -59,8 +59,7 @@ export Shape,
        captured_shape, captured_shapes,
        revolve
 
-#References can be (single) native references or union or substraction of References
-#Unions and subtractions are needed because actual backends frequently fail those operations
+#References can be (single or multiple) native references
 abstract type GenericRef{K,T} end
 
 struct EmptyRef{K,T} <: GenericRef{K,T} end
@@ -69,6 +68,17 @@ struct UniversalRef{K,T} <: GenericRef{K,T} end
 struct NativeRef{K,T} <: GenericRef{K,T}
   value::T
 end
+struct NativeRefs{K,T} <: GenericRef{K,T}
+  values::Vector{T}
+end
+
+ensure_ref(b::Backend{K,T}, r::T) where {K,T} = NativeRef{K,T}(r)
+ensure_ref(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
+  length(rs) == 1 ?
+    NativeRef{K,T}(rs[1]) :
+    NativeRefs{K,T}(rs)
+
+#Unions and subtractions are needed because actual backends frequently fail those operations
 struct UnionRef{K,T} <: GenericRef{K,T}
   values::Tuple{Vararg{GenericRef{K,T}}}
 end
@@ -78,15 +88,10 @@ struct SubtractionRef{K,T} <: GenericRef{K,T}
 end
 
 ensure_ref(b::Backend{K,T}, v::GenericRef{K,T}) where {K,T} = v
-ensure_ref(b::Backend{K,T}, v::T) where {K,T} = NativeRef{K,T}(v)
-ensure_ref(b::Backend{K,T}, v::Vector{T}) where {K,T} =
+ensure_ref(b::Backend{K,T}, v::Vector{<:S}) where {K,T,S} =
   length(v) == 1 ?
-    NativeRef{K,T}(v[1]) :
-    UnionRef{K,T}(([NativeRef{K,T}(vi) for vi in v]...,))
-ensure_ref(b::Backend{K,T}, v::Vector{<:GenericRef{K, T}}) where {K,T} =
-  length(v) == 1 ?
-    v[1] :
-    UnionRef{K,T}((v...,))
+    ensure_ref(b, v[1]) :
+    UnionRef{K,T}(Tuple((ensure_ref(b, vi) for vi in v)))
 
 # currying
 map_ref(b::Backend{K,T}, f::Function) where {K,T} = r -> map_ref(b, f, r)
@@ -192,10 +197,18 @@ ref(b, s) calls
 ref(b::Backend, s::Proxy) =
   force_realize(b, s)
 
-force_realize(s::Proxy) =
-  for b in current_backends()
-    force_realize(b, s)
-  end
+reset_ref(b::Backend, s::Proxy) =
+  delete!(s.ref, b)
+
+force_realize(b::Backend, s::Proxy) =
+  haskey(s.ref, b) ?
+    s.ref[b] : #error("Shape was already realized in $(b)") :
+    s.ref[b] = ensure_ref(b, realize(b, s))
+
+# force_realize(s::Proxy) =
+#   for b in current_backends()
+#     force_realize(b, s)
+#   end
 
 # We can also use a shape as a surrogate for another shape
 
@@ -213,8 +226,7 @@ collect_ref(s::Shape) = error("collect_ref(s.ref.backend, ref(s))")
 collect_ref(ss::Shapes) = error("mapreduce(collect_ref, vcat, ss, init=[])")
 
 #=
-Whenever a shape is created, it might be replaced by another shape (e.g., when
-it is necessary to avoid collisions), it might be eagerly realized in its backend,
+Whenever a shape is created, it might be eagerly realized in its backend,
 depending on the kind of shape and on the kind of backend (and/or its current state).
 Another possibility is for the shape to be saved in some container.
 It might also be necessary to record the control flow that caused the shape to be created.
@@ -237,7 +249,8 @@ e.g., using boolean operations. Others, however, cannot do that and can only rea
 shapes by request, presumably, when they have complete information about them.
 A middle term might be a backend that supports both modes.
 =#
-
+realized(b::Backend, s::Shape) =
+  haskey(s.ref, b)
 delay_realize(b::Backend, s::Shape) =
   nothing
 force_realize(b::Backend, s::Shape) =
@@ -264,7 +277,7 @@ realization of shapes, particularly, when the construction is incremental.
 =#
 
 maybe_realize(b::Backend, s::Shape) =
-  if ! haskey(s.ref, b)
+  if ! realized(b, s)
     force_realize(b, s)
   end
 
@@ -347,89 +360,6 @@ maybe_trace(s) = traceability() && trace!(s)
 
 ######################################################
 
-# Many functions default the backend to the current_backend and throw an error if there is none.
-# We will simplify their definition with a macro:
-# @defop delete_all_shapes()
-# that expands into
-# delete_all_shapes(backend::Backend=current_backend()) = throw(UndefinedBackendException())
-# Note that according to Julia semantics the previous definition actually generates two different ones:
-# delete_all_shapes() = delete_all_shapes(current_backend())
-# delete_all_shapes(backend::Backend) = throw(UndefinedBackendException())
-# Hopefully, backends will specialize the function for each specific backend
-
-#macro defop(name_params)
-#    name, params = name_params.args[1], name_params.args[2:end]
-#    quote
-#        export $(esc(name))
-#        $(esc(name))($(map(esc,params)...), backend::Backend=current_backend()) =
-#          throw(UndefinedBackendException())
-#    end
-#end
-
-param_data(p) =
-  p isa Symbol ?
-    (p, :Any, missing) :
-    p isa Expr ?
-      (p.head == :kw ?
-         (param_data(p.args[1])[1:2]..., p.args[2]) :
-         p.head == :(::) ?
-           (p.args..., missing) :
-           error("Unknown syntax $p")) :
-      error("Unknown syntax $p")
-
-def_data(expr) =
-  let (name_params, body) =
-        expr isa Expr ?
-          (expr.head == :(=) ?
-             expr.args :
-             (expr.head == :call ?
-                (expr, :(throw(UndefinedBackendException()))) :
-                error("Unknown syntax $p"))) :
-          error("Unknown syntax $p")
-    name_params.args[1], name_params.args[2:end], body
-  end
-
-# Define for (just the) current backend
-macro defcb(expr)
-  name, params, body = def_data(expr)
-  params_data = map(param_data, params)
-  backend_name = Symbol("backend_", name)
-  esc(
-    quote
-      export $(name), $(backend_name)
-      $(name)($(params...), backend::Backend=current_backend()) =
-          $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
-      $(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
-          $(body)
-    end)
-end
-
-# Define for (all the) current backends
-macro defcbs(expr)
-  name, params, body = def_data(expr)
-  params_data = map(param_data, params)
-  backend_name = Symbol("backend_", name)
-  esc(
-    quote
-      export $(name), $(backend_name)
-      $(name)($(params...), backends::Backends=current_backends()) =
-        for backend in backends
-          $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
-        end
-      $(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
-          $(body)
-    end)
-end
-
-
-#=
-@macroexpand @defcbs foo() =  x + 1
-@macroexpand @defcbs foo(bar)
-@macroexpand @defcbs foo(bar::Baz)
-@macroexpand @defcbs foo(bar=quux)
-@macroexpand @defcbs foo(bar::Baz=quux)
-=#
-
 macro defshapeop(name_params)
     name, params = name_params.args[1], name_params.args[2:end]
     quote
@@ -447,8 +377,7 @@ switch_to_backend(from::Backend, to::Backend) =
   current_backend(to)
 
 
-@defcb current_backend_name()
-@defcbs delete_all_shapes()
+@defcbs delete_all_shapes()=b_delete_all_refs(backend)
 @defcbs set_length_unit(unit::String="")
 @defcb reset_backend()
 @defcb save_as(pathname::String, format::String)
@@ -514,6 +443,49 @@ macro defproxy(name_typename, parent, fields...)
         Expr(:call, $(Expr(:quote, name)), $(map(field_name -> :(meta_program(v.$(field_name))), field_names)...))
   end
 end
+
+#=
+There are entities who have parameters that depend on the backend.
+We will assume that these entities have one field called data which
+should be a BackendParameter.
+To assign such a parameter, we use the set_on! function.
+=#
+
+export set_on!
+set_on!(b::Backend, proxy, ref) =
+  begin
+    proxy.data(b, ref)
+    reset_ref(b, proxy)
+    proxy
+  end
+
+#=
+Materials
+Although it is possible to define new materials,
+there is also a pre-defined set of materials
+=#
+
+@defproxy(material, Proxy, data::BackendParameter=BackendParameter())
+material(bv::Pair, bvs...) = material(data=BackendParameter(bv, bvs...))
+realize(b::Backend, m::Material) = b_get_material(b, m.data(b))
+# For compatibility
+export set_material
+const set_material = set_on!
+# To facilitate accessing the material reference that is provided to the backends:
+material_ref(b::Backend, m::Material) = ref(b, m).value
+material_ref(b::Backend, s::Shape) = material_ref(b, s.material)
+
+export material_basic, material_glass, material_metal, material_wood, material_concrete, material_grass
+const material_basic = material()
+const material_glass = material()
+const material_metal = material()
+const material_wood = material()
+const material_concrete = material()
+const material_grass = material()
+
+export default_material, default_line_material
+const default_material = Parameter{Material}(material_basic)
+const default_line_material = Parameter{Material}(material_basic)
 
 #=
 Layers are just a classification mechanism.
@@ -706,97 +678,92 @@ text_centered(str::String="", center::Loc=u0(), height::Real=1) =
 # might be just delete them)
 @defproxy(unknown, Shape3D, baseref::Any=required())
 
-@defproxy(sphere, Shape3D, center::Loc=u0(), radius::Real=1)
-realize(b::Backend, s::Sphere) =
-  backend_sphere(b, s.center, s.radius)
+#=
+macro defsolid(name, fields...)
+  fields = (fields..., :(material::Material=default_material()))
+  field_names = map(field -> field.args[1].args[1], fields)
+  field_types = map(field -> esc(field.args[1].args[2]), fields)
+  field_inits = map(field -> field.args[2], fields)
+  mk_param(name,typ,init) = Expr(:kw, name, init)
+  key_params = map(mk_param, field_names, field_types, field_inits)
+  esc(:(@defproxy($(name), Shape3D, $(key_params...))))
+end
+=#
+
+macro defsolid(name_typename, fields...)
+  # Merge this with defproxy
+  (name, typename) = name_typename isa Symbol ?
+    (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
+    name_typename.args
+  field_names = map(field -> field.args[1].args[1], fields)
+  esc(quote
+    @defproxy($(name_typename), Shape3D, $(fields...), material::Material=default_material())
+    realize(b::Backend, s::$(typename)) =
+      $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
+  end)
+end
+
+@defsolid(sphere, center::Loc=u0(), radius::Real=1)
+
 @defproxy(torus, Shape3D, center::Loc=u0(), re::Real=1, ri::Real=1/2)
-@defproxy(cuboid, Shape3D,
+@defsolid(cuboid,
   b0::Loc=u0(),        b1::Loc=add_x(b0,1), b2::Loc=add_y(b1,1), b3::Loc=add_x(b2,-1),
   t0::Loc=add_z(b0,1), t1::Loc=add_x(t0,1), t2::Loc=add_y(t1,1), t3::Loc=add_x(t2,-1))
-realize(b::Backend, s::Cuboid) =
-  backend_pyramid_frustum(b, [s.b0, s.b1, s.b2, s.b3], [s.t0, s.t1, s.t2, s.t3])
 
-@defproxy(regular_pyramid_frustum, Shape3D, edges::Integer=4, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, rt::Real=1, inscribed::Bool=true)
+@defsolid(regular_pyramid_frustum, edges::Integer=4, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, rt::Real=1, inscribed::Bool=true)
 regular_pyramid_frustum(edges::Integer, cb::Loc, rb::Real, angle::Real, ct::Loc, rt::Real=1, inscribed::Bool=true) =
   let (c, h) = position_and_height(cb, ct)
     regular_pyramid_frustum(edges, c, rb, angle, h, rt, inscribed)
   end
-realize(b::Backend, s::RegularPyramidFrustum) =
-  backend_regular_pyramid_frustum(b, s.edges, s.cb, s.rb, s.angle, s.h, s.rt, s.inscribed)
 
-backend_regular_pyramid_frustum(b::Backend, edges, cb, rb, angle, h, rt, inscribed) =
-  backend_pyramid_frustum(
-    b,
-    regular_polygon_vertices(edges, cb, rb, angle, inscribed),
-    regular_polygon_vertices(edges, add_z(cb, h), rt, angle, inscribed))
-
-@defproxy(regular_pyramid, Shape3D, edges::Integer=3, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
+@defsolid(regular_pyramid, edges::Integer=3, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
 regular_pyramid(edges::Integer, cb::Loc, rb::Real, angle::Real, ct::Loc, inscribed::Bool=true) =
   let (c, h) = position_and_height(cb, ct)
     regular_pyramid(edges, c, rb, angle, h, inscribed)
   end
-realize(b::Backend, s::RegularPyramid) =
-  backend_regular_pyramid(b, s.edges, s.cb, s.rb, s.angle, s.h, s.inscribed)
-backend_regular_pyramid(b, edges, cb, rb, angle, h, inscribed) =
-  backend_pyramid(b,
-    regular_polygon_vertices(edges, cb, rb, angle, inscribed),
-    add_z(cb, h))
 
-@defproxy(irregular_pyramid_frustum, Shape3D, bs::Locs=[ux(), uy(), uxy()], ts::Locs=[uxz(), uyz(), uxyz()])
-realize(b::Backend, s::IrregularPyramidFrustum) =
-  backend_pyramid_frustum(b, s.bs, s.ts)
+@defsolid(pyramid_frustum, bs::Locs=[ux(), uy(), uxy()], ts::Locs=[uxz(), uyz(), uxyz()])
 
-@defproxy(irregular_pyramid, Shape3D, bs::Locs=[ux(), uy(), uxy()], t::Loc=uz())
-realize(b::Backend, s::IrregularPyramid) =
-  backend_pyramid(b, s.bs, s.t)
+@defsolid(pyramid, bs::Locs=[ux(), uy(), uxy()], t::Loc=uz())
 
-@defproxy(regular_prism, Shape3D, edges::Integer=3, cb::Loc=u0(), r::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
+@defsolid(regular_prism, edges::Integer=3, cb::Loc=u0(), r::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
 regular_prism(edges::Integer, cb::Loc, r::Real, angle::Real, ct::Loc, inscribed::Bool=true) =
   let (c, h) = position_and_height(cb, ct)
     regular_prism(edges, c, r, angle, h, inscribed)
   end
-realize(b::Backend, s::RegularPrism) =
-  let ps = regular_polygon_vertices(s.edges, s.cb, s.r, s.angle, s.inscribed)
-    backend_pyramid_frustum(b, ps, map(p -> add_z(p, s.h), ps))
-  end
 
-@defproxy(irregular_prism, Shape3D, bs::Locs=[ux(), uy(), uxy()], v::Vec=vz(1))
-irregular_prism(bs::Locs, h::Real) =
+@defsolid(prism, bs::Locs=[ux(), uy(), uxy()], v::Vec=vz(1))
+prism(bs::Locs, h::Real) =
   irregular_prism(bs, vz(h))
-realize(b::Backend, s::IrregularPrism) =
-  backend_pyramid_frustum(b, s.bs, map(p -> (p + s.v), s.bs))
 
-@defproxy(right_cuboid, Shape3D, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
+@defsolid(right_cuboid, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
 right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0; backend::Backend=current_backend()) =
   let (c, h) = position_and_height(cb, ct),
       o = angle == 0 ? c : loc_from_o_phi(c, angle)
     right_cuboid(o, width, height, h, backend=backend)
   end
-realize(b::Backend, s::RightCuboid) =
-  backend_right_cuboid(b, s.cb, s.width, s.height, s.h, nothing)
 
-@defproxy(box, Shape3D, c::Loc=u0(), dx::Real=1, dy::Real=dx, dz::Real=dy)
+@defsolid(box, c::Loc=u0(), dx::Real=1, dy::Real=dx, dz::Real=dy)
 box(c0::Loc, c1::Loc) =
   let v = in_cs(c1, c0)-c0
     box(c0, v.x, v.y, v.z)
   end
-@defproxy(cone, Shape3D, cb::Loc=u0(), r::Real=1, h::Real=1)
+
+@defsolid(cone, cb::Loc=u0(), r::Real=1, h::Real=1)
 cone(cb::Loc, r::Real, ct::Loc) =
   let (c, h) = position_and_height(cb, ct)
     cone(c, r, h)
   end
-@defproxy(cone_frustum, Shape3D, cb::Loc=u0(), rb::Real=1, h::Real=1, rt::Real=1)
+@defsolid(cone_frustum, cb::Loc=u0(), rb::Real=1, h::Real=1, rt::Real=1)
 cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real) =
   let (c, h) = position_and_height(cb, ct)
     cone_frustum(c, rb, h, rt)
   end
-@defproxy(cylinder, Shape3D, cb::Loc=u0(), r::Real=1, h::Real=1)
+@defsolid(cylinder, cb::Loc=u0(), r::Real=1, h::Real=1)
 cylinder(cb::Loc, r::Real, ct::Loc) =
   let (c, h) = position_and_height(cb, ct)
     cylinder(c, r, h)
   end
-realize(b::Backend, s::Cylinder) =
-  backend_cylinder(b, s.cb, s.r, s.h)
 
 @defproxy(extrusion, Shape3D, profile::Shape=point(), v::Vec=vz(1))
 extrusion(profile, h::Real) =
@@ -1197,23 +1164,6 @@ function startSketchup(port)
 end
 
 # CAD
-@defcb all_shapes()
-@defcb all_shapes_in_layer(layer)
-@defcbs delete_all_shapes_in_layer(layer)
-@defcb disable_update()
-@defcb enable_update()
-@defcbs set_view(camera::Loc, target::Loc, lens::Real=50, aperture::Real=32)
-@defcb get_view()
-@defcbs set_sun(altitude::Real, azimuth::Real)
-@defcbs add_ground_plane()
-@defcbs zoom_extents()
-@defcbs view_top()
-@defcb get_material(name::String)
-@defcbs create_material(name::String)
-@defcb current_material()
-@defcbs current_material(material)
-@defcbs set_normal_sky()
-@defcbs set_overcast_sky()
 
 function dolly_effect(camera, target, lens, new_camera)
   cur_dist = distance(camera, target)
@@ -1339,12 +1289,6 @@ select_many_with_prompt(prompt::String, b::Backend, f::Function) =
     map(id -> shape_from_ref(id, b), f(connection(b), prompt))
   end
 
-export render_view
-render_view(name::String="View") =
-  let path = prepare_for_saving_file(render_pathname(name))
-    @cbscall(render_view(path))
-    path
-  end
 export save_view
 save_view(name::String="View") =
   let path = prepare_for_saving_file(render_pathname(name))

@@ -17,8 +17,381 @@ AutoCAD) and by the type of reference they use
 =#
 
 abstract type Backend{K,T} end
-
+backend_name(::Backend) = "AbstractBackend"
 show(io::IO, b::Backend{K,T}) where {K,T} = print(io, backend_name(b))
+
+# Backends need to implement operations or an exception is triggered
+struct UnimplementedBackendOperationException <: Exception
+	backend
+	operation
+  args
+end
+showerror(io::IO, e::UnimplementedBackendOperationException) =
+	print(io, "Operation $(e.operation) is not available in backend $(e.backend).$(length(e.args) > 0 ? "Args: $(e.args)" : "")")
+
+missing_specialization(b::Backend{K,T}, oper=:unknown_operation, args...) where {K,T} =
+  error(UnimplementedBackendOperationException(b, oper, args))
+
+macro bdef(call)
+  name, escname, params = call.args[1], esc(call.args[1]), esc.(call.args[2:end])
+  quote
+    export $(escname)
+    $(escname)(b::Backend{K,T}, $(params...)) where {K,T} =
+      missing_specialization(b, $(QuoteNode(name)), $(params...))
+  end
+end
+
+############################################################
+# First tier: everything is a triangle or a set of triangles
+export b_trig, b_quad, b_ngon,
+			 b_quad_strip, b_quad_strip_closed
+
+@bdef(b_trig(p1, p2, p3))
+
+# By default, we silently drop the mat
+b_trig(b::Backend{K,T}, p1, p2, p3, mat) where {K,T} =
+  b_trig(b, p1, p2, p3)
+
+b_quad(b::Backend{K,T}, p1, p2, p3, p4, mat) where {K,T} =
+  [b_trig(b, p1, p2, p3, mat),
+   b_trig(b, p1, p3, p4, mat)]
+
+b_ngon(b::Backend{K,T}, ps, pivot, smooth, mat) where {K,T} =
+  [(b_trig(b, pivot, ps[i], ps[i+1], mat)
+    for i in 1:size(ps,1)-1)...,
+	 b_trig(b, pivot, ps[end], ps[1], mat)]
+
+b_quad_strip(b::Backend{K,T}, ps, qs, smooth, mat) where {K,T} =
+  [b_quad(b, ps[i], ps[i+1], qs[i+1], qs[i], mat)
+   for i in 1:size(ps,1)-1]
+
+b_quad_strip_closed(b::Backend{K,T}, ps, qs, smooth, mat) where {K,T} =
+  b_quad_strip(b, [ps..., ps[1]], [qs..., qs[1]], smooth, mat)
+
+############################################################
+# Second tier: surfaces
+export b_surface_polygon, b_surface_regular_polygon,
+			 b_surface_circle, b_surface_arc, b_surface
+
+b_surface_regular_polygon(b::Backend{K,T}, edges, c, r, angle, inscribed, mat) where {K,T} =
+  b_ngon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), c, false, mat)
+
+b_surface_polygon(b::Backend{K,T}, ps, mat) where {K,T} =
+  # This only works for convex polygons
+  b_ngon(b, ps, trig_center(ps[1], ps[2], ps[3]), false, mat)
+
+@bdef(b_surface_polygon_with_holes(ps, qss, mat))
+
+b_surface_circle(b::Backend{K,T}, c, r, mat) where {K,T} =
+	b_surface_regular_polygon(b, 32, c, r, 0, true, mat)
+
+b_surface_arc(b::Backend{K,T}, c, r, α, Δα, mat) where {K,T} =
+	b_ngon(b,
+			   [center + vpol(r, a, center.cs)
+		 	 		for a in division(α, α + Δα, Δα*32/2/π, false)],
+				 c, false, mat)
+
+############################################################
+# Third tier: solids
+export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
+       b_generic_pyramid_frustum_with_holes, b_generic_prism_with_holes,
+			 b_pyramid_frustum, b_pyramid, b_prism,
+			 b_regular_pyramid_frustum, b_regular_pyramid, b_regular_prism,
+			 b_cylinder,
+			 b_cuboid,
+			 b_box,
+			 b_sphere,
+			 b_cone
+
+# Each solid can have just one material or multiple materials
+b_generic_pyramid_frustum(b::Backend{K,T}, bs, ts, smooth, bmat, tmat, smat) where {K,T} =
+  [b_surface_polygon(b, reverse(bs), bmat),
+   b_quad_strip_closed(b, bs, ts, smooth, smat),
+   b_surface_polygon(b, ts, tmat)]
+
+b_generic_pyramid_frustum_with_holes(b::Backend{K,T}, bs, ts, smooth, bbs, tts, smooths, bmat, tmat, smat) where {K,T} =
+  [b_surface_polygon_with_holes(b, reverse(bs), bbs, bmat),
+   b_quad_strip_closed(b, bs, ts, smooth, smat),
+   [b_quad_strip_closed(b, bs, ts, smooth, smat)
+    for (bs, ts, smooth) in zip(bbs, tts, smooths)]...,
+   b_surface_polygon_with_holes(b, ts, reverse.(tts), tmat)]
+
+b_generic_pyramid(b::Backend{K,T}, bs, t, smooth, bmat, smat) where {K,T} =
+	[b_surface_polygon(b, reverse(bs), bmat),
+	 b_ngon(b, bs, t, smooth, smat)]
+
+b_generic_prism(b::Backend{K,T}, bs, smooth, v, bmat, tmat, smat) where {K,T} =
+  b_generic_pyramid_frustum(b, bs, translate(bs, v), smooth, bmat, tmat, smat)
+
+b_generic_prism_with_holes(b::Backend{K,T}, bs, smooth, bss, smooths, v, bmat, tmat, smat) where {K,T} =
+  b_generic_pyramid_frustum_with_holes(b, bs, translate(bs, v), smooth, bss, translate.(bss, v), smooths, bmat, tmat, smat)
+
+b_pyramid_frustum(b::Backend{K,T}, bs, ts, mat) where {K,T} =
+  b_pyramid_frustum(b, bs, ts, mat, mat, mat)
+
+b_pyramid_frustum(b::Backend{K,T}, bs, ts, bmat, tmat, smat) where {K,T} =
+  b_generic_pyramid_frustum(b, bs, ts, false, bmat, tmat, smat)
+
+b_pyramid(b::Backend{K,T}, bs, t, mat) where {K,T} =
+	b_pyramid(b, bs, t, mat, mat)
+b_pyramid(b::Backend{K,T}, bs, t, bmat, smat) where {K,T} =
+  b_generic_pyramid(b, bs, t, false, bmat, smat)
+
+b_prism(b::Backend{K,T}, bs, v, mat) where {K,T} =
+	b_prism(b, bs, v, mat, mat, mat)
+b_prism(b::Backend{K,T}, bs, v, bmat, tmat, smat) where {K,T} =
+  b_pyramid_frustum(b, bs, translate(bs, v), bmat, tmat, smat)
+
+b_regular_pyramid_frustum(b::Backend{K,T}, edges, cb, rb, angle, h, rt, inscribed, mat) where {K,T} =
+	b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rt, inscribed, mat, mat, mat)
+b_regular_pyramid_frustum(b::Backend{K,T}, edges, cb, rb, angle, h, rt, inscribed, bmat, tmat, smat) where {K,T} =
+  b_pyramid_frustum(
+    b,
+    regular_polygon_vertices(edges, cb, rb, angle, inscribed),
+    regular_polygon_vertices(edges, add_z(cb, h), rt, angle, inscribed),
+    bmat, tmat, smat)
+
+b_regular_pyramid(b::Backend{K,T}, edges, cb, rb, angle, h, inscribed, mat) where {K,T} =
+	b_regular_pyramid(b, edges, cb, rb, angle, h, inscribed, mat, mat)
+b_regular_pyramid(b::Backend{K,T}, edges, cb, rb, angle, h, inscribed, bmat, smat) where {K,T} =
+  b_pyramid(
+  	b,
+  	regular_polygon_vertices(edges, cb, rb, angle, inscribed),
+  	add_z(cb, h),
+  	bmat, smat)
+
+b_regular_prism(b::Backend{K,T}, edges, cb, rb, angle, h, inscribed, mat) where {K,T} =
+	b_regular_prism(b, edges, cb, rb, angle, h, inscribed, mat, mat, mat)
+b_regular_prism(b::Backend{K,T}, edges, cb, rb, angle, h, inscribed, bmat, tmat, smat) where {K,T} =
+	b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rt, inscribed, bmat, tmat, smat)
+
+b_cylinder(b::Backend{K,T}, cb, r, h, mat) where {K,T} =
+	b_cylinder(b, cb, r, h, mat, mat, mat)
+b_cylinder(b::Backend{K,T}, cb, r, h, bmat, tmat, smat) where {K,T} =
+  b_generic_prism(
+  	b,
+  	regular_polygon_vertices(32, cb, r, 0, true),
+  	true,
+    vz(h, cb.cs),
+  	bmat, tmat, smat)
+
+b_cuboid(b::Backend{K,T}, pb0, pb1, pb2, pb3, pt0, pt1, pt2, pt3, mat) where {K,T} =
+  [b_quad(b, pb3, pb2, pb1, pb0, mat),
+   b_quad_strip_closed(b, [pb0, pb1, pb2, pb3], [pt0, pt1, pt2, pt3], false, mat),
+   b_quad(b, pt0, pt1, pt2, pt3, mat)]
+
+b_box(b::Backend{K,T}, c, dx, dy, dz, mat) where {K,T} =
+  let pb0 = c,
+      pb1 = add_x(c, dx),
+      pb2 = add_xy(c, dx, dy),
+      pb3 = add_y(c, dy),
+      pt0 = add_z(pb0, dz),
+      pt1 = add_z(pb1, dz),
+      pt2 = add_z(pb2, dz),
+      pt3 = add_z(pb3, dz)
+    b_cuboid(b, pb0, pb1, pb2, pb3, pt0, pt1, pt2, pt3, mat)
+  end
+
+b_sphere(b::Backend{K,T}, c, r, mat) where {K,T} =
+  let ϕs = division(0, 2π, 32, false)
+    [b_ngon(b, [add_sph(c, r, ϕ, π/16) for ϕ in ϕs], add_sph(c, r, 0, 0), true, mat),
+  	 [b_quad_strip_closed(b,
+  			[add_sph(c, r, ϕ, ψ+π/16) for ϕ in ϕs],
+  			[add_sph(c, r, ϕ, ψ) for ϕ in ϕs],
+  			true, mat) for ψ in π/16:π/16:π-π/16]...,
+  	 b_ngon(b, [add_sph(c, r, ϕ, π-π/16) for ϕ in ϕs], add_sph(c, r, 0, π), true, mat)]
+	end
+
+b_cone(b::Backend{K,T}, cb, r, h, mat) where {K,T} =
+	b_cone(b, cb, r, h, mat, mat)
+
+b_cone(b::Backend{K,T}, cb, r, h, bmat, smat) where {K,T} =
+	b_generic_pyramid(
+		b,
+		regular_polygon_vertices(32, cb, r, 0, true),
+		add_z(cb, h),
+		true,
+		bmat, smat)
+
+b_cone_frustum(b::Backend{K,T}, cb, rb, h, rt, mat) where {K,T} =
+	b_cone_frustum(b, cb, rb, h, rt, mat, mat, mat)
+
+b_cone_frustum(b::Backend{K,T}, cb, rb, h, rt, bmat, tmat, smat) where {K,T} =
+  b_generic_pyramid_frustum(
+  	b,
+  	regular_polygon_vertices(32, cb, rb, 0, true),
+  	regular_polygon_vertices(32, add_z(cb, h), rt, 0, true),
+		true,
+  	bmat, tmat, smat)
+
+##################################################################
+# Paths and Regions
+b_surface(b::Backend{K,T}, path::ClosedPath, mat) where {K,T} =
+  b_surface_polygon(b, path_vertices(path), mat)
+
+b_surface(b::Backend{K,T}, region::Region, mat) where {K,T} =
+  b_surface_polygon_with_holes(
+    b,
+    path_vertices(outer_path(region)),
+    path_vertices.(inner_paths(region)),
+    mat)
+
+# In theory, this should be implemented using a loft
+b_path_frustum(b::Backend{K,T}, bpath, tpath, bmat, tmat, smat) where {K,T} =
+  let blength = path_length(bpath),
+	  tlength = path_length(tpath),
+	  n = max(length(path_vertices(bpath)), length(path_vertices(bpath))),
+	  bs = division(bpath, n),
+	  ts = division(tpath, n)
+	  # We should rotate one of the vertices array to minimize the distance
+	  # between corresponding so that they align better.
+	b_generic_pyramid_frustum(
+	  b, bs, ts,
+	  is_smooth_path(bpath) || is_smooth_path(tpath),
+	  bmat, tmat, smat)
+	end
+
+# Extruding a profile
+b_extrude_profile(b::Backend{K,T}, cb, h, profile, mat) where {K,T} =
+  b_extrude_profile(b, cb, h, profile, mat, mat, mat)
+
+b_extrude_profile(b::Backend{K,T}, cb, h, profile, bmat, tmat, smat) where {K,T} =
+  let path = profile
+  	b_generic_prism(
+  	  b,
+  	  path_vertices_on(path, cb),
+  	  is_smooth_path(path),
+      vz(h, cb.cs),
+  	  bmat, tmat, smat)
+  end
+
+b_extrude_profile(b::Backend{K,T}, cb, h, profile::CircularPath, bmat, tmat, smat) where {K,T} =
+  b_cylinder(b, add_xy(cb, profile.center.x, profile.center.y), profile.radius, h, bmat, tmat, smat)
+
+b_extrude_profile(b::Backend{K,T}, cb, h, profile::Region, bmat, tmat, smat) where {K,T} =
+  let outer = outer_path(profile),
+      inners = inner_paths(profile)
+    isempty(inners) ?
+      b_generic_prism(b,
+        path_vertices_on(outer, cb),
+        is_smooth_path(outer),
+        vz(h, cb.cs),
+        bmat, tmat, smat) :
+      b_generic_prism_with_holes(b,
+        path_vertices_on(outer, cb),
+        is_smooth_path(outer),
+        path_vertices_on.(inners, cb),
+        is_smooth_path.(inners),
+        vz(h, cb.cs),
+        bmat, tmat, smat)
+  end
+
+##################################################################
+# Materials
+#=
+In most cases, the material already exists in the backend and is
+accessed by name.
+=#
+export b_get_material, b_new_material
+
+@bdef(b_get_material(path))
+
+#=
+It is also possible to algorithmically create materials by
+specifying the material properties, such as color, roughness, etc.
+Given that different kinds of materials need specialized treatment
+(e.g., glass or metal), there are specific operations for these kinds.
+=#
+
+@bdef(b_new_material(path, color, specularity, roughness, transmissivity, transmitted_specular))
+
+#=
+Utilities for interactive development
+=#
+
+export b_all_refs, b_delete_all_refs, b_delete_refs, b_delete_ref
+
+@bdef(b_all_refs())
+
+b_delete_all_refs(b::Backend{K,T}) where {K,T} =
+  b_delete_refs(b, b_all_shapes(b))
+
+b_delete_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
+  for r in rs
+		b_delete_ref(b, r)
+	end
+
+b_delete_ref(b::Backend{K,T}, r::T) where {K,T} =
+  missing_specialization(b, :b_delete_ref, r)
+
+#=
+BIM operations require some extra support from the backends.
+Given that humans prefer to live in horizontal surfaces, one interesting idea is
+to separate 3D coordinates in two parts, one for the horizontal 2D coordinates
+x and y, and another for the 1D vertical coordinate z, known as level.
+=#
+
+level_height(b::Backend{K,T}, level) where {K,T} = level_height(level)
+
+#=
+Another relevant concept is the family. It contains generic information about
+the construction element.
+Given the wide variety of families (slabs, beams, windows, etc), it is not
+possible to define a generic constructor or getter. However, for certain kinds
+of families, it is possible to retrieve a set of materials that should be used
+to represent the family. For a slab family, it should also be possible to
+retrieve its thickness.
+=#
+
+#=
+Horizontal BIM elements rely on the level
+=#
+
+material_refs(b::Backend{K,T}, materials) where {K,T} =
+  [material_ref(b, mat) for mat in materials]
+
+b_slab(b::Backend{K,T}, profile, level, family) where {K,T} =
+  b_extrude_profile(
+    b,
+    z(level_height(b, level) + slab_family_elevation(b, family)),
+    slab_family_thickness(b, family),
+    profile,
+    material_refs(b, family_materials(b, family))[1:3]...)
+
+b_beam(b::Backend{K,T}, c, h, family) where {K,T} =
+  b_extrude_profile(
+    b,
+    c,
+    h,
+    family_profile(b, family),
+	material_refs(b, family_materials(b, family))[1:3]...)
+
+# A poor's man approach to deal with Z-fighting
+const support_z_fighting_factor = 0.999
+const wall_z_fighting_factor = 0.998
+
+b_wall(b::Backend{K,T}, w_path, w_height, l_thickness, r_thickness, lmat, rmat, smat) where {K,T} =
+  let w_paths = subpaths(w_path),
+      r_w_paths = subpaths(offset(w_path, -r_thickness)),
+      l_w_paths = subpaths(offset(w_path, l_thickness)),
+      w_height = w_height*wall_z_fighting_factor,
+      prevlength = 0,
+      refs = []
+    for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
+      let currlength = prevlength + path_length(w_seg_path),
+          c_r_w_path = closed_path_for_height(r_w_path, w_height),
+          c_l_w_path = closed_path_for_height(l_w_path, w_height)
+        append!(refs, b_pyramid_frustum(b, path_vertices(c_r_w_path), path_vertices(c_l_w_path), rmat, lmat, smat))
+        prevlength = currlength
+      end
+    end
+    [refs...]
+  end
+
+b_wall(b::Backend{K,T}, w_path, w_height, l_thickness, r_thickness, family) where {K,T} =
+  path_length(w_path) < path_tolerance() ?
+    void_ref(b) :
+    b_wall(b, w_path, w_height, l_thickness, r_thickness, family_materials(family)[1:3])
 
 #=
 Operations that rely on a backend need to have a backend selected and will
@@ -45,6 +418,21 @@ current_backend() =
 current_backend(b::Backend) = current_backends((b,))
 has_current_backend() = !isempty(current_backends())
 
+# Variables with backend-specific values can be useful.
+# Basically, they are dictionaries
+
+struct BackendParameter
+	value::IdDict{Backend, Any}
+	BackendParameter() = new(IdDict{Backend, Any}())
+	BackendParameter(p::BackendParameter) = new(copy(p.value))
+  	BackendParameter(ps::Pair{K}...) where {K<:Backend} = new(IdDict{Backend, Any}(ps...))
+end
+
+(p::BackendParameter)(b::Backend=current_backend()) = get(p.value, b, nothing)
+(p::BackendParameter)(b::Backend, newvalue) = p.value[b] = newvalue
+
+Base.copy(p::BackendParameter) = BackendParameter(p)
+
 export @backend
 macro backend(b, expr)
   quote
@@ -63,59 +451,26 @@ macro backends(b, expr)
   end
 end
 
-# Backends need to implement operations or an exception is triggered
-struct UnimplementedBackendOperationException <: Exception
-	backend
-	operation
-end
-showerror(io::IO, e::UnimplementedBackendOperationException) =
-	print(io, "Operation $(e.operation) is not implemented for backend $(e.backend).")
+## THIS NEEDS TO BE SIMPLIFIED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-# backend define
-macro bdef(name_params)
-  name = name_params.args[1]
-  params = esc.(name_params.args[2:end])
-  backend_name = esc(Symbol("backend_$name"))
-  quote
-    export $(backend_name)
-    $(backend_name)(b::Backend, $(params...)) =
-	  throw(UnimplementedBackendOperationException(b, $(backend_name)))
-  end
-end
-# backend call
-macro bcall(backend, name_args)
-  name = name_args.args[1]
-  args = name_args.args[2:end]
-  backend_name = esc(Symbol("backend_$name"))
-  quote
-    $(backend_name)($(esc(backend)), $(esc.(args)...))
-  end
-end
+# Many functions default the backend to the current_backend and throw an error if there is none.
+# We will simplify their definition with a macro:
+# @defop delete_all_shapes()
+# that expands into
+# delete_all_shapes(backend::Backend=current_backend()) = throw(UndefinedBackendException())
+# Note that according to Julia semantics the previous definition actually generates two different ones:
+# delete_all_shapes() = delete_all_shapes(current_backend())
+# delete_all_shapes(backend::Backend) = throw(UndefinedBackendException())
+# Hopefully, backends will specialize the function for each specific backend
 
-# backends call
-macro bscall(backends, name_args)
-	name = name_args.args[1]
-  args = name_args.args[2:end]
-	backend_name = esc(Symbol("backend_$name"))
-  quote
-    for backend in $(esc(backends))
-	  $(backend_name)(backend, $(esc.(args)...))
-    end
-  end
-end
-
-# current backends call
-macro cbscall(name_args)
-	name = name_args.args[1]
-  args = name_args.args[2:end]
-	backend_name = esc(Symbol("backend_$name"))
-  quote
-    for backend in current_backends()
-	  $(backend_name)(backend, $(esc.(args)...))
-    end
-  end
-end
-
+#macro defop(name_params)
+#    name, params = name_params.args[1], name_params.args[2:end]
+#    quote
+#        export $(esc(name))
+#        $(esc(name))($(map(esc,params)...), backend::Backend=current_backend()) =
+#          throw(UndefinedBackendException())
+#    end
+#end
 #=
 @macroexpand @bdef(stroke(path::Path))
 @macroexpand @bcall(Base.backend, stroke(Main.my_path))
@@ -149,30 +504,13 @@ backend_chair(b::Backend, p, angle, f) =
 #@bdef curtain_wall(s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol)
 backend_curtain_wall(b::Backend, s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol) =
   let family = getproperty(s.family, kind),
-      mat = get_material(b, family_ref(b, family))
+      (lmat, rmat, smat) = material_refs(b, family_materials(b, family)[1:3])
     with_family_in_layer(b, family) do
-      backend_wall_with_materials(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, mat, mat)
+      b_wall(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, lmat, rmat, smat)
     end
   end
 @bdef curtain_wall(s, path::Path, bottom::Real, height::Real, thickness::Real, kind::Symbol)
 
-
-@bdef sphere(c::Loc, r::Real)
-#@bdef sphere(c::Loc, r::Real, material, layer)
-@bdef cylinder(cb::Loc, r::Real, h::Real)
-
-#@bdef cylinder(cb::Loc, r::Real, h::Real, material)
-backend_cylinder(b::Backend, c::Loc, r::Real, h::Real, material) =
-  backend_cylinder(b, c, r, h)
-
-
-
-#@bdef delete_shapes(shapes::Shapes)
-#@bdef extrusion(p::Point, v::Vec)
-#@bdef extrusion(s::Shape, v::Vec)
-#@bdef family(family::Family)
-
-#@bdef fill(path)
 backend_fill(b, path) =
   backend_fill_curves(b, backend_stroke(b, path))
 
@@ -224,10 +562,15 @@ backend_pyramid_frustum(b::Backend, bot_vs::Locs, top_vs::Locs) =
     refs
   end
 
-@bdef realistic_sky(altitude, azimuth, turbidity, withsun)
-@bdef realistic_sky(date, latitude, longitude, meridian, turbidity, withsun)
 
-@bdef render_view(path::String)
+
+@bdef b_set_view(camera, target, lens, aperture)
+@bdef b_get_view()
+
+@bdef b_realistic_sky(altitude, azimuth, turbidity, withsun)
+@bdef b_realistic_sky(date, latitude, longitude, meridian, turbidity, withsun)
+
+@bdef b_render_view(path)
 
 #@bdef revolve_curve(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
 #@bdef revolve_point(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)

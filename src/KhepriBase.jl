@@ -23,6 +23,7 @@ include("Regions.jl")
 include("Paths.jl")
 include("Geometry.jl")
 include("Backends.jl")
+include("Frontend.jl")
 include("Shapes.jl")
 include("Primitives.jl")
 include("BIM.jl")
@@ -32,7 +33,7 @@ export khepribase_interface_file
 khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
 
 # From ColorTypes
-export RGB, RGBA, rgb
+export RGB, RGBA, rgb, rgba
 
 
 export and_mark_deleted,
@@ -53,8 +54,7 @@ export and_mark_deleted,
        backend_frame_at,
        acad_revolution,
        backend_bounding_box,
-       backend_cylinder,
-       backend_delete_shapes,
+       b_delete_shapes,
        backend_fill_curves,
        backend_loft_curve_point,
        backend_loft_curves,
@@ -63,8 +63,6 @@ export and_mark_deleted,
        backend_map_division,
        backend_node_displacement_function,
        backend_panel,
-       backend_sphere,
-       backend_regular_pyramid,
        backend_revolve_curve,
        backend_revolve_point,
        backend_revolve_surface,
