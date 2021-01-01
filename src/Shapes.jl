@@ -377,7 +377,7 @@ switch_to_backend(from::Backend, to::Backend) =
   current_backend(to)
 
 
-@defcbs delete_all_shapes()=b_delete_all_refs(backend)
+const delete_all_shapes = delete_all_refs
 @defcbs set_length_unit(unit::String="")
 @defcb reset_backend()
 @defcb save_as(pathname::String, format::String)
@@ -467,7 +467,10 @@ there is also a pre-defined set of materials
 
 @defproxy(material, Proxy, data::BackendParameter=BackendParameter())
 material(bv::Pair, bvs...) = material(data=BackendParameter(bv, bvs...))
-realize(b::Backend, m::Material) = b_get_material(b, m.data(b))
+realize(b::Backend, m::Material) = realize_material(b, m.data(b))
+realize_material(b::Backend, ::Nothing) = void_ref(b)
+realize_material(b::Backend, r) = b_get_material(b, r)
+
 # For compatibility
 export set_material
 const set_material = set_on!
@@ -475,12 +478,13 @@ const set_material = set_on!
 material_ref(b::Backend, m::Material) = ref(b, m).value
 material_ref(b::Backend, s::Shape) = material_ref(b, s.material)
 
-export material_basic, material_glass, material_metal, material_wood, material_concrete, material_grass
+export material_basic, material_glass, material_metal, material_wood, material_concrete, material_plaster, material_grass
 const material_basic = material()
 const material_glass = material()
 const material_metal = material()
 const material_wood = material()
 const material_concrete = material()
+const material_plaster = material()
 const material_grass = material()
 
 export default_material, default_line_material
@@ -610,28 +614,35 @@ realize(b::Backend, s::Rectangle) =
     add_x(s.corner, s.dx),
     add_xy(s.corner, s.dx, s.dy),
     add_y(s.corner, s.dy)])
-@defproxy(surface_circle, Shape2D, center::Loc=u0(), radius::Real=1)
-@defproxy(surface_arc, Shape2D, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
-@defproxy(surface_elliptic_arc, Shape2D, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
-@defproxy(surface_ellipse, Shape2D, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
-@defproxy(surface_polygon, Shape2D, vertices::Locs=[u0(), ux(), uy()])
+
+# Surfaces
+
+macro defsurface(name_typename, fields...)
+  # Merge this with defproxy
+  (name, typename) = name_typename isa Symbol ?
+    (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
+    name_typename.args
+  field_names = map(field -> field.args[1].args[1], fields)
+  esc(quote
+    @defproxy($(name_typename), Shape2D, $(fields...), material::Material=default_material())
+    realize(b::Backend, s::$(typename)) =
+      $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
+  end)
+end
+
+@defsurface(surface_circle, center::Loc=u0(), radius::Real=1)
+@defsurface(surface_arc, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
+@defsurface(surface_elliptic_arc, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
+@defsurface(surface_ellipse, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
+@defsurface(surface_polygon, vertices::Locs=[u0(), ux(), uy()])
 surface_polygon(v0, v1, vs...) = surface_polygon([v0, v1, vs...])
-realize(b::Backend, s::SurfacePolygon) =
-  backend_surface_polygon(b, s.vertices)
-@defproxy(surface_regular_polygon, Shape2D, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true)
-realize(b::Backend, s::SurfaceRegularPolygon) =
-  backend_surface_polygon(b, regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))
-@defproxy(surface_rectangle, Shape2D, corner::Loc=u0(), dx::Real=1, dy::Real=1)
+@defsurface(surface_regular_polygon, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true)
+@defsurface(surface_rectangle, corner::Loc=u0(), dx::Real=1, dy::Real=1)
 surface_rectangle(p::Loc, q::Loc) =
   let v = in_cs(q - p, p.cs)
     surface_rectangle(p, v.x, v.y)
   end
-realize(b::Backend, s::SurfaceRectangle) =
-  let c = s.corner,
-      dx = s.dx,
-      dy = s.dy
-    backend_surface_polygon(b, [c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy), c])
-  end
+
 @defproxy(surface, Shape2D, frontier::Shapes1D=[circle()])
 surface(c0::Shape, cs...) = surface([c0, cs...])
 #To be removed
@@ -1301,17 +1312,19 @@ realistic_sky(;
     date::DateTime=DateTime(2020, 9, 21, 10, 0, 0),
     latitude::Real=39,
     longitude::Real=9,
+    elevation::Real=0,
     meridian::Real=0,
     altitude::Union{Missing,Real}=missing,
     azimuth::Union{Missing,Real}=missing,
     turbidity::Real=5,
-    withsun::Bool=true) =
+    withsun::Bool=true,
+    backend::Backend=current_backend()) =
   ismissing(altitude) ?
-    backend_realistic_sky(
-      current_backend(),
-      date, latitude, longitude, meridian, turbidity, withsun) :
-    backend_realistic_sky(
-      current_backend(),
+    b_realistic_sky(
+      backend,
+      date, latitude, longitude, elevation, meridian, turbidity, withsun) :
+    b_realistic_sky(
+      backend,
       altitude, azimuth, turbidity, withsun)
 
 export ground

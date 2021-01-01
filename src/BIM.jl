@@ -495,7 +495,8 @@ export HasBooleanOps, has_boolean_ops
 
 struct HasBooleanOps{T} end
 # By default, we rely on boolean operations
-has_boolean_ops(::Type{<:Backend}) = HasBooleanOps{true}()
+# By default, we DON'T rely on boolean operations
+has_boolean_ops(::Type{<:Backend}) = HasBooleanOps{false}()
 
 realize(b::B, w::Wall) where B<:Backend =
   realize(has_boolean_ops(B), b, w)
@@ -827,14 +828,6 @@ meta_program(w::Wall) =
 # Beams are mainly horizontal elements. By default, a beam is aligned along its top axis
 @deffamily(beam_family, Family,
   profile::ClosedPath=top_aligned_rectangular_profile(1, 2))
-
-family_profile(b::Backend{K,T}, family) where {K,T} =
-  family.profile
-family_materials(b::Backend{K,T}, family) where {K,T} =
-  family.data(b).materials
-
-#beam_family(Width::Real=1.0, Height::Real=2.0; width=Width, height=Height) =
-#  beam_family(rectangular_path(xy(-width/2,-height), width, height))
 
 @defproxy(beam, BIMShape, cb::Loc=u0(), h::Real=1, angle::Real=0, family::BeamFamily=default_beam_family())
 beam(cb::Loc, ct::Loc, Angle::Real=0, Family::BeamFamily=default_beam_family(); angle::Real=Angle, family::BeamFamily=Family) =
@@ -1337,3 +1330,39 @@ with(XPTO_family, param=value) do
   ...
 end
 =#
+
+
+family_profile(b::Backend{K,T}, family) where {K,T} =
+  family.profile
+
+family_materials(b::Backend{K,T}, family) where {K,T} =
+  isnothing(family.data(b)) ?
+    default_family_materials(b, family) :
+    family.data(b).materials
+
+default_family_materials(b::Backend{K,T}, family) where {K,T} =
+  error("Missing default materials for $(family)")
+
+default_family_materials(::Backend{K,T}, ::SlabFamily) where {K,T} =
+  (material_concrete, material_concrete, material_concrete)
+
+default_family_materials(::Backend{K,T}, ::WallFamily) where {K,T} =
+  (material_concrete, material_concrete, material_concrete)
+
+default_family_materials(::Backend{K,T}, ::BeamFamily) where {K,T} =
+  (material_metal, material_metal, material_metal)
+
+default_family_materials(::Backend{K,T}, ::ColumnFamily) where {K,T} =
+  (material_concrete, material_concrete, material_concrete)
+
+default_family_materials(::Backend{K,T}, ::PanelFamily) where {K,T} =
+  (material_glass, material_glass, material_glass)
+
+default_family_materials(::Backend{K,T}, ::CurtainWallFamily) where {K,T} =
+  (material_metal, material_metal, material_metal)
+
+default_family_materials(::Backend{K,T}, ::CurtainWallFrameFamily) where {K,T} =
+  (material_metal, material_metal, material_metal)
+
+default_family_materials(::Backend{K,T}, ::DoorFamily) where {K,T} =
+  (material_wood, material_wood, material_wood)

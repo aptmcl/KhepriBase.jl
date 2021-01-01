@@ -41,10 +41,10 @@ macro bdef(call)
   end
 end
 
+@bdef(void_ref())
 ############################################################
 # First tier: everything is a triangle or a set of triangles
-export b_trig, b_quad, b_ngon,
-			 b_quad_strip, b_quad_strip_closed
+export b_trig, b_quad, b_ngon, b_quad_strip, b_quad_strip_closed
 
 @bdef(b_trig(p1, p2, p3))
 
@@ -73,23 +73,26 @@ b_quad_strip_closed(b::Backend{K,T}, ps, qs, smooth, mat) where {K,T} =
 export b_surface_polygon, b_surface_regular_polygon,
 			 b_surface_circle, b_surface_arc, b_surface
 
-b_surface_regular_polygon(b::Backend{K,T}, edges, c, r, angle, inscribed, mat) where {K,T} =
-  b_ngon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), c, false, mat)
-
 b_surface_polygon(b::Backend{K,T}, ps, mat) where {K,T} =
   # This only works for convex polygons
   b_ngon(b, ps, trig_center(ps[1], ps[2], ps[3]), false, mat)
 
 @bdef(b_surface_polygon_with_holes(ps, qss, mat))
 
+b_surface_rectangle(b::Backend{K,T}, c, dx, dy) where {K,T} =
+  b_quad(b, c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy))
+
+b_surface_regular_polygon(b::Backend{K,T}, edges, c, r, angle, inscribed, mat) where {K,T} =
+  b_ngon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), c, false, mat)
+
 b_surface_circle(b::Backend{K,T}, c, r, mat) where {K,T} =
 	b_surface_regular_polygon(b, 32, c, r, 0, true, mat)
 
 b_surface_arc(b::Backend{K,T}, c, r, α, Δα, mat) where {K,T} =
 	b_ngon(b,
-			   [center + vpol(r, a, center.cs)
-		 	 		for a in division(α, α + Δα, Δα*32/2/π, false)],
-				 c, false, mat)
+		   [center + vpol(r, a, center.cs)
+		 	for a in division(α, α + Δα, Δα*32/2/π, false)],
+		   c, false, mat)
 
 ############################################################
 # Third tier: solids
@@ -296,6 +299,9 @@ export b_get_material, b_new_material
 
 @bdef(b_get_material(path))
 
+# Default for backends that do not have materials
+b_get_material(b::Backend{K,T}, mat::Nothing) where {K,T} = zero(T)
+
 #=
 It is also possible to algorithmically create materials by
 specifying the material properties, such as color, roughness, etc.
@@ -425,7 +431,7 @@ struct BackendParameter
 	value::IdDict{Backend, Any}
 	BackendParameter() = new(IdDict{Backend, Any}())
 	BackendParameter(p::BackendParameter) = new(copy(p.value))
-  	BackendParameter(ps::Pair{K}...) where {K<:Backend} = new(IdDict{Backend, Any}(ps...))
+  	BackendParameter(ps::Pair{<:Backend}...) = new(IdDict{Backend, Any}(ps...))
 end
 
 (p::BackendParameter)(b::Backend=current_backend()) = get(p.value, b, nothing)
@@ -562,13 +568,11 @@ backend_pyramid_frustum(b::Backend, bot_vs::Locs, top_vs::Locs) =
     refs
   end
 
-
-
 @bdef b_set_view(camera, target, lens, aperture)
 @bdef b_get_view()
 
 @bdef b_realistic_sky(altitude, azimuth, turbidity, withsun)
-@bdef b_realistic_sky(date, latitude, longitude, meridian, turbidity, withsun)
+@bdef b_realistic_sky(date, latitude, longitude, elevation, meridian, turbidity, withsun)
 
 @bdef b_render_view(path)
 
