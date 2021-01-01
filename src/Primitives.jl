@@ -533,19 +533,15 @@ decode(ns::VoidIsByte, t::Union{Val{:void},Val{:None}}, c::IO) =
 
 # Useful CS types
 export Guid, Guids
-const Guid = Vector{UInt8}
+const Guid = UInt128
 const Guids = Vector{Guid}
 
-encode(::Val{:CS}, ::Val{:Guid}, c::IO, v::Guid) =
-  write(c, v)
+encode(::Val{:CS}, ::Val{:Guid}, c::IO, v) =
+  write(c, v % UInt128)
 decode(ns::Val{:CS}, ::Val{:Guid}, c::IO) =
-  let guid = read(c, 16)
+  let guid = read(c, UInt128)
     iszero(guid) ? backend_error(ns, c) : guid
   end
-
-#=
-@code_typed decode(Val(:CS), [Val(:Guid)], IOBuffer())
-=#
 
 # It is frequently necessary to encode/decode an abstract type that is
 # implemented os some primitive type
@@ -631,4 +627,23 @@ decode(ns::SupportsTuples, ::Val{:RGB}, c::IO) =
 encode(ns::SupportsTuples, ::Val{:RGBA}, c::IO, v) =
   encode(ns, (Val(:float),Val(:float),Val(:float),Val(:float)), c, (red(v), green(v), blue(v), alpha(v)))
 decode(ns::SupportsTuples, ::Val{:RGBA}, c::IO) =
-  RGBA(decode(ns, Val(:float4), c)...)
+  RGBA(decode(ns, (Val(:float),Val(:float),Val(:float),Val(:float)), c)...)
+
+encode(ns::SupportsTuples, ::Val{:Color}, c::IO, v) =
+  encode(ns, (Val(:byte),Val(:byte),Val(:byte),Val(:byte)), c,
+         (reinterpret(v.alpha), reinterpret(v.r), reinterpret(v.g), reinterpret(v.b)))
+decode(ns::SupportsTuples, ::Val{:Color}, c::IO) =
+  let a = decode(ns, Val(:byte), c),
+      r = decode(ns, Val(:byte), c),
+      g = decode(ns, Val(:byte), c),
+      b = decode(ns, Val(:byte), c)
+    RGBA(r, g, b, a)
+  end
+
+const one_year_milliseconds = 366*24*60*60*1000
+
+encode(ns::Val{:CS}, ::Val{:DateTime}, c::IO, v) =
+  encode(ns, Val(:long), c, (Dates.datetime2epochms(v) - one_year_milliseconds)*10000) # Julia uses milliseconds since 0000-01-01T00:00:00 while C# uses 100s of nanoseconds since 0001-01-01T00:00:00
+
+decode(ns::Val{:CS}, ::Val{:DateTime}, c::IO) =
+  Dates.epochms2datetime(decode(ns, Val(:long), c) ÷ 10000 + one_year_milliseconds)
