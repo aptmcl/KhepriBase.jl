@@ -48,8 +48,8 @@ macro defcbs(expr)
         for backend in backends
           $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
         end
-      $(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
-          $(body)
+      #$(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
+        #  $(body)
     end)
 end
 
@@ -112,6 +112,7 @@ end
 
 @defcb all_shapes()
 @defcb all_shapes_in_layer(layer)
+@defcbs delete_all_refs()
 @defcbs delete_all_shapes_in_layer(layer)
 @defcb disable_update()
 @defcb enable_update()
