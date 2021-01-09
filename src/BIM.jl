@@ -456,8 +456,6 @@ realize_frustum(b::Backend, top, bot, side, bot_path::Path, top_path::Path, clos
 realize_pyramid_frustum(b::Backend, bot_mat, top_mat, side_mat, bot_vs::Locs, top_vs::Locs, closed=true) =
   backend_pyramid_frustum(b, bot_vs, top_vs)
 
-
-
 #=
 
 A wall contains doors and windows
@@ -857,7 +855,7 @@ realize(b::Backend, s::Beam) =
   end
 
 realize(b::Backend, s::FreeColumn) =
-  b_beam(b, s.cb, s.h, s.family)
+  b_beam(b, loc_from_o_phi(s.cb, s.angle), s.h, s.family)
 #  with_family_in_layer(b, s.family) do
 #    backend_realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
 #  end
@@ -865,7 +863,7 @@ realize(b::Backend, s::FreeColumn) =
 realize(b::Backend, s::Column) =
   let base_height = level_height(s.bottom_level),
       top_height = level_height(s.top_level)
-    b_beam(b, add_z(s.cb, base_height), top_height-base_height, s.family)
+    b_beam(b, add_z(loc_from_o_phi(s.cb, s.angle), base_height), top_height-base_height, s.family)
   end
   # with_family_in_layer(b, s.family) do
   #   let base_height = s.bottom_level.height,
@@ -1055,20 +1053,12 @@ fixed_truss_node_family =
 @defproxy(truss_bar, BIMShape, p0::Loc=u0(), p1::Loc=u0(), angle::Real=0, family::TrussBarFamily=default_truss_bar_family())
 
 realize(b::Backend, s::TrussNode) =
-  with_family_in_layer(b, s.family) do
-    let rs = b_sphere(b, s.p, s.family.radius, nothing)
-      truss_node_is_supported(s) ?
-        rs : #[rs, backend_regular_pyramid(b, 4, add_z(s.p, -2*s.family.radius),
-              #                       s.family.radius, 0, 2*s.family.radius, false)] :
-        rs
-    end
-  end
+  truss_node_is_supported(s) ?
+    [b_truss_node(b, s.p, s.family), b_truss_node_support(b, s.p, s.family)] :
+    b_truss_node(b, s.p, s.family)
+
 realize(b::Backend, s::TrussBar) =
-  with_family_in_layer(b, s.family) do
-    let (c, h) = position_and_height(s.p0, s.p1)
-      backend_cylinder(b, c, s.family.radius, h)
-    end
-  end
+  b_truss_bar(b, s.p0, s.p1, s.family)
 
 export truss_node_is_supported
 truss_node_is_supported(n) =
@@ -1366,3 +1356,9 @@ default_family_materials(::Backend{K,T}, ::CurtainWallFrameFamily) where {K,T} =
 
 default_family_materials(::Backend{K,T}, ::DoorFamily) where {K,T} =
   (material_wood, material_wood, material_wood)
+
+default_family_materials(::Backend{K,T}, ::TrussBarFamily) where {K,T} =
+  (material_metal, material_metal, material_metal)
+
+default_family_materials(::Backend{K,T}, ::TrussNodeFamily) where {K,T} =
+  (material_metal,)
