@@ -92,7 +92,7 @@ save_film_frame(obj::Any=true; render_view=render_view, backend=current_backend(
   begin
     if saving_film_frames()
       with(render_kind_dir, "Film") do
-        backend_render_view(backend, prepare_for_saving_file(render_pathname(frame_filename(film_filename(), film_frame()))))
+        b_render_view(backend, prepare_for_saving_file(render_pathname(frame_filename(film_filename(), film_frame()))))
         film_frame(film_frame() + 1)
       end
     end
@@ -313,6 +313,20 @@ dolly_effect_forth(delta, camera, target, lens, frames) =
       dolly_effect_forth(delta, new_camera, target, new_lens, frames-1)
     end
   end
+
+function dolly_effect(camera, target, lens, new_camera)
+  cur_dist = distance(camera, target)
+  new_dist = distance(new_camera, target)
+  new_lens = lens*new_dist/cur_dist
+  view(new_camera, target, new_lens)
+end
+
+dolly_effect_pull_back(delta) = begin
+  camera, target, lens = get_view()
+  d = distance(camera, target)
+  new_camera = target + (camera-target)*(d+delta)/d
+  dolly_effect(camera, target, lens, new_camera)
+end
 
 #=
 To collect the camera/target/lens path
