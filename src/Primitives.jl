@@ -324,7 +324,12 @@ end
 =#
 
 lang_rpc(lang, sigs) =
-  [let (local_name, remote_name, params, ret) = parse_signature(Val(lang.value), str)
+  [let (local_name, remote_name, params, ret) =
+      try
+        parse_signature(Val(lang.value), str)
+      catch
+        error("Cannot parse in $(lang) the signature $(str)")
+      end
     (Symbol(local_name), remote_function_meta_program(lang, str, local_name, remote_name, params, ret))
    end
    for str in split(sigs, "\n") if str != ""]
@@ -423,6 +428,12 @@ encode(ns::SizeIsInt, t::Val{:size}, c::IO, v) =
 decode(ns::SizeIsInt, t::Val{:size}, c::IO) =
   decode_or_error(ns, Val(:int), c, -1)
 
+const SizeIsInt = Union{Val{:CS},Val{:CPP},Val{:PY}}
+encode(ns::SizeIsInt, t::Val{:address}, c::IO, v) =
+  encode(ns, Val(:long), c, v)
+decode(ns::SizeIsInt, t::Val{:address}, c::IO) =
+  decode_or_error(ns, Val(:long), c, -1)
+
 const BoolIsByte = Union{Val{:CS},Val{:PY}}
 encode(ns::BoolIsByte, t::Val{:bool}, c::IO, v::Bool) =
   encode(ns, Val(:byte), c, v ? 1 : 0)
@@ -434,6 +445,13 @@ encode(::ByteIsUInt8, t::Val{:byte}, c::IO, v) =
   write(c, convert(UInt8, v))
 decode(::ByteIsUInt8, t::Val{:byte}, c::IO) =
   convert(UInt8, read(c, UInt8))
+
+# Assuming short is two bytes in C++ and Python
+const ShortIsInt16 = Union{Val{:CS},Val{:CPP},Val{:PY}}
+encode(::ShortIsInt16, t::Val{:short}, c::IO, v) =
+  write(c, convert(Int16, v))
+decode(::ShortIsInt16, t::Val{:short}, c::IO) =
+  convert(Int, read(c, Int16))
 
 # Assuming int is four bytes in C++ and Python
 const IntIsInt32 = Union{Val{:CS},Val{:CPP},Val{:PY}}
