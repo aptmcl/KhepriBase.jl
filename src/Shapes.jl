@@ -376,8 +376,14 @@ backend(backend::Backend) =
 switch_to_backend(from::Backend, to::Backend) =
   current_backend(to)
 
-
+export all_shapes, delete_all_shapes
 const delete_all_shapes = delete_all_refs
+all_shapes(b::Backend=current_backend()) =
+  Shape[b_shape_from_ref(b, r) for r in b_all_refs(b)]
+@bdef(b_shape_from_ref(r))
+
+
+
 @defcbs set_length_unit(unit::String="")
 @defcb reset_backend()
 @defcb save_as(pathname::String, format::String)
@@ -534,12 +540,27 @@ export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D
 
 @defproxy(empty_shape, Shape0D)
 @defproxy(universal_shape, Shape3D)
-@defproxy(point, Shape0D, position::Loc=u0())
-@defproxy(line, Shape1D, vertices::Locs=[u0(), ux()])
+
+macro defshape(supertype, name_typename, fields...)
+  # Merge this with defproxy
+  (name, typename) = name_typename isa Symbol ?
+    (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
+    name_typename.args
+  field_names = map(field -> field.args[1].args[1], fields)
+  esc(quote
+    @defproxy($(name_typename), $(supertype), $(fields...), material::Material=default_material())
+    realize(b::Backend, s::$(typename)) =
+      $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
+  end)
+end
+
+@defshape(Shape0D, point, position::Loc=u0())
+
+@defshape(Shape1D, line, vertices::Locs=[u0(), ux()])
 line(v0::Loc, v1::Loc, vs...) = line([v0, v1, vs...])
-@defproxy(closed_line, Shape1D, vertices::Locs=[u0(), ux(), uy()])
+@defshape(Shape1D, closed_line, vertices::Locs=[u0(), ux(), uy()])
 closed_line(v0::Loc, v1::Loc, vs...) = closed_line([v0, v1, vs...])
-@defproxy(spline, Shape1D, points::Locs=[u0(), ux(), uy()], v0::Union{Bool,Vec}=false, v1::Union{Bool,Vec}=false,
+@defshape(Shape1D, spline, points::Locs=[u0(), ux(), uy()], v0::Union{Bool,Vec}=false, v1::Union{Bool,Vec}=false,
           interpolator::Parameter{Any}=Parameter{Any}(missing))
 spline(v0::Loc, v1::Loc, vs...) = spline([v0, v1, vs...])
 
@@ -590,30 +611,20 @@ map_division(f::Function, s::Spline, n::Int, backend::Backend=backend(s)) =
 =#
 #(def-base-shape 1D-shape (spline* [pts : (Listof Loc) (list (u0) (ux) (uy))] [v0 : (U Boolean Vec) #f] [v1 : (U Boolean Vec) #f]))
 
-@defproxy(closed_spline, Shape1D, points::Locs=[u0(), ux(), uy()])
+@defshape(Shape1D, closed_spline, points::Locs=[u0(), ux(), uy()])
 closed_spline(v0, v1, vs...) = closed_spline([v0, v1, vs...])
-@defproxy(circle, Shape1D, center::Loc=u0(), radius::Real=1)
-@defproxy(arc, Shape1D, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
-@defproxy(elliptic_arc, Shape1D, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
-@defproxy(ellipse, Shape1D, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
-@defproxy(polygon, Shape1D, vertices::Locs=[u0(), ux(), uy()])
+@defshape(Shape1D, circle, center::Loc=u0(), radius::Real=1)
+@defshape(Shape1D, arc, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
+@defshape(Shape1D, elliptic_arc, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
+@defshape(Shape1D, ellipse, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
+@defshape(Shape1D, polygon, vertices::Locs=[u0(), ux(), uy()])
 polygon(v0, v1, vs...) = polygon([v0, v1, vs...])
-realize(b::Backend, s::Polygon) =
-  backend_polygon(b, s.vertices)
-@defproxy(regular_polygon, Shape1D, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true)
-realize(b::Backend, s::RegularPolygon) =
-  backend_polygon(b, regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))
-@defproxy(rectangle, Shape1D, corner::Loc=u0(), dx::Real=1, dy::Real=1)
+@defshape(Shape1D, regular_polygon, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true)
+@defshape(Shape1D, rectangle, corner::Loc=u0(), dx::Real=1, dy::Real=1)
 rectangle(p::Loc, q::Loc) =
   let v = in_cs(q - p, p.cs)
     rectangle(p, v.x, v.y)
   end
-realize(b::Backend, s::Rectangle) =
-  backend_polygon(b, [
-    s.corner,
-    add_x(s.corner, s.dx),
-    add_xy(s.corner, s.dx, s.dy),
-    add_y(s.corner, s.dy)])
 
 # Surfaces
 
@@ -630,14 +641,14 @@ macro defsurface(name_typename, fields...)
   end)
 end
 
-@defsurface(surface_circle, center::Loc=u0(), radius::Real=1)
-@defsurface(surface_arc, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
-@defsurface(surface_elliptic_arc, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
-@defsurface(surface_ellipse, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
-@defsurface(surface_polygon, vertices::Locs=[u0(), ux(), uy()])
+@defshape(Shape2D, surface_circle, center::Loc=u0(), radius::Real=1)
+@defshape(Shape2D, surface_arc, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
+@defshape(Shape2D, surface_elliptic_arc, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
+@defshape(Shape2D, surface_ellipse, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
+@defshape(Shape2D, surface_polygon, vertices::Locs=[u0(), ux(), uy()])
 surface_polygon(v0, v1, vs...) = surface_polygon([v0, v1, vs...])
-@defsurface(surface_regular_polygon, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true)
-@defsurface(surface_rectangle, corner::Loc=u0(), dx::Real=1, dy::Real=1)
+@defshape(Shape2D, surface_regular_polygon, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true)
+@defshape(Shape2D, surface_rectangle, corner::Loc=u0(), dx::Real=1, dy::Real=1)
 surface_rectangle(p::Loc, q::Loc) =
   let v = in_cs(q - p, p.cs)
     surface_rectangle(p, v.x, v.y)
@@ -653,22 +664,17 @@ realize(b::Backend, s::SurfacePath) =
   backend_fill(b, s.path)
 
 surface_boundary(s::Shape2D, backend::Backend=current_backend()) =
-    backend_surface_boundary(backend, s)
+  backend_surface_boundary(backend, s)
 
 curve_domain(s::Shape1D, backend::Backend=current_backend()) =
-    backend_curve_domain(backend, s)
+  backend_curve_domain(backend, s)
 map_division(f::Function, s::Shape1D, n::Int, backend::Backend=current_backend()) =
-    backend_map_division(backend, f, s, n)
-
+  backend_map_division(backend, f, s, n)
 
 surface_domain(s::Shape2D, backend::Backend=current_backend()) =
-    backend_surface_domain(backend, s)
+  backend_surface_domain(backend, s)
 map_division(f::Function, s::Shape2D, nu::Int, nv::Int, backend::Backend=current_backend()) =
-    backend_map_division(backend, f, s, nu, nv)
-
-
-
-
+  backend_map_division(backend, f, s, nu, nv)
 
 
 path_vertices(s::Shape1D) = path_vertices(shape_path(s))
@@ -714,63 +720,63 @@ macro defsolid(name_typename, fields...)
   end)
 end
 
-@defsolid(sphere, center::Loc=u0(), radius::Real=1)
+@defshape(Shape3D, sphere, center::Loc=u0(), radius::Real=1)
 
 @defproxy(torus, Shape3D, center::Loc=u0(), re::Real=1, ri::Real=1/2)
-@defsolid(cuboid,
+@defshape(Shape3D, cuboid,
   b0::Loc=u0(),        b1::Loc=add_x(b0,1), b2::Loc=add_y(b1,1), b3::Loc=add_x(b2,-1),
   t0::Loc=add_z(b0,1), t1::Loc=add_x(t0,1), t2::Loc=add_y(t1,1), t3::Loc=add_x(t2,-1))
 
-@defsolid(regular_pyramid_frustum, edges::Integer=4, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, rt::Real=1, inscribed::Bool=true)
+@defshape(Shape3D, regular_pyramid_frustum, edges::Integer=4, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, rt::Real=1, inscribed::Bool=true)
 regular_pyramid_frustum(edges::Integer, cb::Loc, rb::Real, angle::Real, ct::Loc, rt::Real=1, inscribed::Bool=true) =
   let (c, h) = position_and_height(cb, ct)
     regular_pyramid_frustum(edges, c, rb, angle, h, rt, inscribed)
   end
 
-@defsolid(regular_pyramid, edges::Integer=3, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
+@defshape(Shape3D, regular_pyramid, edges::Integer=3, cb::Loc=u0(), rb::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
 regular_pyramid(edges::Integer, cb::Loc, rb::Real, angle::Real, ct::Loc, inscribed::Bool=true) =
   let (c, h) = position_and_height(cb, ct)
     regular_pyramid(edges, c, rb, angle, h, inscribed)
   end
 
-@defsolid(pyramid_frustum, bs::Locs=[ux(), uy(), uxy()], ts::Locs=[uxz(), uyz(), uxyz()])
+@defshape(Shape3D, pyramid_frustum, bs::Locs=[ux(), uy(), uxy()], ts::Locs=[uxz(), uyz(), uxyz()])
 
-@defsolid(pyramid, bs::Locs=[ux(), uy(), uxy()], t::Loc=uz())
+@defshape(Shape3D, pyramid, bs::Locs=[ux(), uy(), uxy()], t::Loc=uz())
 
-@defsolid(regular_prism, edges::Integer=3, cb::Loc=u0(), r::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
+@defshape(Shape3D, regular_prism, edges::Integer=3, cb::Loc=u0(), r::Real=1, angle::Real=0, h::Real=1, inscribed::Bool=true)
 regular_prism(edges::Integer, cb::Loc, r::Real, angle::Real, ct::Loc, inscribed::Bool=true) =
   let (c, h) = position_and_height(cb, ct)
     regular_prism(edges, c, r, angle, h, inscribed)
   end
 
-@defsolid(prism, bs::Locs=[ux(), uy(), uxy()], v::Vec=vz(1))
+@defshape(Shape3D, prism, bs::Locs=[ux(), uy(), uxy()], v::Vec=vz(1))
 prism(bs::Locs, h::Real) =
   irregular_prism(bs, vz(h))
 
-@defsolid(right_cuboid, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
+@defshape(Shape3D, right_cuboid, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
 right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0; backend::Backend=current_backend()) =
   let (c, h) = position_and_height(cb, ct),
       o = angle == 0 ? c : loc_from_o_phi(c, angle)
     right_cuboid(o, width, height, h, backend=backend)
   end
 
-@defsolid(box, c::Loc=u0(), dx::Real=1, dy::Real=dx, dz::Real=dy)
+@defshape(Shape3D, box, c::Loc=u0(), dx::Real=1, dy::Real=dx, dz::Real=dy)
 box(c0::Loc, c1::Loc) =
   let v = in_cs(c1, c0)-c0
     box(c0, v.x, v.y, v.z)
   end
 
-@defsolid(cone, cb::Loc=u0(), r::Real=1, h::Real=1)
+@defshape(Shape3D, cone, cb::Loc=u0(), r::Real=1, h::Real=1)
 cone(cb::Loc, r::Real, ct::Loc) =
   let (c, h) = position_and_height(cb, ct)
     cone(c, r, h)
   end
-@defsolid(cone_frustum, cb::Loc=u0(), rb::Real=1, h::Real=1, rt::Real=1)
+@defshape(Shape3D, cone_frustum, cb::Loc=u0(), rb::Real=1, h::Real=1, rt::Real=1)
 cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real) =
   let (c, h) = position_and_height(cb, ct)
     cone_frustum(c, rb, h, rt)
   end
-@defsolid(cylinder, cb::Loc=u0(), r::Real=1, h::Real=1)
+@defshape(Shape3D, cylinder, cb::Loc=u0(), r::Real=1, h::Real=1)
 cylinder(cb::Loc, r::Real, ct::Loc) =
   let (c, h) = position_and_height(cb, ct)
     cylinder(c, r, h)
@@ -918,44 +924,6 @@ bounding_rectangle(ss::Shapes) =
 
 
 #####################################################################
-## We might also be insterested in seeing paths
-# This is more for debuging
-
-stroke(path::Path, backend::Backend=current_backend()) =
-  backend_stroke(backend, path)
-# We also need a colored stroke (and probably, something that changes line thickness)
-stroke(path::Path, color::RGB, backend::Backend=current_backend()) =
-  backend_stroke_color(backend, path, color)
-
-#=
-backend_stroke_op(b::Backend, op::MoveToOp, start::Loc, curr::Loc, refs) =
-    (op.loc, op.loc, refs)
-backend_stroke_op(b::Backend, op::MoveOp, start::Loc, curr::Loc, refs) =
-    (start, curr + op.vec, refs)
-backend_stroke_op(b::Backend, op::LineToOp, start::Loc, curr::Loc, refs) =
-    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, op.loc])))
-=#
-#=
-backend_stroke_op(b::Backend, op::LineXThenYOp, start::Loc, curr::Loc, refs) =
-    (start,
-     start + op.vec,
-     push!(refs, backend_stroke_line(b, [curr, curr + vec_in(op.vec, curr.cs).x, curr + op.vec])))
-
-backend_stroke_op(b::Backend, op::LineYThenXOp, start::Loc, curr::Loc, refs) =
-    (start,
-     start + op.vec,
-     push!(refs, backend_stroke_line(b, [curr, curr + vec_in(op.vec, curr.cs).y, curr + op.vec])))
-backend_stroke_op(b::Backend, op::LineToXThenToYOp, start::Loc, curr::Loc, refs) =
-    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, xy(curr.x, loc_in(op.loc, curr.cs).x, curr.cs), op.loc])))
-backend_stroke_op(b::Backend, op::LineToYThenToXOp, start::Loc, curr::Loc, refs) =
-    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, xy(curr.x, loc_in(op.loc, curr.cs).y, curr.cs), op.loc])))
-=#
-
-# The default implementation for filling segmented path in the backend relies on
-# a dedicated function backend_fill_curves
-
-fill(path, backend=current_backend()) =
-  backend_fill(backend, path)
 
 #####################################################################
 ## Conversions
@@ -1176,20 +1144,6 @@ end
 
 # CAD
 
-function dolly_effect(camera, target, lens, new_camera)
-  cur_dist = distance(camera, target)
-  new_dist = distance(new_camera, target)
-  new_lens = lens*new_dist/cur_dist
-  view(new_camera, target, new_lens)
-end
-
-dolly_effect_pull_back(delta) = begin
-  camera, target, lens = get_view()
-  d = distance(camera, target)
-  new_camera = target + (camera-target)*(d+delta)/d
-  dolly_effect(camera, target, lens, new_camera)
-end
-
 @defcb select_position(prompt::String="Select a position")
 @defcb select_positions(prompt::String="Select positions")
 @defcb select_point(prompt::String="Select a point")
@@ -1376,3 +1330,25 @@ show_cs(p, scale=1) =
 #
 nonzero_offset(l::Line, d::Real) =
   line(offset(l.vertices, d, false))
+
+#
+export stroke, b_stroke
+stroke(path::Path;
+       material::Material=default_material(),
+	   backend::Backend=current_backend(),
+	   backends::Backends=(backend,)) =
+  let mat = material_ref(backend, material)
+	  for backend = backends
+      b_stroke(backend, path, mat)
+    end
+  end
+export fill, b_fill
+fill(path::Path;
+     material::Material=default_material(),
+     backend::Backend=current_backend(),
+     backends::Backends=(backend,)) =
+  let mat = material_ref(backend, material)
+ 	  for backend = backends
+      b_stroke(backend, path, mat)
+    end
+  end
