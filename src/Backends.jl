@@ -43,6 +43,54 @@ end
 
 @bdef(void_ref())
 ############################################################
+# Zeroth tier: curves. Not all backends support these.
+
+export b_point, b_line, b_closed_line, b_polygon, b_regular_polygon,
+       b_nurbs_curve,
+       b_spline, b_closed_spline, b_circle, b_arc, b_rectangle
+
+@bdef(b_point(p, mat))
+
+@bdef(b_line(ps, mat))
+
+b_polygon(b::Backend{K,T}, ps, mat) where {K,T} =
+  b_line(b, [ps..., p[1]], mat)
+
+b_regular_polygon(b::Backend{K,T}, edges, c, r, angle, inscribed, mat) where {K,T} =
+  b_polygon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), mat)
+
+b_nurbs_curve(b::Backend{K,T}, order, ps, knots, weights, closed, mat) where {K,T} =
+  b_line(b, ps, closed, mat)
+
+b_spline(b::Backend{K,T}, ps, v1, v2, interpolator, mat) where {K,T} =
+  let ci = curve_interpolator(ps, false),
+      cpts = curve_control_points(ci),
+      n = length(cpts),
+      knots = curve_knots(ci)
+    b_nurbs_curve(b, 5, cpts, knots, fill(1.0, n), false, mat)
+  end
+
+b_closed_spline(b::Backend{K,T}, ps, mat) where {K,T} =
+  let ci = curve_interpolator(ps, true),
+      cpts = curve_control_points(ci),
+      n = length(cpts),
+      knots = curve_knots(ci)
+    b_nurbs_curve(b, 5, cpts, knots, fill(1.0, n), true, mat)
+  end
+
+b_circle(b::Backend{K,T}, c, r, mat) where {K,T} =
+  b_closed_spline(b, regular_polygon_vertices(32, c, r, 0, true), mat)
+
+b_arc(b::Backend{K,T}, c, r, α, Δα, mat) where {K,T} =
+  b_spline(b,
+    [center + vpol(r, a, center.cs)
+     for a in division(α, α + Δα, Δα*32/2/π, false)],
+    nothing, nothing, # THIS NEEDS TO BE FIXED
+    mat)
+
+b_rectangle(b::Backend{K,T}, c, dx, dy, mat) where {K,T} =
+  b_polygon(b, [c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy)], mat)
+
 # First tier: everything is a triangle or a set of triangles
 export b_trig, b_quad, b_ngon, b_quad_strip, b_quad_strip_closed
 
@@ -79,20 +127,20 @@ b_surface_polygon(b::Backend{K,T}, ps, mat) where {K,T} =
 
 @bdef(b_surface_polygon_with_holes(ps, qss, mat))
 
-b_surface_rectangle(b::Backend{K,T}, c, dx, dy) where {K,T} =
-  b_quad(b, c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy))
+b_surface_rectangle(b::Backend{K,T}, c, dx, dy, mat) where {K,T} =
+  b_quad(b, c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy), mat)
 
 b_surface_regular_polygon(b::Backend{K,T}, edges, c, r, angle, inscribed, mat) where {K,T} =
   b_ngon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), c, false, mat)
 
 b_surface_circle(b::Backend{K,T}, c, r, mat) where {K,T} =
-	b_surface_regular_polygon(b, 32, c, r, 0, true, mat)
+  b_surface_regular_polygon(b, 32, c, r, 0, true, mat)
 
 b_surface_arc(b::Backend{K,T}, c, r, α, Δα, mat) where {K,T} =
-	b_ngon(b,
-		   [center + vpol(r, a, center.cs)
-		 	for a in division(α, α + Δα, Δα*32/2/π, false)],
-		   c, false, mat)
+  b_ngon(b,
+         [center + vpol(r, a, center.cs)
+          for a in division(α, α + Δα, Δα*32/2/π, false)],
+         c, false, mat)
 
 ############################################################
 # Third tier: solids
@@ -224,7 +272,7 @@ b_cone_frustum(b::Backend{K,T}, cb, rb, h, rt, bmat, tmat, smat) where {K,T} =
   	b,
   	regular_polygon_vertices(32, cb, rb, 0, true),
   	regular_polygon_vertices(32, add_z(cb, h), rt, 0, true),
-		true,
+	true,
   	bmat, tmat, smat)
 
 ##################################################################
@@ -289,6 +337,89 @@ b_extrude_profile(b::Backend{K,T}, cb, h, profile::Region, bmat, tmat, smat) whe
         bmat, tmat, smat)
   end
 
+# Stroke and fill operations over paths
+# This is specially useful for debuging
+
+#=
+backend_stroke_op(b::Backend, op::MoveToOp, start::Loc, curr::Loc, refs) =
+    (op.loc, op.loc, refs)
+backend_stroke_op(b::Backend, op::MoveOp, start::Loc, curr::Loc, refs) =
+    (start, curr + op.vec, refs)
+backend_stroke_op(b::Backend, op::LineToOp, start::Loc, curr::Loc, refs) =
+    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, op.loc])))
+backend_stroke_op(b::Backend, op::LineXThenYOp, start::Loc, curr::Loc, refs) =
+    (start,
+     start + op.vec,
+     push!(refs, backend_stroke_line(b, [curr, curr + vec_in(op.vec, curr.cs).x, curr + op.vec])))
+backend_stroke_op(b::Backend, op::LineYThenXOp, start::Loc, curr::Loc, refs) =
+    (start,
+     start + op.vec,
+     push!(refs, backend_stroke_line(b, [curr, curr + vec_in(op.vec, curr.cs).y, curr + op.vec])))
+backend_stroke_op(b::Backend, op::LineToXThenToYOp, start::Loc, curr::Loc, refs) =
+    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, xy(curr.x, loc_in(op.loc, curr.cs).x, curr.cs), op.loc])))
+backend_stroke_op(b::Backend, op::LineToYThenToXOp, start::Loc, curr::Loc, refs) =
+    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, xy(curr.x, loc_in(op.loc, curr.cs).y, curr.cs), op.loc])))
+=#
+
+b_stroke(b::Backend{K,T}, path::CircularPath, mat) where {K,T} =
+  b_circle(b, path.center, path.radius, mat)
+b_stroke(b::Backend{K,T}, path::RectangularPath, mat) where {K,T} =
+  b_rectangle(b, path.corner, path.dx, path.dy, mat)
+b_stroke(b::Backend{K,T}, path::ArcPath, mat) where {K,T} =
+  b_arc(b, path.center, path.radius, path.start_angle, path.amplitude, mat)
+b_stroke(b::Backend{K,T}, path::OpenPolygonalPath, mat) where {K,T} =
+  b_line(b, path.vertices, mat)
+b_stroke(b::Backend{K,T}, path::ClosedPolygonalPath, mat) where {K,T} =
+  b_polygon(b, path.vertices, mat)
+b_stroke(b::Backend{K,T}, path::OpenSplinePath, mat) where {K,T} =
+  b_spline(b, path.vertices, path.v0, path.v1, path.interpolator, mat)
+b_stroke(b::Backend{K,T}, path::ClosedSplinePath, mat) where {K,T} =
+  b_closed_spline(b, path.vertices, mat)
+
+b_fill(b::Backend{K,T}, path::CircularPath, mat) where {K,T} =
+  b_surface_circle(b, path.center, path.radius, mat)
+b_fill(b::Backend{K,T}, path::RectangularPath, mat) where {K,T} =
+  b_surface_rectangle(b, path.corner, path.dx, path.dy, mat)
+b_fill(b::Backend{K,T}, path::ClosedPolygonalPath, mat) where {K,T} =
+  b_surface_polygon(b, path.vertices, mat)
+b_fill(b::Backend{K,T}, path::ClosedSplinePath, mat) where {K,T} =
+  b_surface_closed_spline(b, path.vertices, mat)
+
+#=
+backend_fill(b::Backend{K,T}, path::ClosedSplinePath) where {K,T} =
+  backend_fill_curves(b, @remote(b, ClosedSpline(path.vertices)))
+
+b_stroke_unite(b::Backend{K,T}, refs) where {K,T} = @remote(b, JoinCurves(refs))
+
+backend_fill(b::Backend{K,T}, path::ClosedPolygonalPath) where {K,T} =
+    @remote(b, SurfaceClosedPolyLine(path.vertices))
+    backend_fill(b::Backend{K,T}, path::RectangularPath) where {K,T} =
+        let c = path.corner,
+            dx = path.dx,
+            dy = path.dy
+            @remote(b, SurfaceClosedPolyLine([c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy)]))
+        end
+backend_fill(b::Backend{K,T}, path::RectangularPath) where {K,T} =
+    let c = path.corner,
+        dx = path.dx,
+        dy = path.dy
+        SurfaceClosedPolyLine(connection(b), [c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy)])
+    end
+
+backend_fill_curves(b::Backend{K,T}, gs::Guids) where {K,T} = @remote(b, SurfaceFrom(gs))
+backend_fill_curves(b::Backend{K,T}, g::Guid) where {K,T} = @remote(b, SurfaceFrom([g]))
+
+b_stroke_line(b::Backend{K,T}, vs) where {K,T} = @remote(b, PolyLine(vs))
+
+b_stroke_arc(b::Backend{K,T}, center::Loc, radius::Real, start_angle::Real, amplitude::Real) where {K,T} =
+    let end_angle = start_angle + amplitude
+        if end_angle > start_angle
+            @remote(b, Arc(center, vx(1, center.cs), vy(1, center.cs), radius, start_angle, end_angle))
+        else
+            @remote(b, Arc(center, vx(1, center.cs), vy(1, center.cs), radius, end_angle, start_angle))
+        end
+    end
+=#
 ##################################################################
 # Materials
 #=
@@ -397,7 +528,44 @@ b_wall(b::Backend{K,T}, w_path, w_height, l_thickness, r_thickness, lmat, rmat, 
 b_wall(b::Backend{K,T}, w_path, w_height, l_thickness, r_thickness, family) where {K,T} =
   path_length(w_path) < path_tolerance() ?
     void_ref(b) :
-    b_wall(b, w_path, w_height, l_thickness, r_thickness, family_materials(family)[1:3])
+    b_wall(b, w_path, w_height, l_thickness, r_thickness, family_materials(b, family)[1:3])
+
+# Lights
+
+@bdef ieslight(file::String, loc::Loc, dir::Vec, alpha::Real, beta::Real, gamma::Real)
+@bdef pointlight(loc::Loc, color::RGB, range::Real, intensity::Real)
+@bdef spotlight(loc::Loc, dir::Vec, hotspot::Real, falloff::Real)
+
+# Trusses
+
+b_truss_node(b::Backend{K,T}, p, family) where {K,T} =
+  b_sphere(b, p, family.radius, material_ref(b, family_materials(b, family)[1]))
+
+b_truss_node_support(b::Backend{K,T}, cb, family) where {K,T} =
+  b_regular_pyramid(
+    b, 4, add_z(cb, -3*family.radius),
+    family.radius, 0, 3*family.radius, false,
+    material_ref(b, family_materials(b, family)[1]))
+
+b_truss_bar(b::Backend{K,T}, p, q, family) where {K,T} =
+  let (c, h) = position_and_height(p, q)
+    b_cylinder(
+      b, c, family.radius, h,
+      [material_ref(b, m) for m in family_materials(b, family)]...)
+  end
+
+# Layers
+
+@bdef b_current_layer()
+@bdef b_current_layer(layer)
+@bdef b_create_layer(name::String, active::Bool, color::RGB)
+
+# Analysis
+
+@bdef b_truss_analysis(load::Vec, self_weight::Bool)
+@bdef b_node_displacement_function(res::Any)
+
+
 
 #=
 Operations that rely on a backend need to have a backend selected and will
@@ -531,12 +699,7 @@ backend_fill(b::Backend, m::Mesh) =
 backend_fill(b::Backend, path::ClosedPathSequence) =
   backend_fill_curves(b, map(path->backend_stroke(b, path), path.paths))
 
-@bdef fill(path::ClosedPolygonalPath)
-@bdef fill(path::ClosedSplinePath)
-@bdef fill(path::RectangularPath)
 @bdef ground(level::Loc, color::RGB)
-@bdef ieslight(file::String, loc::Loc, dir::Vec, alpha::Real, beta::Real, gamma::Real)
-@bdef line(vs::Locs)
 #@bdef loft_curve_point(profile::Shape, point::Shape)
 #@bdef loft_points(profiles::Shapes, rails::Shapes, ruled::Bool, closed::Bool)
 #@bdef loft_surface_point(profile::Shape, point::Shape)
@@ -546,10 +709,7 @@ backend_fill(b::Backend, path::ClosedPathSequence) =
 #@bdef map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int)
 @bdef name()
 #@bdef panel(bot::Locs, top::Locs, family::PanelFamily)
-@bdef pointlight(loc::Loc, color::RGB, range::Real, intensity::Real)
-@bdef polygon(vs::Locs)
 
-#@bdef pyramid(bs::Locs, t::Loc)
 backend_pyramid(b::Backend, bot_vs::Locs, top::Loc) =
   let refs = [backend_surface_polygon(b, reverse(bot_vs))]
     for (v1, v2, v3) in zip(bot_vs, circshift(bot_vs, -1), repeated(top))
@@ -590,33 +750,8 @@ backend_slab(b::Backend, profile, openings, thickness, family) =
       isempty(openings) ? profile : path_set(profile, openings...), thickness)
   end
 
-
-@bdef spotlight(loc::Loc, dir::Vec, hotspot::Real, falloff::Real)
-
-
-backend_stroke(b::Backend, path::RectangularPath) =
-  let c = path.corner,
-      dx = path.dx,
-      dy = path.dy
-    backend_stroke_line(b, (c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy), c))
-  end
-
-backend_stroke(b::Backend, path::OpenPolygonalPath) =
-	backend_stroke_line(b, path.vertices)
-
-backend_stroke(b::Backend, path::ClosedPolygonalPath) =
-  backend_stroke_line(b, [path.vertices...,path.vertices[1]])
-
 backend_stroke(b::Backend, path::Union{OpenPathSequence,ClosedPathSequence}) =
   backend_stroke_unite(b, map(path->backend_stroke(b, path), path.paths))
-
-@bdef stroke(path::ArcPath)
-@bdef stroke(path::CircularPath)
-
-#@bdef stroke(path::ClosedSplinePath)
-#@bdef stroke(path::OpenSplinePath)
-
-#@bdef stroke(path::PathOps)
 backend_stroke(b::Backend, path::PathOps) =
     begin
         start, curr, refs = path.start, path.start, []
@@ -629,20 +764,11 @@ backend_stroke(b::Backend, path::PathOps) =
         backend_stroke_unite(b, refs)
     end
 
-#@bdef stroke(path::PathSet)
 backend_stroke(b::Backend, path::PathSet) =
     for p in path.paths
         backend_stroke(b, p)
     end
 
-@bdef stroke_arc(center::Loc, radius::Real, start_angle::Real, amplitude::Real)
-
-#@bdef stroke_color(path::Path, color::RGB)
-# By default, we ignore the color
-backend_stroke_color(backend::Backend, path::Path, color::RGB) =
-  backend_stroke(backend, path)
-
-@bdef stroke_line(vs)
 @bdef stroke_op(op::LineXThenYOp, start::Loc, curr::Loc, refs)
 @bdef stroke_op(op::LineYThenXOp, start::Loc, curr::Loc, refs)
 #@bdef stroke_op(op::MoveOp, start::Loc, curr::Loc, refs)
@@ -724,13 +850,19 @@ backend_wall_with_materials(b::Backend, w_path, w_height, l_thickness, r_thickne
     [refs...]
   end
 
-
-
-
-
-
-
-
+# Select things from a backend
+@bdef(b_select_position(prompt))
+@bdef(b_select_positions(prompt))
+@bdef(b_select_point(prompt))
+@bdef(b_select_points(prompt))
+@bdef(b_select_curve(prompt))
+@bdef(b_select_curves(prompt))
+@bdef(b_select_surface(prompt))
+@bdef(b_select_surfaces(prompt))
+@bdef(b_select_solid(prompt))
+@bdef(b_select_solids(prompt))
+@bdef(b_select_shape(prompt))
+@bdef(b_select_shapes(prompt))
 
 #=
 Backends might use different communication mechanisms, e.g., sockets, COM,
@@ -742,18 +874,42 @@ struct SocketBackend{K,T} <: Backend{K,T}
   remote::NamedTuple
 end
 
-create_backend_connection(backend::AbstractString, port::Integer) =
-  for i in 1:10
+export connect_to, start_and_connect_to
+
+connect_to(backend::AbstractString, port::Integer; attempts=10, wait=8) =
+  for i in 1:attempts
     try
       return connect(port)
     catch e
-      @info("Please, start/restart $(backend).")
-      sleep(8)
-      if i == 9
+      if i == attempts
+        @info("Couldn't connect with $(backend).")
         throw(e)
+      else
+        @info("Please, start/restart $(backend).")
+        sleep(wait)
       end
     end
   end
+#
+start_and_connect_to(backend, start, port; attempts=20, wait=5) =
+  for i in 1:attempts
+    try
+      return connect(port)
+    catch e
+      if i == 1
+        @info("Starting $(backend).")
+   	    start()
+        sleep(wait)
+      elseif i == attempts
+        @info("Couldn't connect with $(backend).")
+        throw(e)
+      else
+        sleep(wait)
+      end
+    end
+  end
+
+
 
 # To simplify remote calls
 macro remote(b, call)
