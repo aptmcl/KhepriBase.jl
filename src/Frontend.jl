@@ -53,7 +53,6 @@ macro defcbs(expr)
     end)
 end
 
-
 #=
 @macroexpand @defcbs foo() =  x + 1
 @macroexpand @defcbs foo(bar)
@@ -108,9 +107,6 @@ macro cbscall(name_args)
   end
 end
 
-
-
-@defcb all_shapes()
 @defcb all_shapes_in_layer(layer)
 @defcbs delete_all_refs()
 @defcbs delete_all_shapes_in_layer(layer)
