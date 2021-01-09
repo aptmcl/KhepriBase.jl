@@ -83,8 +83,9 @@ export and_mark_deleted,
        slice_ref
 
 # Ports for socket-based backends are defined here to avoid conflicts
-export autocad_port, rhino_port, unity_port, unreal_port, blender_port
+export autocad_port, revit_port, rhino_port, unity_port, unreal_port, blender_port
 const autocad_port = 11000
+const revit_port = 11001
 const rhino_port = 12000
 const unity_port = 11002
 const unreal_port = 11010
