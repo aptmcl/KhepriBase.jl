@@ -111,7 +111,7 @@ path_interpolated_frames(path::Path, (t0, t1)=path_domain(path), epsilon=colline
       pm = location_at(path, tm)
     min_recursion < 0 &&
     collinear_points(p0, pm, p1, epsilon) &&
-    let tr = (t0 + t1)/(1.9+rand()*0.2),
+    let tr = (t0 + t1)/(1.99+rand()*0.02),
         pr = location_at(path, tr) # To avoid coincidences
       collinear_points(p0, pr, p1, epsilon)
     end ?
@@ -134,7 +134,7 @@ arc_path(center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=
     ArcPath(center, radius, start_angle, amplitude)
 path_domain(path::ArcPath) = (0, path.amplitude)
 location_at(path::ArcPath, ϕ::Real) =
-  let s = sign(path.amplitude),
+  let s = sign(path.amplitude*1.0), # just to circunvent a Julia bug https://github.com/JuliaLang/julia/issues/31949.
       ϕ = ϕ*s
     loc_from_o_vx_vy(add_pol(path.center, path.radius, path.start_angle + ϕ),
                      vpol(1, path.start_angle + ϕ + π, path.center.cs),
@@ -820,6 +820,13 @@ curve_interpolator(pts::Locs, isperiodic::Bool) =
     [pt.raw[i] for i in 1:3, pt in in_world.(isperiodic ? [pts..., pts[1]] : pts)],
     k=length(pts)<=3 ? 2 : 3,
     periodic=isperiodic)
+curve_control_points(interpolator) =
+  let cps = get_coeffs(interpolator)
+    [xyz(cps[1,j], cps[2,j], cps[3,j], world_cs)
+     for j in 1:size(cps, 2)]
+  end
+curve_knots(interpolator) =
+  get_knots(interpolator)
 
 convert(::Type{ClosedPolygonalPath}, path::ClosedPathSequence) =
   let paths = path.paths,
