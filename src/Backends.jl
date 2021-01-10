@@ -284,7 +284,7 @@ b_surface(b::Backend{K,T}, region::Region, mat) where {K,T} =
   b_surface_polygon_with_holes(
     b,
     path_vertices(outer_path(region)),
-    path_vertices.(inner_paths(region)),
+    [reverse(path_vertices(path)) for path in inner_paths(region)],
     mat)
 
 # In theory, this should be implemented using a loft
@@ -375,6 +375,8 @@ b_stroke(b::Backend{K,T}, path::OpenSplinePath, mat) where {K,T} =
   b_spline(b, path.vertices, path.v0, path.v1, path.interpolator, mat)
 b_stroke(b::Backend{K,T}, path::ClosedSplinePath, mat) where {K,T} =
   b_closed_spline(b, path.vertices, mat)
+b_stroke(b::Backend{K,T}, path::Region, mat) where {K,T} =
+  [b_stroke(b, path, mat) for path in path.paths]
 
 b_fill(b::Backend{K,T}, path::CircularPath, mat) where {K,T} =
   b_surface_circle(b, path.center, path.radius, mat)
@@ -384,6 +386,8 @@ b_fill(b::Backend{K,T}, path::ClosedPolygonalPath, mat) where {K,T} =
   b_surface_polygon(b, path.vertices, mat)
 b_fill(b::Backend{K,T}, path::ClosedSplinePath, mat) where {K,T} =
   b_surface_closed_spline(b, path.vertices, mat)
+b_fill(b::Backend{K,T}, path::Region, mat) where {K,T} =
+  b_surface(b, path, mat)
 
 #=
 backend_fill(b::Backend{K,T}, path::ClosedSplinePath) where {K,T} =

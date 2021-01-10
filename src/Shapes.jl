@@ -1333,22 +1333,22 @@ nonzero_offset(l::Line, d::Real) =
 
 #
 export stroke, b_stroke
-stroke(path::Path;
-       material::Material=default_material(),
-	   backend::Backend=current_backend(),
-	   backends::Backends=(backend,)) =
+stroke(path;
+    material::Material=default_material(),
+	  backend::Backend=current_backend(),
+	  backends::Backends=(backend,)) =
   let mat = material_ref(backend, material)
-	  for backend = backends
+	  for backend in backends
       b_stroke(backend, path, mat)
     end
   end
 export fill, b_fill
-fill(path::Path;
-     material::Material=default_material(),
-     backend::Backend=current_backend(),
-     backends::Backends=(backend,)) =
+fill(path;
+    material::Material=default_material(),
+    backend::Backend=current_backend(),
+    backends::Backends=(backend,)) =
   let mat = material_ref(backend, material)
- 	  for backend = backends
-      b_stroke(backend, path, mat)
+ 	  for backend in backends
+      b_fill(backend, path, mat)
     end
   end
