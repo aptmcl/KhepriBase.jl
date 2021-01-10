@@ -1169,8 +1169,7 @@ process_bars(bars, processed_nodes) =
 
 # Analysis
 @defcb truss_analysis(load::Vec=vz(-1e5), self_weight::Bool=false)
-@defcb truss_bars_volume() = sum(truss_bar_volume, backend.truss_bars)
-
+@defcb truss_bars_volume()
 @defcb node_displacement_function(res::Any)
 
 export view_truss_deformation
