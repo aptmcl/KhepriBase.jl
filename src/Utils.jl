@@ -136,3 +136,16 @@ end
 macro named_params(def)
   process_named_params(def)
 end
+
+export reverse_dict
+reverse_dict(dict) =
+  let rev_dict = Dict()
+    for k in keys(dict)
+      if dict[k] in keys(rev_dict)
+         push!(rev_dict[dict[k]], k)
+      else
+         rev_dict[dict[k]] = [k]
+      end
+    end
+  rev_dict
+end
