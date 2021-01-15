@@ -553,7 +553,7 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
       let currlength = prevlength + path_length(w_seg_path),
           c_r_w_path = closed_path_for_height(r_w_path, w_height),
           c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        append!(refs, b_pyramid_frustum(b, path_vertices(c_l_w_path), path_vertices(c_r_w_path), matright, matleft, matright))
+        append!(refs, b_quad_strip_closed(b, path_vertices(c_l_w_path), path_vertices(c_r_w_path), false, matright))
         openings = filter(openings) do op
           if prevlength <= op.loc.x < currlength ||
              prevlength <= op.loc.x + op.family.width <= currlength # contained (at least, partially)
@@ -573,7 +573,7 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
                                        path_end(op_at_end ? l_w_path : l_op_path)]),
                 c_r_op_path = closed_path_for_height(translate(fixed_r_op_path, vz(op.loc.y)), op_height),
                 c_l_op_path = closed_path_for_height(translate(fixed_l_op_path, vz(op.loc.y)), op_height)
-              append!(refs, b_pyramid_frustum(b, path_vertices(c_r_op_path), path_vertices(c_l_op_path), matright, matleft, matright))
+              append!(refs, b_quad_strip_closed(b, path_vertices(c_r_op_path), path_vertices(c_l_op_path), false, matright))
               c_r_w_path, c_l_w_path = subtract_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
               # preserve if not totally contained
               ! (op.loc.x >= prevlength && op.loc.x + op.family.width <= currlength)
@@ -584,8 +584,8 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
         end
         prevlength = currlength
         # Isn't this already done by the pyramid_frustum?
-        #push!(refs, b_surface_polygon(b, path_vertices(c_l_w_path), matleft))
-        #push!(refs, b_surface_polygon(b, reverse(path_vertices(c_r_w_path)), matright))
+        push!(refs, b_surface_polygon(b, path_vertices(c_l_w_path), matleft))
+        push!(refs, b_surface_polygon(b, reverse(path_vertices(c_r_w_path)), matright))
       end
     end
     refs
@@ -685,7 +685,8 @@ realize(b::Backend, s::Union{Door, Window}) =
         r_thickness = r_thickness(s.wall),
         l_thickness = l_thickness(s.wall),
         thickness = s.family.thickness
-      backend_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family)
+      #HACK: Finish this
+      #backend_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family)
     end
   end
 ##
@@ -706,14 +707,14 @@ backend_add_door(b::Backend, w::Wall, loc::Loc, family::DoorFamily) =
 #
 export add_window
 add_window(w::Wall=required(), loc::Loc=u0(), family::WindowFamily=default_window_family()) =
-  backend_add_window(backend(w), w, loc, family)
-
-backend_add_window(b::Backend, w::Wall, loc::Loc, family::WindowFamily) =
   let d = window(w, loc, family=family)
     push!(w.windows, d)
-    if realized(w)
-        set_ref!(w, realize_wall_openings(b, w, ref(w), [d]))
-    end
+    # HACK FINISH THIS
+    # for backend in current_backends()
+    #   if realized(backend, w)
+    #     set_ref!(w, realize_wall_openings(b, w, ref(w), [d]))
+    #   end
+    # end
     w
   end
 
@@ -856,21 +857,12 @@ realize(b::Backend, s::Beam) =
 
 realize(b::Backend, s::FreeColumn) =
   b_beam(b, loc_from_o_phi(s.cb, s.angle), s.h, s.family)
-#  with_family_in_layer(b, s.family) do
-#    backend_realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
-#  end
 
 realize(b::Backend, s::Column) =
   let base_height = level_height(s.bottom_level),
       top_height = level_height(s.top_level)
     b_beam(b, add_z(loc_from_o_phi(s.cb, s.angle), base_height), top_height-base_height, s.family)
   end
-  # with_family_in_layer(b, s.family) do
-  #   let base_height = s.bottom_level.height,
-  #       height = s.top_level.height - base_height
-  #     backend_realize_beam_profile(b, s, s.family.profile, add_z(s.cb, base_height), height)
-  #   end
-  # end
 
 backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::CircularPath, cb::Loc, length::Real) =
   b_cylinder(b, cb, profile.radius, length*support_z_fighting_factor, get_material(b, family_ref(b, s.family)))
@@ -1145,10 +1137,16 @@ truss_bar_data(id::Int, node0::TrussNodeData, node1::TrussNodeData, rotation::Re
   TrussBarData(id, node0, node1, rotation, family)
 
 export process_nodes, process_bars
-process_nodes(nodes, load=vz(0)) =
-  [truss_node_data(i, in_world(node.p), node.family, load)
-   for (i, node) in enumerate(nodes)]
-
+process_nodes(nodes, load=vz(0), loads_points=Dict()) =
+  let point_loads = Dict()
+    for k in keys(loads_points)
+      for p in loads_points[k]
+        point_loads[p] = k
+      end
+    end
+    [truss_node_data(i, in_world(node.p), node.family, load + get(point_loads, node.p, vz(0)))
+     for (i, node) in enumerate(nodes)]
+  end
 process_bars(bars, processed_nodes) =
   let epsilon = coincident_truss_nodes_distance(),
       node_data_near(loc) =
@@ -1168,7 +1166,7 @@ process_bars(bars, processed_nodes) =
   end
 
 # Analysis
-@defcb truss_analysis(load::Vec=vz(-1e5), self_weight::Bool=false)
+@defcb truss_analysis(load::Vec=vz(-1e5), self_weight::Bool=false, point_loads::Dict=Dict())
 @defcb truss_bars_volume()
 @defcb node_displacement_function(res::Any)
 
@@ -1242,6 +1240,9 @@ max_displacement(results, b::Backend=current_backend()) =
   let disp = node_displacement_function(results)
     maximum(map(norm∘disp, b.truss_node_data))
   end
+
+
+@defcb lighting_analysis()
 
 ###################################
 # BIM
@@ -1337,6 +1338,9 @@ default_family_materials(::Backend{K,T}, ::SlabFamily) where {K,T} =
 
 default_family_materials(::Backend{K,T}, ::WallFamily) where {K,T} =
   (material_concrete, material_concrete, material_concrete)
+
+default_family_materials(::Backend{K,T}, ::WindowFamily) where {K,T} =
+  (material_glass, material_glass, material_glass)
 
 default_family_materials(::Backend{K,T}, ::BeamFamily) where {K,T} =
   (material_metal, material_metal, material_metal)
