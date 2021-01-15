@@ -87,19 +87,19 @@ end
 
 # current backend call
 macro cbcall(name_args)
-	name = name_args.args[1]
+  name = name_args.args[1]
   args = name_args.args[2:end]
-	backend_name = esc(Symbol("b_$name"))
+  backend_name = esc(Symbol("b_$name"))
   quote
-	    $(backend_name)(current_backend(), $(esc.(args)...))
+	$(backend_name)(current_backend(), $(esc.(args)...))
   end
 end
 
 # current backends call
 macro cbscall(name_args)
-	name = name_args.args[1]
+  name = name_args.args[1]
   args = name_args.args[2:end]
-	backend_name = esc(Symbol("b_$name"))
+  backend_name = esc(Symbol("b_$name"))
   quote
     for backend in current_backends()
 	    $(backend_name)(backend, $(esc.(args)...))
@@ -107,17 +107,27 @@ macro cbscall(name_args)
   end
 end
 
-@defcb all_shapes_in_layer(layer)
 @defcbs delete_all_refs()
+
+@defcb create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
+@defcb current_layer()
+@defcbs current_layer(layer)
+@defcbs set_layer_active(layer, status)
+@defcbs switch_to_layer(layer)
+@defcb all_shapes_in_layer(layer)
 @defcbs delete_all_shapes_in_layer(layer)
+
 @defcb disable_update()
 @defcb enable_update()
 
 @defcbs set_view(camera::Loc, target::Loc, lens::Real=50, aperture::Real=32)
 @defcb get_view()
+@defcbs b_zoom_extents()
+@defcbs b_set_view_top()
 
 @defcbs set_sun(altitude::Real, azimuth::Real)
-@defcbs add_ground_plane()
+@defcbs set_ground(level, material)
+
 @defcbs zoom_extents()
 @defcbs view_top()
 #@defcb get_material(ref::Any)

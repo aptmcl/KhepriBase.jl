@@ -473,9 +473,7 @@ there is also a pre-defined set of materials
 
 @defproxy(material, Proxy, data::BackendParameter=BackendParameter())
 material(bv::Pair, bvs...) = material(data=BackendParameter(bv, bvs...))
-realize(b::Backend, m::Material) = realize_material(b, m.data(b))
-realize_material(b::Backend, ::Nothing) = void_ref(b)
-realize_material(b::Backend, r) = b_get_material(b, r)
+realize(b::Backend, m::Material) = b_get_material(b, m.data(b))
 
 # For compatibility
 export set_material
@@ -508,15 +506,6 @@ those shapes appear and disappear by activating or deactivating the layer.
 realize(b::Backend, l::Layer) =
   backend_layer(b, l.name, l.active, l.color)
 
-@defcb create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
-@defcb current_layer()
-
-@defcb current_layer(layer)
-@defcbs set_layer_active(layer, status)
-@defcbs switch_to_layer(layer)
-
-
-
 abstract type Shape0D <: Shape end
 abstract type Shape1D <: Shape end
 abstract type Shape2D <: Shape end
@@ -540,6 +529,9 @@ export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D
 
 @defproxy(empty_shape, Shape0D)
 @defproxy(universal_shape, Shape3D)
+realize(b::Backend, s::EmptyShape) = void_ref(b)
+realize(b::Backend, s::UniversalShape) = void_ref(b)
+
 
 macro defshape(supertype, name_typename, fields...)
   # Merge this with defproxy
@@ -722,7 +714,7 @@ end
 
 @defshape(Shape3D, sphere, center::Loc=u0(), radius::Real=1)
 
-@defproxy(torus, Shape3D, center::Loc=u0(), re::Real=1, ri::Real=1/2)
+@defshape(Shape3D, torus, center::Loc=u0(), re::Real=1, ri::Real=1/2)
 @defshape(Shape3D, cuboid,
   b0::Loc=u0(),        b1::Loc=add_x(b0,1), b2::Loc=add_y(b1,1), b3::Loc=add_x(b2,-1),
   t0::Loc=add_z(b0,1), t1::Loc=add_x(t0,1), t2::Loc=add_y(t1,1), t3::Loc=add_x(t2,-1))
@@ -1002,10 +994,10 @@ subtraction(shape::Shape3D, shapes...) =
 @defproxy(mirror, Shape3D, shape::Shape=sphere(), p::Loc=u0(), n::Vec=vz(1))
 @defproxy(union_mirror, Shape3D, shape::Shape=sphere(), p::Loc=u0(), n::Vec=vz(1))
 
-@defproxy(surface_grid, Shape2D, points::AbstractMatrix{<:Loc}=zeros(Loc,(2,2)),
+@defshape(Shape2D, surface_grid, points::AbstractMatrix{<:Loc}=zeros(Loc,(2,2)),
           closed_u::Bool=false, closed_v::Bool=false,
           smooth_u::Bool=true, smooth_v::Bool=true,
-          interpolator::Parameter{Any}=Parameter{Any}(missing))
+          interpolator::LazyParameter{Any}=LazyParameter(Any, ()->grid_interpolator(points)))
 
 #=
 surface_interpolator(pts::AbstractMatrix{<:Loc}) =
@@ -1023,7 +1015,7 @@ surface_interpolator(pts::AbstractMatrix{<:Loc}) =
 
 # For interpolator to work, we need this:
 
-convert(::Type{AbstractMatrix{<:Loc}}, pts::Vector{<:Vector{<:Loc}}) =
+convert(::Type{AbstractMatrix{Loc}}, pts::Vector{<:Vector{<:Loc}}) =
   permutedims(hcat(pts...))
 
 #=
@@ -1052,9 +1044,6 @@ map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int, backend::Backend=cur
       end
     end
   end
-
-realize(b::Backend, s::SurfaceGrid) =
-  backend_surface_grid(b, s.points, s.closed_u, s.closed_v, s.smooth_u, s.smooth_v)
 
 @defproxy(surface_mesh, Shape2D, vertices::Locs=[u0(), ux(), uy()], faces::Vector{Vector{Int}}=[[0,1,2]])
 realize(b::Backend, s::SurfaceMesh) =
@@ -1282,8 +1271,8 @@ realistic_sky(;
       altitude, azimuth, turbidity, withsun)
 
 export ground
-ground(level::Loc=z(0), color::RGB=rgb(0.25,0.25,0.25)) =
-  backend_ground(current_backend(), level, color)
+ground(level::Loc=z(0), color::RGB=rgb(0.25,0.25,0.25), backend::Backend=current_backend()) =
+  b_set_ground(backend, level, color)
 
 
 ############################################################

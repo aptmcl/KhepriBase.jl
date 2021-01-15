@@ -119,7 +119,8 @@ b_quad_strip_closed(b::Backend{K,T}, ps, qs, smooth, mat) where {K,T} =
 ############################################################
 # Second tier: surfaces
 export b_surface_polygon, b_surface_regular_polygon,
-			 b_surface_circle, b_surface_arc, b_surface
+	   b_surface_circle, b_surface_arc, b_surface,
+	   b_surface_grid
 
 b_surface_polygon(b::Backend{K,T}, ps, mat) where {K,T} =
   # This only works for convex polygons
@@ -142,6 +143,36 @@ b_surface_arc(b::Backend{K,T}, c, r, α, Δα, mat) where {K,T} =
           for a in division(α, α + Δα, Δα*32/2/π, false)],
          c, false, mat)
 
+b_surface_grid(b::Backend{K,T}, ptss, closed_u, closed_v, smooth_u, smooth_v, interpolator, mat) where {K,T} =
+  let (nu, nv) = size(ptss)
+	if smooth_u && smooth_v
+      ptss = [location_at_grid_interpolator(interpolator, u, v)
+	          for u in division(0, 1, nu*4), v in division(0, 1, nv*4)]
+	  (nu, nv) = size(ptss)
+	end
+	closed_u ?
+      vcat([b_quad_strip_closed(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
+	       closed_v ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : []) :
+	  vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
+	       closed_v ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : [])
+  end
+
+# Parametric surface
+#=
+parametric {
+    function { sin(u)*cos(v) }
+    function { sin(u)*sin(v) }
+    function { cos(u) }
+
+    <0,0>, <2*pi,pi>
+    contained_by { sphere{0, 1.1} }
+    max_gradient ??
+    accuracy 0.0001
+    precompute 10 x,y,z
+    pigment {rgb 1}
+  }
+=#
+
 ############################################################
 # Third tier: solids
 export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
@@ -152,7 +183,8 @@ export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
 			 b_cuboid,
 			 b_box,
 			 b_sphere,
-			 b_cone
+			 b_cone,
+			 b_torus
 
 # Each solid can have just one material or multiple materials
 b_generic_pyramid_frustum(b::Backend{K,T}, bs, ts, smooth, bmat, tmat, smat) where {K,T} =
@@ -274,6 +306,15 @@ b_cone_frustum(b::Backend{K,T}, cb, rb, h, rt, bmat, tmat, smat) where {K,T} =
   	regular_polygon_vertices(32, add_z(cb, h), rt, 0, true),
 	true,
   	bmat, tmat, smat)
+
+b_torus(b::Backend{K,T}, c, ra, rb, mat) where {K,T} =
+  b_surface_grid(
+  	b,
+	[add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
+	 for ψ in division(0, 2π, 16, false), ϕ in division(0, 2π, 32, false)],
+    true, true,
+	true, true,
+	mat)
 
 ##################################################################
 # Paths and Regions
@@ -432,10 +473,7 @@ accessed by name.
 =#
 export b_get_material, b_new_material
 
-@bdef(b_get_material(path))
-
-# Default for backends that do not have materials
-b_get_material(b::Backend{K,T}, mat::Nothing) where {K,T} = zero(T)
+b_get_material(b::Backend{K,T}, mat) where {K,T} = mat
 
 #=
 It is also possible to algorithmically create materials by
@@ -445,6 +483,9 @@ Given that different kinds of materials need specialized treatment
 =#
 
 @bdef(b_new_material(path, color, specularity, roughness, transmissivity, transmitted_specular))
+
+export b_all_shapes
+b_all_shapes(b::Backend) = b.shapes
 
 #=
 Utilities for interactive development
@@ -558,12 +599,6 @@ b_truss_bar(b::Backend{K,T}, p, q, family) where {K,T} =
       [material_ref(b, m) for m in family_materials(b, family)]...)
   end
 
-# Layers
-
-@bdef b_current_layer()
-@bdef b_current_layer(layer)
-@bdef b_create_layer(name::String, active::Bool, color::RGB)
-
 # Analysis
 
 @bdef b_truss_analysis(load::Vec, self_weight::Bool)
@@ -572,8 +607,6 @@ b_truss_bar(b::Backend{K,T}, p, q, family) where {K,T} =
 export b_truss_bars_volume
 b_truss_bars_volume(b::Backend{K,T}) where {K,T} =
   sum(truss_bar_volume, b.truss_bars)
-
-
 
 #=
 Operations that rely on a backend need to have a backend selected and will
@@ -681,8 +714,6 @@ backend_chair(b::Backend, p, angle, f) =
     realize_chair(b, mat, loc_from_o_phi(p, angle), f.length, f.width, f.height, f.seat_height, f.thickness)
   end
 
-#@bdef create_layer(name::String, active::Bool, color::RGB)
-
 #@bdef curtain_wall(s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol)
 backend_curtain_wall(b::Backend, s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol) =
   let family = getproperty(s.family, kind),
@@ -736,12 +767,24 @@ backend_pyramid_frustum(b::Backend, bot_vs::Locs, top_vs::Locs) =
     refs
   end
 
-@bdef b_set_view(camera, target, lens, aperture)
-@bdef b_get_view()
+# We assume there are properties to store the view details
+export b_get_view, b_set_view
+b_set_view(b::Backend, camera, target, lens, aperture) =
+  begin
+    b.camera = camera
+    b.target = target
+    b.lens = lens
+  end
+b_get_view(b::Backend) =
+  b.camera, b.target, b.lens
+
+@bdef b_zoom_extents()
+@bdef b_set_view_top()
 
 @bdef b_realistic_sky(altitude, azimuth, turbidity, withsun)
 @bdef b_realistic_sky(date, latitude, longitude, elevation, meridian, turbidity, withsun)
-
+@bdef b_set_sun(altitude, azimuth)
+@bdef b_set_ground(level, material)
 @bdef b_render_view(path)
 
 #@bdef revolve_curve(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
@@ -811,7 +854,6 @@ backend_stroke(b::Backend, m::Mesh) =
 @bdef stroke_unite(refs)
 #@bdef surface_boundary(s::Shape2D)
 #@bdef surface_domain(s::Shape2D)
-@bdef surface_grid(pts, closed_u, closed_v, smooth_u, smooth_v)
 @bdef surface_mesh(vertices, faces)
 
 #@bdef surface_polygon(mat, path::Path, acw::Bool)
@@ -831,7 +873,7 @@ const wall_z_fighting_factor = 0.998
 
 backend_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
   path_length(w_path) < path_tolerance() ?
-    realize(b, empty_shape()) : # not beatiful
+    realize(b, empty_shape()) : # not beautiful
     let (matright, matleft) = wall_materials(b, family_ref(b, family))
       backend_wall_with_materials(b, w_path, w_height, l_thickness, r_thickness, matright, matleft)
     end
@@ -955,3 +997,27 @@ struct IOBufferBackend{K,T} <: Backend{K,T}
   out::IOBuffer
 end
 connection(backend::IOBufferBackend{K,T}) where {K,T} = backend.out
+
+################################################################
+# Not all backends support all stuff. Some of it might need to be supported
+# by ourselves. Layer are one example.
+
+# Layers
+export AbstractLayer, BasicLayer
+abstract type AbstractLayer end
+struct BasicLayer <: AbstractLayer
+  name::String
+  active::Bool
+  color::RGB
+end
+
+export b_create_layer, b_current_layer,
+       b_all_shapes_in_layer, b_delete_all_shapes_in_layer
+
+# Default implementation assumes that backends have properties for current_layer and layers (a dict)
+b_create_layer(b::Backend, name::String, active::Bool, color::RGB) =
+  BasicLayer(name, active, color)
+b_current_layer(b::Backend) = b.current_layer
+b_current_layer(b::Backend, layer) = b.current_layer = layer
+b_all_shapes_in_layer(b::Backend, layer) = b.layers[layer]
+b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_in_layer(b, layer))
