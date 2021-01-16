@@ -29,7 +29,7 @@ macro defcb(expr)
   esc(
     quote
       export $(name), $(backend_name)
-      $(name)($(params...), backend::Backend=current_backend()) =
+      $(name)($(params...), backend::Backend=top_backend()) =
           $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
       #$(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
       #    $(body)
@@ -91,7 +91,7 @@ macro cbcall(name_args)
   args = name_args.args[2:end]
   backend_name = esc(Symbol("b_$name"))
   quote
-	$(backend_name)(current_backend(), $(esc.(args)...))
+	$(backend_name)(top_backend(), $(esc.(args)...))
   end
 end
 

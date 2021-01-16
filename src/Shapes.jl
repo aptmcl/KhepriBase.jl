@@ -369,16 +369,9 @@ macro defshapeop(name_params)
     end
 end
 
-backend(backend::Backend) =
-  has_current_backend() ?
-    switch_to_backend(current_backend(), backend) :
-    current_backend(backend)
-switch_to_backend(from::Backend, to::Backend) =
-  current_backend(to)
-
 export all_shapes, delete_all_shapes
 const delete_all_shapes = delete_all_refs
-all_shapes(b::Backend=current_backend()) =
+all_shapes(b::Backend=top_backend()) =
   Shape[b_shape_from_ref(b, r) for r in b_all_refs(b)]
 @bdef(b_shape_from_ref(r))
 
@@ -391,7 +384,7 @@ all_shapes(b::Backend=current_backend()) =
 @defcbs dimension(p0::Loc, p1::Loc, p::Loc, scale::Real, style::Symbol)
 @defcbs dimension(p0::Loc, p1::Loc, sep::Real, scale::Real, style::Symbol)
 
-new_backend(b::Backend = current_backend()) = backend(b)
+new_backend(b::Backend = top_backend()) = backend(b)
 
 struct WrongTypeForParam <: Exception
   param::Symbol
@@ -655,17 +648,17 @@ surface_from = surface
 realize(b::Backend, s::SurfacePath) =
   backend_fill(b, s.path)
 
-surface_boundary(s::Shape2D, backend::Backend=current_backend()) =
+surface_boundary(s::Shape2D, backend::Backend=top_backend()) =
   backend_surface_boundary(backend, s)
 
-curve_domain(s::Shape1D, backend::Backend=current_backend()) =
+curve_domain(s::Shape1D, backend::Backend=top_backend()) =
   backend_curve_domain(backend, s)
-map_division(f::Function, s::Shape1D, n::Int, backend::Backend=current_backend()) =
+map_division(f::Function, s::Shape1D, n::Int, backend::Backend=top_backend()) =
   backend_map_division(backend, f, s, n)
 
-surface_domain(s::Shape2D, backend::Backend=current_backend()) =
+surface_domain(s::Shape2D, backend::Backend=top_backend()) =
   backend_surface_domain(backend, s)
-map_division(f::Function, s::Shape2D, nu::Int, nv::Int, backend::Backend=current_backend()) =
+map_division(f::Function, s::Shape2D, nu::Int, nv::Int, backend::Backend=top_backend()) =
   backend_map_division(backend, f, s, nu, nv)
 
 
@@ -746,7 +739,7 @@ prism(bs::Locs, h::Real) =
   irregular_prism(bs, vz(h))
 
 @defshape(Shape3D, right_cuboid, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
-right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0; backend::Backend=current_backend()) =
+right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0; backend::Backend=top_backend()) =
   let (c, h) = position_and_height(cb, ct),
       o = angle == 0 ? c : loc_from_o_phi(c, angle)
     right_cuboid(o, width, height, h, backend=backend)
@@ -1036,7 +1029,7 @@ evaluate(s::SurfaceGrid, u::Real, v::Real) =
 
 surface_domain(s::SurfaceGrid) = (0.0, 1.0, 0.0, 1.0)
 frame_at(s::SurfaceGrid, u::Real, v::Real) = evaluate(s, u, v)
-map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int, backend::Backend=current_backend()) =
+map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int, backend::Backend=top_backend()) =
   let (u1, u2, v1, v2) = surface_domain(s)
     map_division(u1, u2, nu) do u
       map_division(v1, v2, nv) do v
@@ -1153,7 +1146,7 @@ end
 
 export highlight_shapes
 highlight_shapes(shapes::Shapes) =
-  highlight_shapes(shapes, shapes == [] ? current_backend() : backend(shapes[1]))
+  highlight_shapes(shapes, shapes == [] ? top_backend() : backend(shapes[1]))
 
 capture_shape(s=select_shape("Select shape to be captured")) =
   if s != nothing
@@ -1246,7 +1239,7 @@ select_many_with_prompt(prompt::String, b::Backend, f::Function) =
 export save_view
 save_view(name::String="View") =
   let path = prepare_for_saving_file(render_pathname(name))
-    save_view(path, current_backend())
+    save_view(path, top_backend())
     path
   end
 
@@ -1261,7 +1254,7 @@ realistic_sky(;
     azimuth::Union{Missing,Real}=missing,
     turbidity::Real=5,
     withsun::Bool=true,
-    backend::Backend=current_backend()) =
+    backend::Backend=top_backend()) =
   ismissing(altitude) ?
     b_realistic_sky(
       backend,
@@ -1271,7 +1264,7 @@ realistic_sky(;
       altitude, azimuth, turbidity, withsun)
 
 export ground
-ground(level::Loc=z(0), color::RGB=rgb(0.25,0.25,0.25), backend::Backend=current_backend()) =
+ground(level::Loc=z(0), color::RGB=rgb(0.25,0.25,0.25), backend::Backend=top_backend()) =
   b_set_ground(backend, level, color)
 
 
@@ -1324,7 +1317,7 @@ nonzero_offset(l::Line, d::Real) =
 export stroke, b_stroke
 stroke(path;
     material::Material=default_material(),
-	  backend::Backend=current_backend(),
+	  backend::Backend=top_backend(),
 	  backends::Backends=(backend,)) =
   let mat = material_ref(backend, material)
 	  for backend in backends
@@ -1334,7 +1327,7 @@ stroke(path;
 export fill, b_fill
 fill(path;
     material::Material=default_material(),
-    backend::Backend=current_backend(),
+    backend::Backend=top_backend(),
     backends::Backends=(backend,)) =
   let mat = material_ref(backend, material)
  	  for backend in backends

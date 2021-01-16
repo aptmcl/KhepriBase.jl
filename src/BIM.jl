@@ -175,7 +175,7 @@ beam_family = backend_family(
 
 current_beam_defaults(beam_family_instance(beam_family, width=10, height=20)
 
-In this last case, the generic family will use the current_backend value to identify
+In this last case, the generic family will use the top_backend value to identify
 which family to use.
 
 Another important feature is the use of a delegation-based implementation for
@@ -710,7 +710,7 @@ add_window(w::Wall=required(), loc::Loc=u0(), family::WindowFamily=default_windo
   let d = window(w, loc, family=family)
     push!(w.windows, d)
     # HACK FINISH THIS
-    # for backend in current_backends()
+    # for backend in top_backends()
     #   if realized(backend, w)
     #     set_ref!(w, realize_wall_openings(b, w, ref(w), [d]))
     #   end
@@ -1059,7 +1059,7 @@ truss_node_is_supported(n) =
   end
 
 truss_bar_cross_section_area(s::TrussBar) =
-  truss_bar_family_cross_section_area(family_ref(current_backend(), s.family))
+  truss_bar_family_cross_section_area(family_ref(top_backend(), s.family))
 truss_bar_volume(s::TrussBar) =
   truss_bar_cross_section_area(s)*distance(s.p0, s.p1)
 
@@ -1176,7 +1176,7 @@ view_truss_deformation(
   visualizer::Backend=autocad;
   factor::Real=100) =
   let disp = node_displacement_function(results),
-      b = current_backend()
+      b = top_backend()
     with(current_backend, visualizer) do
       for node in b.truss_node_data
         d = disp(node)*factor
@@ -1203,7 +1203,7 @@ show_truss_deformation(
     no_deformation_name::String="No deformation",
     no_deformation_color::RGB=rgb(0, 1, 0)) =
   let disp = node_displacement_function(results),
-      b = current_backend()
+      b = top_backend()
     with(current_backend, visualizer) do
       delete_all_shapes()
       with(current_layer, create_layer(no_deformation_name, true, no_deformation_color)) do
@@ -1236,7 +1236,7 @@ show_truss_deformation(
   end
 
 export max_displacement
-max_displacement(results, b::Backend=current_backend()) =
+max_displacement(results, b::Backend=top_backend()) =
   let disp = node_displacement_function(results)
     maximum(map(norm∘disp, b.truss_node_data))
   end

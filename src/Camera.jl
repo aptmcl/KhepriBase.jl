@@ -88,7 +88,7 @@ start_film(name::String) =
 frame_filename(filename::String, i::Integer) =
     "$(filename)-frame-$(lpad(i,3,'0'))"
 
-save_film_frame(obj::Any=true; backend=current_backend()) =
+save_film_frame(obj::Any=true; backend=top_backend()) =
   begin
     if saving_film_frames()
       with(render_kind_dir, "Film") do

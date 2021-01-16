@@ -619,19 +619,30 @@ showerror(io::IO, e::UndefinedBackendException) = print(io, "No current backend.
 # We can have several backends active at the same time
 const Backends = Tuple{Vararg{Backend}}
 const current_backends = Parameter{Backends}(())
+has_current_backend() = !isempty(current_backends())
 
 export add_current_backend
 add_current_backend(b::Backend) =
   current_backends(tuple(b, current_backends()...))
 # but for backward compatibility reasons, we might also select just one.
-current_backend() =
-	let bs = current_backends()
-		isempty(bs) ?
-			throw(UndefinedBackendException()) :
-			bs[1]
-	end
+top_backend() =
+  let bs = current_backends()
+	isempty(bs) ?
+  	  throw(UndefinedBackendException()) :
+	  bs[1]
+  end
+# The current_backend function is just an alias for current_backends
+current_backend() = current_backends()
+current_backend(bs::Backends) = current_backends(bs)
+# but it knows how to treat a single backend.
 current_backend(b::Backend) = current_backends((b,))
-has_current_backend() = !isempty(current_backends())
+
+backend(backend::Backend) =
+  has_current_backend() ?
+    switch_to_backend(top_backend(), backend) :
+    current_backend(backend)
+switch_to_backend(from::Backend, to::Backend) =
+  current_backend(to)
 
 # Variables with backend-specific values can be useful.
 # Basically, they are dictionaries
@@ -643,7 +654,7 @@ struct BackendParameter
   	BackendParameter(ps::Pair{<:Backend}...) = new(IdDict{Backend, Any}(ps...))
 end
 
-(p::BackendParameter)(b::Backend=current_backend()) = get(p.value, b, nothing)
+(p::BackendParameter)(b::Backend=top_backend()) = get(p.value, b, nothing)
 (p::BackendParameter)(b::Backend, newvalue) = p.value[b] = newvalue
 
 Base.copy(p::BackendParameter) = BackendParameter(p)
@@ -651,7 +662,7 @@ Base.copy(p::BackendParameter) = BackendParameter(p)
 export @backend
 macro backend(b, expr)
   quote
-	with(current_backend, $(esc(b))) do
+	with(current_backends, ($(esc(b)),)) do
 	  $(esc(expr))
     end
   end
@@ -668,13 +679,13 @@ end
 
 ## THIS NEEDS TO BE SIMPLIFIED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-# Many functions default the backend to the current_backend and throw an error if there is none.
+# Many functions default the backend to the top_backend and throw an error if there is none.
 # We will simplify their definition with a macro:
 # @defop delete_all_shapes()
 # that expands into
-# delete_all_shapes(backend::Backend=current_backend()) = throw(UndefinedBackendException())
+# delete_all_shapes(backend::Backend=top_backend()) = throw(UndefinedBackendException())
 # Note that according to Julia semantics the previous definition actually generates two different ones:
-# delete_all_shapes() = delete_all_shapes(current_backend())
+# delete_all_shapes() = delete_all_shapes(top_backend())
 # delete_all_shapes(backend::Backend) = throw(UndefinedBackendException())
 # Hopefully, backends will specialize the function for each specific backend
 
@@ -682,7 +693,7 @@ end
 #    name, params = name_params.args[1], name_params.args[2:end]
 #    quote
 #        export $(esc(name))
-#        $(esc(name))($(map(esc,params)...), backend::Backend=current_backend()) =
+#        $(esc(name))($(map(esc,params)...), backend::Backend=top_backend()) =
 #          throw(UndefinedBackendException())
 #    end
 #end

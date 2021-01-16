@@ -230,7 +230,7 @@ sweep_path_with_path(path, profile) =
                  is_smooth_path(path))
   end
 =#
-
+export quad_grid, quad_grid_indexes
 quad_grid(quad, points, closed_u, closed_v) =
   let pts = in_world.(points),
       si = size(pts, 1),
