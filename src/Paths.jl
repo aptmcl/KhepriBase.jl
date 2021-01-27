@@ -815,11 +815,12 @@ convert(::Type{OpenPolygonalPath}, path::RectangularPath) =
 convert(::Type{OpenPolygonalPath}, path::OpenSplinePath) =
   open_polygonal_path(map_division(identity, path))
 
-curve_interpolator(pts::Locs, isperiodic::Bool) =
+
+curve_interpolator(pts::Locs, closed::Bool) =
   ParametricSpline(
-    [pt.raw[i] for i in 1:3, pt in in_world.(isperiodic ? [pts..., pts[1]] : pts)],
+    [pt.raw[i] for i in 1:3, pt in in_world.(closed ? [pts..., pts[1]] : pts)],
     k=length(pts)<=3 ? 2 : 3,
-    periodic=isperiodic)
+    periodic=closed)
 curve_control_points(interpolator) =
   let cps = get_coeffs(interpolator)
     [xyz(cps[1,j], cps[2,j], cps[3,j], world_cs)
@@ -1025,3 +1026,92 @@ length_at_location(path::Path, p::Loc, t0=0, t1=path_length(path)) =
         idx = argmin(map(p1 -> distance(p, p1), pts))
       length_at_location(path, p, ts[max(1, idx-1)], ts[min(length(ts), idx+1)])
     end
+
+export Grid, grid, grid_interpolator, location_at_grid_interpolator
+struct Grid
+  vertices::Array{Loc,2}
+  interpolator::LazyParameter{Any}
+end
+grid_interpolator(ptss) = begin
+  println(size(ptss))
+  let (nu, nv) = size(ptss).-1,
+      us = division(0, 1, nu),
+      vs = division(0, 1, nv),
+      rawptss = map(p->in_world(p).raw, ptss),
+      order(n) = min(n, 5),
+      ou = order(nu),
+      ov = order(nv),
+      xinterpolator = Spline2D(us, vs, map(p->p[1], rawptss), kx=ou, ky=ov),
+      yinterpolator = Spline2D(us, vs, map(p->p[2], rawptss), kx=ou, ky=ov),
+      zinterpolator = Spline2D(us, vs, map(p->p[3], rawptss), kx=ou, ky=ov)
+    (xinterpolator, yinterpolator, zinterpolator)
+  end end
+grid(ptss) = Grid(ptss, LazyParameter(Any, ()->grid_interpolator(ptss)))
+location_at_grid_interpolator(interpolator, u, v) =
+  let interps = interpolator(),
+      o = xyz(evaluate.(interps, u, v)..., world_cs),
+      vx = unitized(vxyz(evaluate_derivative.(interps, u, v, 1, 0)..., world_cs)),
+      vy = unitized(vxyz(evaluate_derivative.(interps, u, v, 0, 1)..., world_cs))
+    loc_from_o_vx_vy(o, vx, vy)
+  end
+location_at(grid::Grid, u, v) =
+  location_at_grid_interpolator(grid.interpolator, u, v)
+
+# We need to support convertion to OBJ format
+export write_obj
+write_obj(io::IO, ptss::AbstractMatrix{<:Loc}, closed_u, closed_v, smooth_u, smooth_v, interpolator) =
+  let (nu, nv) = size(ptss)
+    if smooth_u || smooth_v
+      ptss = [location_at_grid_interpolator(interpolator, u, v)
+              for u in division(0, 1, nu*4), v in division(0, 1, nv*4)]
+      (nu, nv) = size(ptss)
+    end
+    vertex(p) =
+      println(io,"v  ",p.x," ",p.y," ",p.z)
+    normal(n) =
+      println(io,"vn ",n.x," ",n.y," ",n.z)
+    face((p0, p1, p2, p3)) = # OBJ format uses 1-based indexes
+      let p0 = p0+1, p1=p1+1, p2=p2+1, p3=p3+1
+        smooth_u || smooth_v ?
+          println(io,"f ",p0,"//",p0," ",p1,"//",p1," ",p2,"//",p2," ",p3,"//",p3) :
+          println(io,"f ",p0," ",p1," ",p2," ",p3)
+      end
+    quad_strip_faces(s, n) =
+      foreach(face, zip(s:s+n-1, s+1:s+n, s+n+1:s+2*n-1, s+n:s+2*n-2))
+    quad_strip_closed_faces(s, n) =
+      begin
+        quad_strip_faces(s, n)
+        face(s+n-1, s, s+n, s+2*n-1)
+      end
+    # Vertices
+    for j in 1:nv
+      for i in 1:nu
+        vertex(in_world(ptss[i,j]))
+      end
+    end
+    # Normals
+    if smooth_u || smooth_v
+      for j in 1:nv
+        for i in 1:nu
+          normal(in_world(uz(ptss[i,j].cs)))
+        end
+      end
+    end
+    # Faces
+    if closed_u
+      for i in 0:nv-2
+        quad_strip_closed_faces(i*nu, nu)
+      end
+      if closed_v
+        foreach((p, q)->face(p, p+1, q+1, q), zip((nv-1)*nu:nv*nu-2, 0:nu-2))
+        face(nv*nu-1, (nv-1)*nu, 0, nu-1)
+      end
+    else
+      for i in 0:nv-2
+        quad_strip_faces(i*nu, nu)
+        if closed_v
+          foreach((p, q)->face(p, p+1, q+1, q), zip((nv-1)*nu:nv*nu-1, 0:nu-1))
+        end
+      end
+    end
+  end
