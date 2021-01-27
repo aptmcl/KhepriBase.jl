@@ -268,7 +268,7 @@ macro deffamily(name, parent, fields...)
                         based_on=nothing,
                         implemented_as=IdDict{Backend, Family}(),
                         data=BackendParameter()) =
-      $(struct_name)($(field_names...), based_on, implemented_as, IdDict{Backend, Any}(), BackendParameter())
+      $(struct_name)($(field_names...), based_on, implemented_as, IdDict{Backend, Any}(), data)
     $(instance_name)(family:: Family, implemented_as=copy(family.implemented_as); $(instance_params...)) =
       $(struct_name)($(field_names...), family, implemented_as, IdDict{Backend, Any}(), copy(family.data))
     $(default_name) = Parameter{$struct_name}($(constructor_name)())
@@ -332,6 +332,7 @@ set_backend_family(family::Family, backend::Backend, backend_family::Family) =
 realize(b::Backend, f::Family) =
   backend_get_family_ref(b, f, backend_family(b, f))
 
+backend_get_family_ref(b::Backend, f::Family, bf) = bf
 export backend_family, set_backend_family
 
 
@@ -341,8 +342,11 @@ specific building elements and even, when possible, default implementations.
 =#
 
 @deffamily(slab_family, Family,
-    thickness::Real=0.2,
-    coating_thickness::Real=0.0)
+  thickness::Real=0.2,
+  coating_thickness::Real=0.0,
+  bottom_material::Material=material_concrete,
+  top_material::Material=material_concrete,
+  side_material::Material=material_concrete)
 
 slab_family_elevation(b::Backend, family::SlabFamily) =
   family.coating_thickness - family.thickness
@@ -382,23 +386,25 @@ realize_slab_openings(b::Backend, s::Slab, s_ref, openings) =
 
 @deffamily(roof_family, Family,
     thickness::Real=0.2,
-    coating_thickness::Real=0.0)
+    coating_thickness::Real=0.0,
+    bottom_material::Material=material_concrete,
+    top_material::Material=material_concrete,
+    side_material::Material=material_concrete)
 
 slab_family_elevation(b::Backend, family::RoofFamily) = 0
 slab_family_thickness(b::Backend, family::RoofFamily) =
   family.coating_thickness + family.thickness
 
-@defproxy(roof, BIMShape, contour::ClosedPath=rectangular_path(),
-          level::Level=default_level(), family::RoofFamily=default_roof_family(),
-          openings::Vector{<:ClosedPath}=ClosedPath[])
-
+@defproxy(roof, BIMShape, region::Region=rectangular_path(),
+          level::Level=default_level(), family::RoofFamily=default_roof_family())
 realize(b::Backend, s::Roof) =
-    realize_slab(b, s.contour, s.openings, s.level, s.family)
+  b_slab(b, s.region, s.level, s.family)
 
 # Panel
 
 @deffamily(panel_family, Family,
-    thickness::Real=0.02)
+  thickness::Real=0.02,
+  material::Material=material_glass)
 
 @defproxy(panel, BIMShape, path::Path=rectangular_path(), family::PanelFamily=default_panel_family())
 
@@ -413,21 +419,22 @@ panel(outline, openings; family=default_panel_family()) =
 =#
 
 realize(b::Backend, s::Panel) =
-  let thickness = s.family.thickness,
+  let family = s.family,
+      thickness = family.thickness,
     # THIS IS WRONG!!!! Panels should be based on planar paths, like the rest
       ps = path_vertices(s.path),
       cs = cs_from_o_vz(ps[1], vertices_normal(ps)),
       v = vz(-thickness/2, cs),
       ps = translate(ps, v),
       path = closed_polygonal_path([xy(p.x, p.y) for p in in_cs(ps, cs)]),
-      mats = material_refs(b, family_materials(b, s.family)[1:3])
+      mat = material_ref(b, family.material)
     with_family_in_layer(b, s.family) do
       b_extrude_profile(
         b,
         u0(cs),
         thickness,
         path,
-        mats...)
+        mat, mat, mat)
     end
   end
 
@@ -437,24 +444,6 @@ realize_slab(b::Backend, region::Region, level::Level, family::Family) =
       # Change this to a better named protocol?
     backend_slab(b, translate(region, base), thickness, family)
   end
-
-# Delegate on the lower-level pyramid frustum
-realize_prism(b::Backend, top, bot, side, path::Path, h::Real) =
-  realize_frustum(b, top, bot, side, path, translate(path, planar_path_normal(path)*h))
-
-realize_prism(b::Backend, top, bot, side, path::PathSet, h::Real) =
-  let v = planar_path_normal(path)*h,
-      refs = [ensure_ref(b, realize_frustum(b, top, bot, side, path, translate(path, v)))
-              for path in path.paths]
-    subtract_ref(b, refs[1], unite_refs(b, refs[2:end]))
-  end
-
-# If we don't know how to process a path, we convert it to a sequence of vertices
-realize_frustum(b::Backend, top, bot, side, bot_path::Path, top_path::Path, closed=true) =
-  realize_pyramid_frustum(b, top, bot, side, path_vertices(bot_path), path_vertices(top_path), closed)
-# and then, if we don't know what to do with the materials, we simply ignore them
-realize_pyramid_frustum(b::Backend, bot_mat, top_mat, side_mat, bot_vs::Locs, top_vs::Locs, closed=true) =
-  backend_pyramid_frustum(b, bot_vs, top_vs)
 
 #=
 
@@ -467,7 +456,9 @@ A wall contains doors and windows
 @deffamily(wall_family, Family,
     thickness::Real=0.2,
     left_coating_thickness::Real=0.0,
-    right_coating_thickness::Real=0.0)
+    right_coating_thickness::Real=0.0,
+    right_material::Material=material_plaster,
+    left_material::Material=material_plaster)
 
 @defproxy(wall, BIMShape, path::Path=rectangular_path(),
           bottom_level::Level=default_level(),
@@ -547,13 +538,15 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
       l_w_paths = subpaths(offset(w_path, l_thickness)),
       openings = [w.doors..., w.windows...],
       prevlength = 0,
-      (matright, matleft, _) = material_refs(b, family_materials(b, w.family)),
+      matright = material_ref(b, w.family.right_material),
+      matleft = material_ref(b, w.family.left_material),
+      matside = matleft,
       refs = []
     for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
       let currlength = prevlength + path_length(w_seg_path),
           c_r_w_path = closed_path_for_height(r_w_path, w_height),
           c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        append!(refs, b_quad_strip_closed(b, path_vertices(c_l_w_path), path_vertices(c_r_w_path), false, matright))
+        append!(refs, b_quad_strip_closed(b, path_vertices(c_l_w_path), path_vertices(c_r_w_path), false, matside))
         openings = filter(openings) do op
           if prevlength <= op.loc.x < currlength ||
              prevlength <= op.loc.x + op.family.width <= currlength # contained (at least, partially)
@@ -573,7 +566,7 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
                                        path_end(op_at_end ? l_w_path : l_op_path)]),
                 c_r_op_path = closed_path_for_height(translate(fixed_r_op_path, vz(op.loc.y)), op_height),
                 c_l_op_path = closed_path_for_height(translate(fixed_l_op_path, vz(op.loc.y)), op_height)
-              append!(refs, b_quad_strip_closed(b, path_vertices(c_r_op_path), path_vertices(c_l_op_path), false, matright))
+              append!(refs, b_quad_strip_closed(b, path_vertices(c_r_op_path), path_vertices(c_l_op_path), false, matside))
               c_r_w_path, c_l_w_path = subtract_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
               # preserve if not totally contained
               ! (op.loc.x >= prevlength && op.loc.x + op.family.width <= currlength)
@@ -583,7 +576,6 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
           end
         end
         prevlength = currlength
-        # Isn't this already done by the pyramid_frustum?
         push!(refs, b_surface_polygon(b, path_vertices(c_l_w_path), matleft))
         push!(refs, b_surface_polygon(b, reverse(path_vertices(c_r_w_path)), matright))
       end
@@ -603,10 +595,6 @@ subtract_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
     closed_polygonal_path(
       inject_polygon_vertices_at_indexes(path_vertices(c_l_w_path), path_vertices(c_l_op_path), idxs))
   end
-
-realize_pyramid_frustum(b::Backend, bot_mat, top_mat, side_mat, bot_path::Path, top_path::Path) =
-  realize_pyramid_frustum(b, bot_mat, top_mat, side_mat, path_vertices(bot_path), path_vertices(top_path))
-
 
 #=
 Walls can be joined. That is very important because the wall needs to have
@@ -664,7 +652,8 @@ l_thickness(w::Wall) = l_thickness(w.offset, w.family.thickness + w.family.left_
 @deffamily(door_family, Family,
   width::Real=1.0,
   height::Real=2.0,
-  thickness::Real=0.05)
+  thickness::Real=0.05,
+  material::Material=material_wood)
 
 @defproxy(door, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, family::DoorFamily=default_door_family())
 
@@ -673,7 +662,8 @@ l_thickness(w::Wall) = l_thickness(w.offset, w.family.thickness + w.family.left_
 @deffamily(window_family, Family,
   width::Real=1.0,
   height::Real=1.0,
-  thickness::Real=0.05)
+  thickness::Real=0.05,
+  material::Material=material_glass)
 
 @defproxy(window, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, family::WindowFamily=default_window_family())
 
@@ -684,9 +674,14 @@ realize(b::Backend, s::Union{Door, Window}) =
         subpath = translate(subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width), vz(base_height)),
         r_thickness = r_thickness(s.wall),
         l_thickness = l_thickness(s.wall),
-        thickness = s.family.thickness
-      #HACK: Finish this
-      #backend_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family)
+        thickness = s.family.thickness,
+        matright = material_ref(b, s.family.material),
+        matleft = matright,
+        matside = matleft
+      b_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2,
+              matleft,
+              matright,
+              matside)
     end
   end
 ##
@@ -709,12 +704,8 @@ export add_window
 add_window(w::Wall=required(), loc::Loc=u0(), family::WindowFamily=default_window_family()) =
   let d = window(w, loc, family=family)
     push!(w.windows, d)
-    # HACK FINISH THIS
-    # for backend in top_backends()
-    #   if realized(backend, w)
-    #     set_ref!(w, realize_wall_openings(b, w, ref(w), [d]))
-    #   end
-    # end
+    delete_shape(w)
+    force_realize(w)
     w
   end
 
@@ -725,7 +716,8 @@ A curtain wall is a special kind of wall that is made of a frame with windows.
 @deffamily(curtain_wall_frame_family, Family,
   width::Real=0.1,
   depth::Real=0.1,
-  depth_offset::Real=0.25)
+  depth_offset::Real=0.25,
+  material::Material=material_metal)
 
 @deffamily(curtain_wall_family, Family,
   max_panel_dx::Real=1,
@@ -826,7 +818,8 @@ meta_program(w::Wall) =
 # Beam
 # Beams are mainly horizontal elements. By default, a beam is aligned along its top axis
 @deffamily(beam_family, Family,
-  profile::ClosedPath=top_aligned_rectangular_profile(1, 2))
+  profile::ClosedPath=top_aligned_rectangular_profile(1, 2),
+  material::Material=material_metal)
 
 @defproxy(beam, BIMShape, cb::Loc=u0(), h::Real=1, angle::Real=0, family::BeamFamily=default_beam_family())
 beam(cb::Loc, ct::Loc, Angle::Real=0, Family::BeamFamily=default_beam_family(); angle::Real=Angle, family::BeamFamily=Family) =
@@ -838,7 +831,8 @@ beam(cb::Loc, ct::Loc, Angle::Real=0, Family::BeamFamily=default_beam_family(); 
 # Columns are mainly vertical elements. A column has its center axis aligned with a line defined by two points
 
 @deffamily(column_family, Family,
-  profile::ClosedPath=rectangular_profile(0.2, 0.2))
+  profile::ClosedPath=rectangular_profile(0.2, 0.2),
+  material::Material=material_concrete)
 
 @defproxy(free_column, BIMShape, cb::Loc=u0(), h::Real=1, angle::Real=0, family::ColumnFamily=default_column_family())
 free_column(cb::Loc, ct::Loc, Angle::Real=0, Family::ColumnFamily=default_column_family(); angle::Real=Angle, family::ColumnFamily=Family) =
@@ -851,9 +845,7 @@ free_column(cb::Loc, ct::Loc, Angle::Real=0, Family::ColumnFamily=default_column
   family::ColumnFamily=default_column_family())
 
 realize(b::Backend, s::Beam) =
-  with_family_in_layer(b, s.family) do
-    backend_realize_beam_profile(b, s, s.family.profile, s.cb, s.h)
-  end
+  b_beam(b, s.cb, s.h, s.family)
 
 realize(b::Backend, s::FreeColumn) =
   b_beam(b, loc_from_o_phi(s.cb, s.angle), s.h, s.family)
@@ -864,25 +856,6 @@ realize(b::Backend, s::Column) =
     b_beam(b, add_z(loc_from_o_phi(s.cb, s.angle), base_height), top_height-base_height, s.family)
   end
 
-backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::CircularPath, cb::Loc, length::Real) =
-  b_cylinder(b, cb, profile.radius, length*support_z_fighting_factor, get_material(b, family_ref(b, s.family)))
-
-backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::RectangularPath, cb::Loc, length::Real) =
-  let profile_u0 = profile.corner,
-      c = add_xy(cb, profile_u0.x + profile.dx/2, profile_u0.y + profile.dy/2),
-      # need to test whether it is rotation on center or on axis
-      o = loc_from_o_phi(c, s.angle)
-    backend_right_cuboid(b, o, profile.dx, profile.dy, length, get_material(b, family_ref(b, s.family)))
-  end
-
-backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profile::ClosedPolygonalPath, cb::Loc, length::Real) =
-  let ps = path_vertices(profile),
-      bot_vs = [add_xy(cb, p.x, p.y) for p in ps],
-      top_vs = [add_xyz(cb, p.x, p.y, length) for p in ps],
-      mat = get_material(b, family_ref(b, s.family))
-    realize_pyramid_frustum(b, mat, mat, mat, bot_vs, top_vs)
-  end
-
 # Tables and chairs
 
 @deffamily(table_family, Family,
@@ -890,14 +863,16 @@ backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profi
     width::Real=0.9,
     height::Real=0.75,
     top_thickness::Real=0.05,
-    leg_thickness::Real=0.05)
+    leg_thickness::Real=0.05,
+    material::Material=material_wood)
 
 @deffamily(chair_family, Family,
     length::Real=0.4,
     width::Real=0.4,
     height::Real=1.0,
     seat_height::Real=0.5,
-    thickness::Real=0.05)
+    thickness::Real=0.05,
+    material::Material=material_wood)
 
 @deffamily(table_chair_family, Family,
     table_family::TableFamily=default_table_family(),
@@ -908,63 +883,43 @@ backend_realize_beam_profile(b::Backend, s::Union{Beam,FreeColumn,Column}, profi
     chairs_left::Int=2,
     spacing::Real=0.7)
 
-@defproxy(table, BIMShape, loc::Loc=u0(), angle::Real=0, level::Level=default_level(), family::TableFamily=default_table_family())
-
+@defproxy(table, BIMShape, loc::Loc=u0(), level::Level=default_level(), family::TableFamily=default_table_family())
+table(loc::Loc, angle::Real, level=default_level(), family::TableFamily=default_table_family()) =
+  table(loc_from_o_phi(loc, angle), level, family)
 realize(b::Backend, s::Table) =
-  with_family_in_layer(b, s.family) do
-    backend_rectangular_table(b, add_z(s.loc, s.level.height), s.angle, s.family)
+  let tf = s.family
+    b_table(b, add_z(s.loc, s.level.height),
+            tf.length, tf.width, tf.height,
+            tf.top_thickness, tf.leg_thickness,
+            material_ref(b, tf.material))
   end
 
-@defproxy(chair, BIMShape, loc::Loc=u0(), angle::Real=0, level::Level=default_level(), family::ChairFamily=default_chair_family())
-
+@defproxy(chair, BIMShape, loc::Loc=u0(), level::Level=default_level(), family::ChairFamily=default_chair_family())
+chair(loc::Loc, angle::Real, level::Level=default_level(), family::ChairFamily=default_chair_family()) =
+  chair(loc_from_o_phi(loc, angle), level, family)
 realize(b::Backend, s::Chair) =
-  with_family_in_layer(b, s.family) do
-    backend_chair(b, add_z(s.loc, s.level.height), s.angle, s.family)
+  let cf = s.family
+    b_chair(b, add_z(s.loc, s.level.height),
+            cf.length, cf.width, cf.height,
+            cf.seat_height, cf.thickness,
+            material_ref(b, cf.material))
   end
 
-realize_chair(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
-              seat_height::Real, thickness::Real) =
-  [realize_table(b, mat, p, length, width, seat_height, thickness, thickness)...,
-   realize_box(b, mat, add_xyz(p, -length/2, -width/2, seat_height),
-               thickness, width, height - seat_height)]
-
-@defproxy(table_and_chairs, BIMShape, loc::Loc=u0(), angle::Real=0, level::Level=default_level(), family::TableChairFamily=default_table_chair_family())
-
+@defproxy(table_and_chairs, BIMShape, loc::Loc=u0(), level::Level=default_level(), family::TableChairFamily=default_table_chair_family())
+table_and_chairs(loc::Loc, angle::Real, level::Level=default_level(), family::TableChairFamily=default_table_chair_family()) =
+  table_and_chairs(loc_from_o_phi(loc, angle), level, family)
 realize(b::Backend, s::TableAndChairs) =
-  with_family_in_layer(b, s.family) do
-    backend_rectangular_table_and_chairs(b, add_z(s.loc, s.level.height), s.angle, s.family)
-  end
-
-#@bdef rectangular_table(c, angle, family)
-@defcbs rectangular_table(p, angle, f) =
-  realize_table(b, get_material(b, family_ref(b, f)),
-                loc_from_o_phi(p, angle), f.length, f.width, f.height, f.top_thickness, f.leg_thickness)
-
-realize_table(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
-              top_thickness::Real, leg_thickness::Real) =
-  let dx = length/2,
-      dy = width/2,
-      leg_x = dx - leg_thickness/2,
-      leg_y = dy - leg_thickness/2,
-      c = add_xy(p, -dx, -dy),
-      table_top = realize_box(b, mat, add_z(c, height - top_thickness), length, width, top_thickness),
-      pts = add_xy.(add_xy.(p, [+leg_x, +leg_x, -leg_x, -leg_x], [-leg_y, +leg_y, +leg_y, -leg_y]), -leg_thickness/2, -leg_thickness/2),
-      legs = [realize_box(b, mat, pt, leg_thickness, leg_thickness, height - top_thickness) for pt in pts]
-    [ensure_ref(b, r) for r in [table_top, legs...]]
-  end
-
-#@bdef rectangular_table_and_chairs(c, angle, family)
-@defcbs rectangular_table_and_chairs(p, angle, f) =
-  let tf = f.table_family,
+  let f = s.family,
+      tf = f.table_family,
       cf = f.chair_family,
-      tmat = get_material(b, realize(b, tf).material),
-      cmat = get_material(b, realize(b, cf).material)
-    realize_table_and_chairs(b,
-      loc_from_o_phi(p, angle),
-      p->realize_table(b, tmat, p, tf.length, tf.width, tf.height, tf.top_thickness, tf.leg_thickness),
-      p->realize_chair(b, cmat, p, cf.length, cf.width, cf.height, cf.seat_height, cf.thickness),
+      tmat = material_ref(b, tf.material),
+      cmat = material_ref(b, cf.material)
+    b_table_and_chairs(b,
+      add_z(s.loc, s.level.height),
+      p->b_table(b, p, tf.length, tf.width, tf.height, tf.top_thickness, tf.leg_thickness, tmat),
+      p->b_chair(b, p, cf.length, cf.width, cf.height, cf.seat_height, cf.thickness, cmat),
+      tf.length,
       tf.width,
-      tf.height,
       f.chairs_top,
       f.chairs_bottom,
       f.chairs_right,
@@ -972,38 +927,22 @@ realize_table(b::Backend, mat, p::Loc, length::Real, width::Real, height::Real,
       f.spacing)
   end
 
-realize_table_and_chairs(b::Backend, p::Loc, table::Function, chair::Function,
-                         table_length::Real, table_width::Real,
-                         chairs_on_top::Int, chairs_on_bottom::Int,
-                         chairs_on_right::Int, chairs_on_left::Int,
-                         spacing::Real) =
-  let dx = table_length/2,
-      dy = table_width/2,
-      row(p, angle, n) = [loc_from_o_phi(add_pol(p, i*spacing, angle), angle+pi/2) for i in 0:n-1],
-      centered_row(p, angle, n) = row(add_pol(p, -spacing*(n-1)/2, angle), angle, n)
-    vcat(table(p),
-         chair.(centered_row(add_x(p, -dx), -pi/2, chairs_on_bottom))...,
-         chair.(centered_row(add_x(p, +dx), +pi/2, chairs_on_top))...,
-         chair.(centered_row(add_y(p, +dy), -pi, chairs_on_right))...,
-         chair.(centered_row(add_y(p, -dy), 0, chairs_on_left))...)
-  end
-
 # Lights
 
 @defproxy(pointlight, BIMShape, loc::Loc=z(3), color::RGB=rgb(1,1,1), range::Real=10, intensity::Real=4, level::Level=default_level())
 
 realize(b::Backend, s::Pointlight) =
-  backend_pointlight(b, add_z(s.loc, s.level.height), s.color, s.range, s.intensity)
+  b_pointlight(b, add_z(s.loc, s.level.height), s.color, s.range, s.intensity)
 
 @defproxy(spotlight, BIMShape, loc::Loc=z(3), dir::Vec=vz(-1), hotspot::Real=pi/4, falloff::Real=pi/3)
 
 realize(b::Backend, s::Spotlight) =
-  backend_spotlight(b, s.loc, s.dir, s.hotspot, s.falloff)
+  b_spotlight(b, s.loc, s.dir, s.hotspot, s.falloff)
 
 @defproxy(ieslight, BIMShape, file::String=required(), loc::Loc=z(3), dir::Vec=vz(-1), alpha::Real=0, beta::Real=0, gamma::Real=0)
 
 realize(b::Backend, s::Ieslight) =
-  backend_ieslight(b, s.file, s.loc, s.dir, s.alpha, s.beta, s.gamma)
+  b_ieslight(b, s.file, s.loc, s.dir, s.alpha, s.beta, s.gamma)
 
 
 #################################
@@ -1021,11 +960,13 @@ const truss_node_support = TrussNodeSupport
 
 @deffamily(truss_node_family, Family,
     radius::Real=0.03,
-    support::Any=false) #(Option node_support)
+    support::Any=false,
+    material::Material=material_metal)
 
 @deffamily(truss_bar_family, Family,
     radius::Real=0.02,
-    inner_radius::Real=0)
+    inner_radius::Real=0,
+    material::Material=material_metal)
 
 truss_bar_family_cross_section_area(f::TrussBarFamily) =
   error("This should be computed by the backend family") #truss_bar_family_cross_section_area(back)
@@ -1255,57 +1196,6 @@ max_displacement(results, b::Backend=top_backend()) =
 #@defcbs panel(bot::Locs, top::Locs, family)
 
 ####################################
-# Backend families
-# Some backends (e.g., Radiance and POVRay) can specify different materials to different parts of a family.
-# For example, a slab might have different materials for the top, the bottom, and the sides
-export BackendFamily, BackendMaterialFamily,
-       BackendSlabFamily, BackendRoofFamily, BackendWallFamily
-
-abstract type BackendFamily{Material} <: Family end
-
-struct BackendMaterialFamily{Material} <: BackendFamily{Material}
-  material::Material
-end
-
-struct BackendSlabFamily{Material} <: BackendFamily{Material}
-  top_material::Material
-  bottom_material::Material
-  side_material::Material
-end
-
-struct BackendRoofFamily{Material} <: BackendFamily{Material}
-  top_material::Material
-  bottom_material::Material
-  side_material::Material
-end
-
-struct BackendWallFamily{Material} <: BackendFamily{Material}
-  right_material::Material
-  left_material::Material
-end
-
-backend_get_family_ref(b::Backend, f::Family, bf::BackendFamily) = bf
-
-# By default, the material is the realization of the family
-get_material(b::Backend, f) = f
-panel_material(b::Backend, f) = get_material(b, f)
-wall_materials(b::Backend, f) = (get_material(b, f), get_material(b, f))
-slab_materials(b::Backend, f) = (get_material(b, f), get_material(b, f), get_material(b, f))
-
-# BackendFamily can do better
-get_material(b::Backend, f::BackendMaterialFamily) = get_material(b, f.material)
-panel_material(b::Backend, f::BackendMaterialFamily) = get_material(b, f.material)
-wall_materials(b::Backend, f::BackendWallFamily) =
-  (get_material(b, f.right_material), get_material(b, f.left_material))
-slab_materials(b::Backend, f::Union{BackendSlabFamily,BackendRoofFamily}) =
-  (get_material(b, f.top_material),
-   get_material(b, f.bottom_material),
-   get_material(b, f.side_material))
-
-# When using family_in_layer(true), we can have default behavior
-layer_from_family(b::Backend, f::BackendMaterialFamily) = get_material(b, f.material)
-layer_from_family(b::Backend, f::Union{BackendSlabFamily,BackendRoofFamily}) = get_material(b, f.top_material)
-layer_from_family(b::Backend, f::BackendWallFamily) = get_material(b, f.right_material)
 
 #=
 The typical family change is:
@@ -1322,46 +1212,5 @@ end
 =#
 
 
-family_profile(b::Backend{K,T}, family) where {K,T} =
+family_profile(b::Backend, family) =
   family.profile
-
-family_materials(b::Backend{K,T}, family) where {K,T} =
-  isnothing(family.data(b)) ?
-    default_family_materials(b, family) :
-    family.data(b).materials
-
-default_family_materials(b::Backend{K,T}, family) where {K,T} =
-  error("Missing default materials for $(family)")
-
-default_family_materials(::Backend{K,T}, ::SlabFamily) where {K,T} =
-  (material_concrete, material_concrete, material_concrete)
-
-default_family_materials(::Backend{K,T}, ::WallFamily) where {K,T} =
-  (material_concrete, material_concrete, material_concrete)
-
-default_family_materials(::Backend{K,T}, ::WindowFamily) where {K,T} =
-  (material_glass, material_glass, material_glass)
-
-default_family_materials(::Backend{K,T}, ::BeamFamily) where {K,T} =
-  (material_metal, material_metal, material_metal)
-
-default_family_materials(::Backend{K,T}, ::ColumnFamily) where {K,T} =
-  (material_concrete, material_concrete, material_concrete)
-
-default_family_materials(::Backend{K,T}, ::PanelFamily) where {K,T} =
-  (material_glass, material_glass, material_glass)
-
-default_family_materials(::Backend{K,T}, ::CurtainWallFamily) where {K,T} =
-  (material_metal, material_metal, material_metal)
-
-default_family_materials(::Backend{K,T}, ::CurtainWallFrameFamily) where {K,T} =
-  (material_metal, material_metal, material_metal)
-
-default_family_materials(::Backend{K,T}, ::DoorFamily) where {K,T} =
-  (material_wood, material_wood, material_wood)
-
-default_family_materials(::Backend{K,T}, ::TrussBarFamily) where {K,T} =
-  (material_metal, material_metal, material_metal)
-
-default_family_materials(::Backend{K,T}, ::TrussNodeFamily) where {K,T} =
-  (material_metal,)
