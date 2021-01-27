@@ -103,10 +103,12 @@ map_ref(b::Backend{K,T}, f::Function, r::SubtractionRef{K,T}) where {K,T} = Subt
 # currying
 collect_ref(b::Backend{K,T}) where {K,T} = r -> collect_ref(b, r)
 
-collect_ref(b::Backend{K,T}, r::EmptyRef{K,T}) where {K,T} = []
+collect_ref(b::Backend{K,T}, r::EmptyRef{K,T}) where {K,T} = T[]
 collect_ref(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = [r.value]
-collect_ref(b::Backend{K,T}, r::UnionRef{K,T}) where {K,T} = mapreduce(collect_ref(b), vcat, r.values, init=[])
-collect_ref(b::Backend{K,T}, r::SubtractionRef{K,T}) where {K,T} = vcat(collect_ref(b, r.value), mapreduce(collect_ref(b), vcat, r.values, init=[]))
+collect_ref(b::Backend{K,T}, r::UnionRef{K,T}) where {K,T} =
+  mapreduce(collect_ref(b), vcat, r.values, init=T[])
+collect_ref(b::Backend{K,T}, r::SubtractionRef{K,T}) where {K,T} =
+  vcat(collect_ref(b, r.value), mapreduce(collect_ref(b), vcat, r.values, init=T[]))
 
 # Boolean algebra laws
 # currying
@@ -167,7 +169,7 @@ mutable struct DynRef{K,R}
 end
 
 #DynRef{K,R}(backend::Backend{K,T}) where {K,R} = DynRef{K,R}(backend, void_ref(backend), 0, 0)
-DynRef(backend::Backend{K,T}, v::GenericRef{K,T}) where {K,T} = DynRef{K,T}(backend, v, 1, 0)
+DynRef(b::Backend{K,T}, v) where {K,T} = DynRef{K,T}(b, ensure_ref(b, v), 1, 0)
 
 
 const DynRefs = IdDict{Backend, Any}
@@ -177,7 +179,7 @@ abstract type Proxy end
 
 backend(s::Proxy) = first(first(s.ref))
 
-realized_in(s::Proxy, b::Backend) = s.ref.created == s.ref.deleted + 1
+realized_in(s::Proxy, b::Backend) = s.ref[b].created == s.ref[b].deleted + 1
 # This is so stupid. We need call-next-method.
 really_mark_deleted(b::Backend, s::Proxy) = really_mark_deleted(b, s.ref)
 really_mark_deleted(b::Backend, ref::DynRefs) = delete!(ref, b)
@@ -205,10 +207,13 @@ force_realize(b::Backend, s::Proxy) =
     s.ref[b] : #error("Shape was already realized in $(b)") :
     s.ref[b] = ensure_ref(b, realize(b, s))
 
-# force_realize(s::Proxy) =
-#   for b in current_backends()
-#     force_realize(b, s)
-#   end
+realized(b::Backend, s::Proxy) =
+  haskey(s.ref, b)
+
+force_realize(s::Proxy) =
+  for b in current_backends()
+    force_realize(b, s)
+  end
 
 # We can also use a shape as a surrogate for another shape
 
@@ -249,14 +254,8 @@ e.g., using boolean operations. Others, however, cannot do that and can only rea
 shapes by request, presumably, when they have complete information about them.
 A middle term might be a backend that supports both modes.
 =#
-realized(b::Backend, s::Shape) =
-  haskey(s.ref, b)
 delay_realize(b::Backend, s::Shape) =
   nothing
-force_realize(b::Backend, s::Shape) =
-  haskey(s.ref, b) ?
-    s.ref[b] : #error("Shape was already realized in $(b)") :
-    s.ref[b] = ensure_ref(b, realize(b, s))
 
 delaying_realize = Parameter(false)
 with_transaction(fn) =
@@ -457,6 +456,11 @@ set_on!(b::Backend, proxy, ref) =
     reset_ref(b, proxy)
     proxy
   end
+set_on!(proxy, ref) =
+  begin
+    proxy.data(ref)
+    proxy
+  end
 
 #=
 Materials
@@ -475,7 +479,11 @@ const set_material = set_on!
 material_ref(b::Backend, m::Material) = ref(b, m).value
 material_ref(b::Backend, s::Shape) = material_ref(b, s.material)
 
-export material_basic, material_glass, material_metal, material_wood, material_concrete, material_plaster, material_grass
+# These are pre-defined materials that need to be specified by each backend.
+export material_basic, material_glass,
+       material_metal, material_wood,
+       material_concrete, material_plaster,
+       material_grass
 const material_basic = material()
 const material_glass = material()
 const material_metal = material()
@@ -495,9 +503,20 @@ those shapes appear and disappear by activating or deactivating the layer.
 =#
 
 @defproxy(layer, Proxy, name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
-
+const create_layer = layer
+after_init(s::Layer) =
+  begin
+    force_realize(s)
+    s
+  end
 realize(b::Backend, l::Layer) =
-  backend_layer(b, l.name, l.active, l.color)
+  b_layer(b, l.name, l.active, l.color)
+current_layer(backends::Backends=current_backends()) =
+  layer(ref=DynRefs(b=>ensure_ref(b, b_current_layer(b)) for b in backends))
+current_layer(layer, backends::Backends=current_backends()) =
+  for b in backends
+    b_current_layer(b, ref(b, layer).value)
+  end
 
 abstract type Shape0D <: Shape end
 abstract type Shape1D <: Shape end
@@ -777,22 +796,7 @@ realize(b::Backend, s::Extrusion) =
 backend_extrusion(b::Backend, p::Point, v::Vec) =
   realize_and_delete_shapes(line([p.position, p.position + v], backend=b), [p])
 
-@defproxy(sweep, Shape3D, path::Union{Shape1D, Path}=circle(), profile::Union{Shape,Path}=point(), rotation::Real=0, scale::Real=1)
-
-realize(b::Backend, s::Sweep) =
-  backend_sweep(backend(s), s.path, s.profile, s.rotation, s.scale)
-
-backend_sweep(b::Backend, path::Union{Shape,Path}, profile::Union{Shape,Path}, rotation::Real, scale::Real) =
-  let vertices = in_world.(path_vertices(profile)),
-      frames = map_division(identity, path, 100) #rotation_minimizing_frames(path_frames(path))
-    backend_surface_grid(
-      b,
-      [xyz(cx(p), cy(p), cz(p), frame.cs) for p in vertices, frame in frames],
-      is_closed_path(profile),
-      is_closed_path(path),
-      is_smooth_path(profile),
-      is_smooth_path(path))
-  end
+@defshape(Shape3D, sweep, path::Union{Shape1D, Path}=circle(), profile::Union{Shape,Path}=point(), rotation::Real=0, scale::Real=1)
 
 @defproxy(revolve_point, Shape1D, profile::Shape0D=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defproxy(revolve_curve, Shape2D, profile::Shape1D=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
@@ -987,29 +991,19 @@ subtraction(shape::Shape3D, shapes...) =
 @defproxy(mirror, Shape3D, shape::Shape=sphere(), p::Loc=u0(), n::Vec=vz(1))
 @defproxy(union_mirror, Shape3D, shape::Shape=sphere(), p::Loc=u0(), n::Vec=vz(1))
 
-@defshape(Shape2D, surface_grid, points::AbstractMatrix{<:Loc}=zeros(Loc,(2,2)),
+@defshape(Shape2D, surface_grid, points::Matrix{<:Loc}=zeros(Loc,(2,2)),
           closed_u::Bool=false, closed_v::Bool=false,
           smooth_u::Bool=true, smooth_v::Bool=true,
           interpolator::LazyParameter{Any}=LazyParameter(Any, ()->grid_interpolator(points)))
 
-#=
-surface_interpolator(pts::AbstractMatrix{<:Loc}) =
-    let pts = map(pts) do p
-                let v = in_world(p).raw
-                  SVector{3,Float64}(v[1], v[2], v[3])
-                end
-              end
-        Interpolations.scale(
-            interpolate(pts, BSpline(Cubic(Natural(OnGrid())))),
-            range(0,stop=1,length=size(pts, 1)),
-            range(0,stop=1,length=size(pts, 2)))
-    end
-=#
-
+surface_grid(_points::Vector{<:Vector{<:Loc}},
+  _closed_u=false, _closed_v=false, _smooth_u=true, _smooth_v=true, _material=default_material();
+  points=_points, closed_u=_closed_u, closed_v=_closed_v, smooth_u=_smooth_u, smooth_v=_smooth_v, material=_material) =
+  surface_grid(permutedims(hcat(points...)), closed_u, closed_v, smooth_u, smooth_v, material=material)
 # For interpolator to work, we need this:
 
-convert(::Type{AbstractMatrix{Loc}}, pts::Vector{<:Vector{<:Loc}}) =
-  permutedims(hcat(pts...))
+convert(::Type{Matrix{XYZ}}, ptss::Vector{Vector{<:Loc}}) =
+  permutedims(hcat(ptss...))
 
 #=
 evaluate(s::SurfaceGrid, u::Real, v::Real) =
@@ -1071,19 +1065,20 @@ bounding_box(shapes::Shapes=Shape[]) =
 backend_bounding_box(backend::Backend, shape::Shape) =
   throw(UndefinedBackendException())
 
-delete_shape(shape::Shape, bs=current_backends()) =
-  delete_shapes([shape], bs)
-
-delete_shapes(shapes::Shapes=Shape[], bs=current_backends()) =
-  if ! isempty(shapes)
-    for b in bs
-      backend_delete_shapes(b, shapes)
-      foreach(s->mark_deleted(b, s), shapes)
+delete_shape(s::Shape, bs=current_backends()) =
+  for b in bs
+    if realized(b, s)
+      b_delete_refs(b, collect_ref(b, ref(b, s)))
+      reset_ref(b, s)
     end
   end
 
-@bdef delete_shapes(shapes::Shapes)
+delete_shapes(ss::Shapes=Shape[], bs=current_backends()) =
+  for s in shapes
+    delete_shape(s, bs)
+  end
 
+export and_delete_shape, and_delete_shapes, and_mark_deleted
 and_delete_shape(b::Backend, r::Any, shape::Shape) =
   begin
     delete_shape(b, shape)
@@ -1264,8 +1259,8 @@ realistic_sky(;
       altitude, azimuth, turbidity, withsun)
 
 export ground
-ground(level::Loc=z(0), color::RGB=rgb(0.25,0.25,0.25), backend::Backend=top_backend()) =
-  b_set_ground(backend, level, color)
+ground(level::Real=0, material::Material=material_basic, backend::Backend=top_backend()) =
+  b_set_ground(backend, level, material_ref(backend, material))
 
 
 ############################################################
