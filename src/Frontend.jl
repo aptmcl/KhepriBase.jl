@@ -108,10 +108,15 @@ macro cbscall(name_args)
 end
 
 @defcbs delete_all_refs()
-
-@defcb create_layer(name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
-@defcb current_layer()
-@defcbs current_layer(layer)
+#=
+export current_layer
+current_layer(backends::Backends=current_backends()) =
+  [b_current_layer(b) for b in backends]
+current_layer(layer, backends::Backends=current_backends()) =
+  for (b, l) in zip(backends, layer)
+	b_current_layer(b, l)
+  end
+=#
 @defcbs set_layer_active(layer, status)
 @defcbs switch_to_layer(layer)
 @defcb all_shapes_in_layer(layer)
