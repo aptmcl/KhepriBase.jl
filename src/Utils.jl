@@ -149,3 +149,55 @@ reverse_dict(dict) =
     end
   rev_dict
 end
+
+# To compute the sun's altitude and azimuth
+export sun_pos
+# Based on "How to compute planetary positions" by Paul Schlyter, Stockholm, Sweden
+function sun_pos(year, month, day, hour, minute, Lstm, latitude, longitude)
+  if abs(longitude-Lstm)>30
+     @info("Longitude $(longitude) differs by more than 30 degrees from timezone meridian $(Lstm).")
+  end
+  # Calculate universal time (utime)
+  utime = hour+(minute/60)-Lstm/15;
+  if utime < 0
+     day = day-1;
+     utime = utime+24;
+  end
+  if utime > 24
+     day = day+1;
+     utime = utime-24;
+  end
+  int(x) = floor(Int, x)
+  degrees(x) = 180*x/pi
+  # Amount of days to, or from, the year 2000
+  d = 367*year-int((7*int((year+int((month+9))/12)))/4)+int((275*month)/9)+day-730530+utime/24;
+  # Longitude of perihelion (w), eccentricity (e)
+  w = 282.9404+4.70935E-5*d;
+  e = 0.016709-1.151E-9*d;
+  mean_anomaly = 356.0470+0.9856002585*d;
+  sun_longitude = w + mean_anomaly;
+  # Obliquity of the ecliptic, eccentric anomaly (E)
+  oblecl = 23.4393-3.563E-7*d;
+  E = mean_anomaly+(180/pi)*e*sind(mean_anomaly)*(1+e*cosd(mean_anomaly));
+  # Sun's rectangular coordinates in the plane of ecliptic (A,B)
+  A = cosd(E)-e;
+  B = sind(E)*sqrt(1-e*e);
+  # Distance (r), longitude of the sun (lon)
+  r = sqrt(A*A+B*B);
+  true_anomaly = degrees(atan(B,A));
+  lon = true_anomaly + w;
+  # Calculate declination and right ascension
+  decl = asin(sind(oblecl)*sind(lon));
+  RA = degrees(atan(sind(lon)*cosd(oblecl),cosd(lon)))/15;
+  # Greenwich meridian siderial time at 00:00 (GMST0),siderial time (SIDTIME), hour angle (HA)
+  GMST0 = sun_longitude/15+12;
+  SIDTIME = GMST0+utime+longitude/15;
+  HA = (SIDTIME-RA)*15;
+  # This is what we're looking for: Altitude & Azimuth
+  Al = degrees(asin(sind(latitude)*sin(decl)+cosd(latitude)*cos(decl)*cosd(HA)));
+  Az = degrees(atan(sind(HA),cosd(HA)*sind(latitude)-tan(decl)*cosd(latitude)))+180;
+  Al, Az
+end
+
+sun_pos(date, timezone, latitude, longitude) =
+  sun_pos(year(date), month(date), day(date), hour(date), minute(date), timezone, latitude, longitude)
