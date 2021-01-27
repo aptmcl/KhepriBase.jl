@@ -7,6 +7,61 @@ using Dates
 using Sockets
 using Base.Iterators
 
+#=
+Dierckx does not yet support derivatives. Until they update it,
+we extend it here to have that support.
+=#
+export evaluate_derivative
+function evaluate_derivative(spline::Spline2D, x::AbstractVector, y::AbstractVector, dx::Int, dy::Int)
+    m = length(x)
+    @assert length(y) == m
+    xin = convert(Vector{Float64}, x)
+    yin = convert(Vector{Float64}, y)
+    zout = Vector{Float64}(undef, m)
+    nx = length(spline.tx)
+    ny = length(spline.ty)
+    lwrk = (nx*ny)+(spline.kx+1)*m+(spline.ky+1)*m
+    wrk = Vector{Float64}(undef, lwrk)
+    ier = Ref{Int32}()
+    kwrk = 2*m
+    iwrk = Vector{Int32}(undef, kwrk)
+    ccall((:pardeu_, Dierckx.libddierckx), Nothing,
+          (Ref{Float64}, Ref{Int32},  # ty, ny
+           Ref{Float64}, Ref{Int32},  # tx, nx
+           Ref{Float64},              # c
+           Ref{Int32}, Ref{Int32},    # ky, kx
+           Ref{Int32}, Ref{Int32},    # nuy, nux
+           Ref{Float64},              # y
+           Ref{Float64},              # x
+           Ref{Float64},              # z
+           Ref{Int32},                # m
+           Ref{Float64}, Ref{Int32},  # wrk, lwrk
+           Ref{Int32}, Ref{Int32},    # iwrk, kwrk
+           Ref{Int32}),               # ier
+          spline.ty, ny,
+          spline.tx, nx,
+          spline.c,
+          spline.ky, spline.kx,
+          dy, dx,
+          yin, xin, zout, m,
+          wrk, lwrk,
+          iwrk, kwrk,
+          ier)
+    ier[] == 0 || error(Dierckx._eval2d_message)
+    return zout
+end
+function evaluate_derivative(spline::Spline2D, x::Number, y::Number, dx::Int, dy::Int)
+  if dx >= spline.kx
+    ϵ = 1e-9
+    (evaluate(spline, x+ϵ, y) - evaluate(spline, x-ϵ, y))/2/ϵ
+elseif dy >= spline.kx
+    ϵ = 1e-9
+    (evaluate(spline, x, y+ϵ) - evaluate(spline, x, y-ϵ))/2/ϵ
+  else
+    evaluate_derivative(spline, [x], [y], dx, dy)[1]
+  end
+end
+
 import Base:
     +, -, *, /, length,
     show, showerror,
@@ -68,7 +123,6 @@ export and_mark_deleted,
        backend_revolve_surface,
        backend_surface_boundary,
        backend_surface_domain,
-       backend_truss_analysis,
        captured_shape,
        captured_shapes,
        create_block,
