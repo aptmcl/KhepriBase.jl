@@ -427,8 +427,6 @@ encode(ns::SizeIsInt, t::Val{:size}, c::IO, v) =
   encode(ns, Val(:int), c, v)
 decode(ns::SizeIsInt, t::Val{:size}, c::IO) =
   decode_or_error(ns, Val(:int), c, -1)
-
-const SizeIsInt = Union{Val{:CS},Val{:CPP},Val{:PY}}
 encode(ns::SizeIsInt, t::Val{:address}, c::IO, v) =
   encode(ns, Val(:long), c, v)
 decode(ns::SizeIsInt, t::Val{:address}, c::IO) =
@@ -451,21 +449,21 @@ const ShortIsInt16 = Union{Val{:CS},Val{:CPP},Val{:PY}}
 encode(::ShortIsInt16, t::Val{:short}, c::IO, v) =
   write(c, convert(Int16, v))
 decode(::ShortIsInt16, t::Val{:short}, c::IO) =
-  convert(Int, read(c, Int16))
+  convert(Int16, read(c, Int16))
 
 # Assuming int is four bytes in C++ and Python
 const IntIsInt32 = Union{Val{:CS},Val{:CPP},Val{:PY}}
 encode(::IntIsInt32, t::Val{:int}, c::IO, v) =
   write(c, convert(Int32, v))
 decode(::IntIsInt32, t::Val{:int}, c::IO) =
-  convert(Int, read(c, Int32))
+  convert(Int32, read(c, Int32))
 
 # Assuming long is eight bytes in C++
 const LongIsInt64 = Union{Val{:CS},Val{:CPP}}
 encode(::LongIsInt64, t::Val{:long}, c::IO, v) =
   write(c, convert(Int64, v))
 decode(::Union{Val{:CS},Val{:CPP}}, t::Val{:long}, c::IO) =
-  convert(Int, read(c, Int64))
+  convert(Int64, read(c, Int64))
 
 # Assuming float is four bytes in C++
 const FloatIsFloat32 = Union{Val{:CS},Val{:CPP}}
