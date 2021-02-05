@@ -429,11 +429,11 @@ realize(b::Backend, s::Panel) =
       path = closed_polygonal_path([xy(p.x, p.y) for p in in_cs(ps, cs)]),
       mat = material_ref(b, family.material)
     with_family_in_layer(b, s.family) do
-      b_extrude_profile(
+      b_extrusion(
         b,
-        u0(cs),
-        thickness,
         path,
+        vz(thickness, cs),
+        u0(cs),
         mat, mat, mat)
     end
   end
@@ -688,18 +688,13 @@ realize(b::Backend, s::Union{Door, Window}) =
 
 export add_door
 add_door(w::Wall=required(), loc::Loc=u0(), family::DoorFamily=default_door_family()) =
-  backend_add_door(backend(w), w, loc, family)
+  let d = door(w, loc, family=family)
+    push!(w.doors, d)
+    delete_shape(w)
+    force_realize(w)
+    w
+  end
 
-backend_add_door(b::Backend, w::Wall, loc::Loc, family::DoorFamily) =
-    let d = door(w, loc, family=family)
-        push!(w.doors, d)
-        if realized(w)
-            set_ref!(w, realize_wall_openings(b, w, ref(w), [d]))
-        end
-        w
-    end
-
-#
 export add_window
 add_window(w::Wall=required(), loc::Loc=u0(), family::WindowFamily=default_window_family()) =
   let d = window(w, loc, family=family)
