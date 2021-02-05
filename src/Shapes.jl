@@ -686,10 +686,7 @@ shape_path(s::Circle) = circular_path(s.center, s.radius)
 shape_path(s::Spline) = open_spline_path(s.points, s.v0, s.v1)
 shape_path(s::ClosedSpline) = closed_spline_path(s.points)
 
-
-
-
-@defproxy(text, Shape0D, str::String="", corner::Loc=u0(), height::Real=1)
+@defshape(Shape0D, text, str::String="", corner::Loc=u0(), height::Real=1)
 
 export text_centered
 text_centered(str::String="", center::Loc=u0(), height::Real=1) =
@@ -786,7 +783,7 @@ cylinder(cb::Loc, r::Real, ct::Loc) =
     cylinder(c, r, h)
   end
 
-@defproxy(extrusion, Shape3D, profile::Shape=point(), v::Vec=vz(1))
+@defproxy(extrusion, Shape3D, profile::Shape=point(), v::Vec=vz(1), cb::Loc=u0())
 extrusion(profile, h::Real) =
   extrusion(profile, vz(h))
 
