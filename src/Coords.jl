@@ -26,6 +26,7 @@ export Loc, Locs, LocOrZ,
        cs_from_o_rot_y,
        cs_from_o_rot_z,
        cs_from_o_rot_zyx,
+       loc_from_o_vx,
        loc_from_o_vx_vy,
        loc_from_o_vz,
        loc_from_o_phi,
@@ -398,7 +399,7 @@ cs_from_o_phi(o::Loc, phi::Real) =
 cs_from_o_phi(o::Loc, phi::Real) =
   rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), phi)
 
-
+loc_from_o_vx(o::Loc, vx::Vec) = loc_from_o_vx_vy(o, vx, vpol(1, pol_phi(vx) + pi/2))
 loc_from_o_vx_vy(o::Loc, vx::Vec, vy::Vec) = u0(cs_from_o_vx_vy(o, vx, vy))
 loc_from_o_vz(o::Loc, vz::Vec) = u0(cs_from_o_vz(o, vz))
 loc_from_o_phi(o::Loc, phi::Real) = u0(cs_from_o_phi(o, phi))
