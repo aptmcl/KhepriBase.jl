@@ -1032,8 +1032,7 @@ struct Grid
   vertices::Array{Loc,2}
   interpolator::LazyParameter{Any}
 end
-grid_interpolator(ptss) = begin
-  println(size(ptss))
+grid_interpolator(ptss) =
   let (nu, nv) = size(ptss).-1,
       us = division(0, 1, nu),
       vs = division(0, 1, nv),
@@ -1045,7 +1044,7 @@ grid_interpolator(ptss) = begin
       yinterpolator = Spline2D(us, vs, map(p->p[2], rawptss), kx=ou, ky=ov),
       zinterpolator = Spline2D(us, vs, map(p->p[3], rawptss), kx=ou, ky=ov)
     (xinterpolator, yinterpolator, zinterpolator)
-  end end
+  end
 grid(ptss) = Grid(ptss, LazyParameter(Any, ()->grid_interpolator(ptss)))
 location_at_grid_interpolator(interpolator, u, v) =
   let interps = interpolator(),
