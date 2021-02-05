@@ -128,13 +128,12 @@ current_layer(layer, backends::Backends=current_backends()) =
 @defcbs set_view(camera::Loc, target::Loc, lens::Real=50, aperture::Real=32)
 @defcb get_view()
 @defcbs b_zoom_extents()
-@defcbs b_set_view_top()
+@defcbs set_view_top()
 
 @defcbs set_sun(altitude::Real, azimuth::Real)
 @defcbs set_ground(level, material)
 
 @defcbs zoom_extents()
-@defcbs view_top()
 #@defcb get_material(ref::Any)
 #@defcbs create_material(name::String)
 #@defcb current_material()
@@ -142,10 +141,13 @@ current_layer(layer, backends::Backends=current_backends()) =
 @defcbs set_normal_sky()
 @defcbs set_overcast_sky()
 
+export b_render_pathname
+b_render_pathname(b::Backend, name::String) =
+  render_pathname(name)
 
 export render_view
-render_view(name::String="View") =
-  let path = prepare_for_saving_file(render_pathname(name))
-    @cbcall(render_view(path))
+render_view(name::String="View", backend::Backend=top_backend()) =
+  let path = b_render_pathname(backend, name)
+    b_render_view(backend, prepare_for_saving_file(path))
     path
   end
