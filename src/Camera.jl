@@ -62,6 +62,7 @@ export film_active,
        film_filename,
        film_frame,
        start_film,
+       finish_film,
        frame_filename,
        save_film_frame,
        saving_film_frames,
@@ -78,12 +79,37 @@ film_pathname() =
   end
 
 start_film(name::String) =
-    begin
-        film_active(true)
-        film_filename(name)
-        film_frame(0)
+  begin
+    film_active(true)
+    film_filename(name)
+    film_frame(0)
+  end
+#
+finish_film() =
+  begin
+    film_active(false)
+    create_mp4_from_frames(film_filename())
+  end
 
+#=
+To generate the actual film from the set of frames, we need ffmpeg.
+=#
+create_mp4_from_frames(name=film_filename()) =
+  with(render_kind_dir, "Film") do
+    with(film_filename, name) do
+      with(render_ext, "-film.mp4") do
+        let film_path = prepare_for_saving_file(render_pathname(name))
+          with(render_ext, "-frame*.png") do
+            let frames_path = render_pathname(name)
+              println(frames_path)
+              println(film_path)
+              println("`ffmpeg -pattern_type glob -i '$(frames_path)' -c:v libx264 -vf fps=25 -pix_fmt yuv420p $(film_path)`")
+            end
+          end
+        end
+      end
     end
+  end
 
 frame_filename(filename::String, i::Integer) =
     "$(filename)-frame-$(lpad(i,3,'0'))"
@@ -346,24 +372,3 @@ interpolate_view_save_frames(ctl_positions, nframes) =
       in_world,
       open_spline_path(map(p -> p[2], ctl_positions)), nframes),
     map(p -> p[3], ctl_positions))
-
-#=
-To generate the actual film from the set of frames, we need ffmpeg.
-=#
-
-create_mp4_from_frames(name=film_filename()) =
-  with(render_kind_dir, "Film") do
-    with(film_filename, name) do
-      with(render_ext, "-film.mp4") do
-        let film_path = prepare_for_saving_file(render_pathname(name))
-          with(render_ext, "-frame*.png") do
-            let frames_path = render_pathname(name)
-              println(frames_path)
-              println(film_path)
-              println("`ffmpeg -pattern_type glob -i '$(frames_path)' -c:v libx264 -vf fps=25 -pix_fmt yuv420p $(film_path)`")
-            end
-          end
-        end
-      end
-    end
-  end
