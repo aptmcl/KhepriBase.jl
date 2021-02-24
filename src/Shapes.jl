@@ -28,7 +28,7 @@ export Shape,
        delete_all_shapes, mark_deleted,
        force_realize,
        set_length_unit,
-       is_collecting_shape,
+       is_collecting_shapes,
        collecting_shapes,
        collected_shapes,
        with_transaction,
@@ -42,7 +42,6 @@ export Shape,
        get_material,
        create_material,
        get_or_create_material,
-       current_material,
        create_block,
        instantiate_block,
        reset_backend,
@@ -600,10 +599,6 @@ evaluate(s::Spline, t::Real) =
     end
   end
 =#
-#=
-curve_domain(s::Spline) = (0.0, 1.0)
-frame_at(s::Spline, t::Real, backend::Backend=backend(s)) = evaluate(s, t)
-=#
 map_division(f::Function, s::Spline, n::Int, backend::Backend=backend(s)) =
   backend_map_division(backend, f, s, n)
 #=HACK, THIS IS NOT READY, YET. COMPARE WITH THE BACKEND VERSION!!!!!!
@@ -773,14 +768,14 @@ cone(cb::Loc, r::Real, ct::Loc) =
     cone(c, r, h)
   end
 @defshape(Shape3D, cone_frustum, cb::Loc=u0(), rb::Real=1, h::Real=1, rt::Real=1)
-cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real) =
+cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real; material=default_material()) =
   let (c, h) = position_and_height(cb, ct)
-    cone_frustum(c, rb, h, rt)
+    cone_frustum(c, rb, h, rt, material)
   end
 @defshape(Shape3D, cylinder, cb::Loc=u0(), r::Real=1, h::Real=1)
-cylinder(cb::Loc, r::Real, ct::Loc) =
+cylinder(cb::Loc, r::Real, ct::Loc; material=default_material()) =
   let (c, h) = position_and_height(cb, ct)
-    cylinder(c, r, h)
+    cylinder(c, r, h, material)
   end
 
 @defproxy(extrusion, Shape3D, profile::Shape=point(), v::Vec=vz(1), cb::Loc=u0())
@@ -990,8 +985,7 @@ subtraction(shape::Shape3D, shapes...) =
 
 @defshape(Shape2D, surface_grid, points::Matrix{<:Loc}=zeros(Loc,(2,2)),
           closed_u::Bool=false, closed_v::Bool=false,
-          smooth_u::Bool=true, smooth_v::Bool=true,
-          interpolator::LazyParameter{Any}=LazyParameter(Any, ()->grid_interpolator(points)))
+          smooth_u::Bool=true, smooth_v::Bool=true)
 
 surface_grid(_points::Vector{<:Vector{<:Loc}},
   _closed_u=false, _closed_v=false, _smooth_u=true, _smooth_v=true, _material=default_material();
@@ -1001,22 +995,6 @@ surface_grid(_points::Vector{<:Vector{<:Loc}},
 
 convert(::Type{Matrix{XYZ}}, ptss::Vector{Vector{<:Loc}}) =
   permutedims(hcat(ptss...))
-
-#=
-evaluate(s::SurfaceGrid, u::Real, v::Real) =
-  let interpolator = s.interpolator
-    if ismissing(interpolator())
-      interpolator(surface_interpolator(s.points))
-    end
-    let p = interpolator()(u,v)
-        v = Interpolations.gradient(interpolator(), u, v)
-      loc_from_o_vx_vy(
-        xyz(p[1], p[2], p[3], world_cs),
-        vxyz(v[1][1], v[1][2], v[1][3], world_cs),
-        vxyz(v[2][1], v[2][2], v[2][3], world_cs))
-    end
-  end
-=#
 
 surface_domain(s::SurfaceGrid) = (0.0, 1.0, 0.0, 1.0)
 frame_at(s::SurfaceGrid, u::Real, v::Real) = evaluate(s, u, v)
@@ -1071,7 +1049,7 @@ delete_shape(s::Shape, bs=current_backends()) =
   end
 
 delete_shapes(ss::Shapes=Shape[], bs=current_backends()) =
-  for s in shapes
+  for s in ss
     delete_shape(s, bs)
   end
 
