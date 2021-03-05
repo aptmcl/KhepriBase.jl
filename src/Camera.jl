@@ -110,6 +110,49 @@ create_mp4_from_frames(name=film_filename()) =
       end
     end
   end
+#=
+
+NOTE: This can now be automated using Julia
+julia> readdir()
+473-element Vector{String}:
+ "DomeTrussRibsDay-frame-000.ini"
+ "DomeTrussRibsDay-frame-000.png"
+ "DomeTrussRibsDay-frame-000.pov"
+ "DomeTrussRibsDay-frame-001.ini"
+ "DomeTrussRibsDay-frame-001.png"
+ ⋮
+ "DomeTrussRibsDay-frame-156.ini"
+ "DomeTrussRibsDay-frame-156.png"
+ "DomeTrussRibsDay-frame-156.pov"
+ "video.mp4"
+ "video2.mp4"
+
+julia> filter(contains(r"DomeTrussRibsDay-frame-...\.png"), readdir())
+157-element Vector{String}:
+ "DomeTrussRibsDay-frame-000.png"
+ "DomeTrussRibsDay-frame-001.png"
+ "DomeTrussRibsDay-frame-002.png"
+ "DomeTrussRibsDay-frame-003.png"
+ "DomeTrussRibsDay-frame-004.png"
+ ⋮
+ "DomeTrussRibsDay-frame-152.png"
+ "DomeTrussRibsDay-frame-153.png"
+ "DomeTrussRibsDay-frame-154.png"
+ "DomeTrussRibsDay-frame-155.png"
+ "DomeTrussRibsDay-frame-156.png"
+
+julia> using FileIO
+julia> using ImageIO
+julia> using VideoIO
+julia> encodevideo("video.mp4", map(load, filter(contains(r"DomeTrussRibsDay-frame-...\.png"), readdir())), framerate=30)
+Progress: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| Time: 0:00:05
+[ Info: Video file saved: C:\Users\aml\OneDrive - Universidade de Lisboa\AML\Projects\SuperComputing\Sync\aleitao\ParallelRendering\FilmPOV/video.mp4
+[ Info: frame=  157 fps=0.0 q=-1.0 Lsize=    2518kB time=00:00:05.13 bitrate=4019.0kbits/s speed=1.72e+03x
+[ Info: video:2516kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.096221%
+"video.mp4"
+=#
+
+
 
 frame_filename(filename::String, i::Integer) =
     "$(filename)-frame-$(lpad(i,3,'0'))"
@@ -215,7 +258,7 @@ track_still_target(camera_path, target, lens=default_lens(), aperture=default_ap
 # parameters: camera (initial location) + target path (list of locations)
 # number of locations in the path defines the number of frames
 
-set_view_save_frames(cameras::Locs, targets::Locs, lens::Real, aperture::Real) =
+set_view_save_frames(cameras::Locs, targets::Locs, lens::Real=default_lens(), aperture::Real=default_aperture()) =
   for (camera, target) in zip(cameras, targets)
     set_view_save_frame(camera, target, lens, aperture)
   end
