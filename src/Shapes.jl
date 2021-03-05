@@ -1081,7 +1081,7 @@ realize(b::Backend, s::UnionShape) =
   unite_refs(b, UnionRef(tuple(map(s->ref(b, s), s.shapes)...)))
 
 realize(b::Backend, s::Union{SubtractionShape2D,SubtractionShape3D}) =
-    subtract_ref(b, ref(b, s.shape), unite_refs(b, map(s->ref(b, s), s.shapes)))
+    subtract_ref(b, ref(b, s.shape), unite_refs(b, UnionRef(tuple(map(s->ref(b, s), s.shapes)...))))
 
 function startSketchup(port)
   ENV["ROSETTAPORT"] = port
