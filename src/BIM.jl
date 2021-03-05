@@ -360,7 +360,7 @@ slab_family_thickness(b::Backend, family::SlabFamily) =
 realize(b::Backend, s::Slab) =
   b_slab(b, s.region, s.level, s.family)
 
-#
+#=
 export add_slab_opening
 add_slab_opening(s::Slab=required(), contour::ClosedPath=circular_path()) =
     let b = backend(s)
@@ -381,6 +381,7 @@ realize_slab_openings(b::Backend, s::Slab, s_ref, openings) =
         end
         s_ref
     end
+=#
 
 # Roof
 
