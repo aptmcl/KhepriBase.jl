@@ -120,7 +120,7 @@ b_quad_strip_closed(b::Backend, ps, qs, smooth, mat) =
 # Second tier: surfaces
 export b_surface_polygon, b_surface_regular_polygon,
 	   b_surface_circle, b_surface_arc, b_surface_closed_spline,
-	   b_surface, b_surface_grid
+	   b_surface, b_surface_grid, b_smooth_surface_grid
 
 b_surface_polygon(b::Backend, ps, mat) =
   # This only works for convex polygons
@@ -160,6 +160,9 @@ b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, interpo
 	  vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
 	       closed_v ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : [])
   end
+
+b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
+  b_surface_grid(b, smooth_grid(ptss), closed_u, closed_v, true, true, mat)
 
 # Parametric surface
 #=
@@ -389,17 +392,36 @@ b_extrusion(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
   end
 
 # Lofts, sweeps, etc
-export b_sweep
-b_sweep(b::Backend, path, profile, rotation, scale) =
-  let vertices = in_world.(path_vertices(profile)),
-      frames = map_division(identity, path, 100) #rotation_minimizing_frames(path_frames(path))
+export b_sweep, b_loft
+b_loft(b::Backend, profiles, closed, smooth, mat) =
+  let ptss = path_vertices.(profiles),
+	  n = mapreduce(length, max, ptss),
+	  vss = map(profile->map_division(identity, profile, n), profiles)
+	b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
+  end
+
+b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
+#  let vertices = in_world.(path_vertices(profile)),
+#      frames = map_division(identity, path, 100),
+#	  points = [xyz(cx(p), cy(p), cz(p), frame.cs) for p in vertices, frame in frames]
+  let frames = rotation_minimizing_frames(path_frames(path)),
+	  profiles = map_division(s->scale(profile, 2.1+sin(s)), 0, 32pi, 100), #map_division(identity, path, 100), #
+	  verticess = map(path_vertices, profiles),
+	  verticess = is_smooth_path(profile) ?
+	  	let n = mapreduce(length, max, verticess)-1
+		  map(path->map_division(identity, path, n), profiles)
+	    end :
+	    verticess
+	  points = hcat(map(path_vertices_on, verticess, frames)...)
     b_surface_grid(
       b,
-      [xyz(cx(p), cy(p), cz(p), frame.cs) for p in vertices, frame in frames],
-      is_closed_path(profile),
+      points,
       is_closed_path(path),
-      is_smooth_path(profile),
-      is_smooth_path(path))
+	  is_closed_path(profile),
+      is_smooth_path(path),
+	  is_smooth_path(profile),
+	  LazyParameter(Any, ()->grid_interpolator(points)),
+	  mat)
   end
 
 # Stroke and fill operations over paths
