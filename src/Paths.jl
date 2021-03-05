@@ -60,7 +60,8 @@ export empty_path,
        Region,
        region,
        outer_path,
-       inner_paths
+       inner_paths,
+       path_tolerance
 
 path_tolerance = Parameter(1e-10)
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < path_tolerance()
@@ -199,6 +200,8 @@ ensure_no_repeated_locations(locs) =
 path_start(path::PolygonalPath) = path.vertices[1]
 path_end(path::OpenPolygonalPath) = path.vertices[end]
 path_end(path::ClosedPath) = path_start(path)
+path_domain(path::PolygonalPath) = (0, path_length(path))
+location_at(path::PolygonalPath, ϕ::Real) = location_at_length(path, ϕ)
 planar_path_normal(path::PolygonalPath) = vertices_normal(path_vertices(path))
 
 join_paths(p1::OpenPolygonalPath, p2::OpenPolygonalPath) =
@@ -236,14 +239,14 @@ spline_path(v::Loc, vs...) = spline_path([v, vs...])
 
 
 location_at(path::Union{OpenSplinePath,ClosedSplinePath}, ϕ::Real) =
-  let interpol = path.interpolator,
-      f = interpol(ϕ),
-      d1 = derivative(interpol, ϕ), #Interpolations.gradient(interpolator, ϕ)[1],
-      d2 = derivative(interpol, ϕ, nu=2),#u0 = path.vertices[1],
+  location_at(path.interpolator, ϕ)
+location_at(interpolator::ParametricSpline, ϕ) =
+  let f = interpolator(ϕ),
+      d1 = derivative(interpolator, ϕ), #Interpolations.gradient(interpolator, ϕ)[1],
+      d2 = derivative(interpolator, ϕ, nu=2),#u0 = path.vertices[1],
       p = xyz(f[1], f[2], f[3], world_cs),
       t = vxyz(d1[1], d1[2], d1[3], world_cs),
       n = vxyz(d2[1], d2[2], d2[3], world_cs)#,
-      #r = in_world(vy(1, u0.cs))
     norm(n) <= 1e-9 ? loc_from_o_vz(p, t) : loc_from_o_vx_vy(p, n, cross(t, n))
   end
 
@@ -327,10 +330,18 @@ in_cs(path::OpenSplinePath, cs::CS) = OpenSplinePath(in_cs(path.vertices, cs), p
 in_cs(path::ClosedSplinePath, cs::CS) = ClosedSplinePath(in_cs(path.vertices, cs))
 in_cs(ps::Locs, cs::CS) = map(p->in_cs(p, cs), ps)
 
+scale(path::CircularPath, s::Real, p::Loc=u0()) =
+  let v = path.center - p
+    circular_path(p + v*s, path.radius*s)
+  end
 scale(path::RectangularPath, s::Real, p::Loc=u0()) =
   let v = path.corner - p
     rectangular_path(p + v*s, path.dx*s, path.dy*s)
   end
+scale(path::OpenPolygonalPath, s::Real, p::Loc=u0()) =
+  open_polygonal_path([q + (q-p)*s for q in path.vertices])
+scale(path::ClosedPolygonalPath, s::Real, p::Loc=u0()) =
+  closed_polygonal_path([q + (q-p)*s for q in path.vertices])
 
 path_length(path::CircularPath) = 2*pi*path.radius
 path_length(path::ArcPath) = path.radius*abs(path.amplitude)
@@ -980,7 +991,9 @@ plus_profile(Width::Real=0.1, Height::Real=Width; width::Real=Width, height::Rea
 
 export path_vertices_on
 path_vertices_on(path::Path, p) =
-  [add_xyz(p, raw_point(v)...) for v in path_vertices(path)]
+  path_vertices_on(path_vertices(path), p)
+path_vertices_on(vs::Locs, p) =
+  [add_xyz(p, raw_point(v)...) for v in vs]
 
 
 ## Utility operations
@@ -1028,10 +1041,7 @@ length_at_location(path::Path, p::Loc, t0=0, t1=path_length(path)) =
     end
 
 export Grid, grid, grid_interpolator, location_at_grid_interpolator
-struct Grid
-  vertices::Array{Loc,2}
-  interpolator::LazyParameter{Any}
-end
+
 grid_interpolator(ptss) =
   let (nu, nv) = size(ptss).-1,
       us = division(0, 1, nu),
@@ -1045,23 +1055,48 @@ grid_interpolator(ptss) =
       zinterpolator = Spline2D(us, vs, map(p->p[3], rawptss), kx=ou, ky=ov)
     (xinterpolator, yinterpolator, zinterpolator)
   end
+smooth_grid(ptss, level_u=2, level_v=2) =
+  let (nu, nv) = size(ptss)
+    if level_u > 1 && level_v > 1
+	    let interpolator = grid_interpolator(ptss)
+        [location_at(interpolator, u, v)
+	       for u in division(0, 1, 4*nu-7), v in division(0, 1, 4*nv-7)] # 2->1, 3->5, 4->9, 5->13
+      end
+    elseif level_u > 1
+      let interpolators = map(col->curve_interpolator(collect(col), false), eachcol(ptss))
+        [location_at(interpolator, u) for u in division(0, 1, 4*nu-7), interpolator in interpolators]
+      end
+    elseif level_v > 1
+      let interpolators = map(row->curve_interpolator(collect(row), false), eachrow(ptss))
+        [location_at(interpolator, v) for interpolator in interpolators, v in division(0, 1, 4*nv-7)]
+      end
+    else
+      ptss
+    end
+  end
+
+
+struct Grid
+  vertices::Array{Loc,2}
+  interpolator::LazyParameter{Any}
+end
 grid(ptss) = Grid(ptss, LazyParameter(Any, ()->grid_interpolator(ptss)))
-location_at_grid_interpolator(interpolator, u, v) =
-  let interps = interpolator(),
-      o = xyz(evaluate.(interps, u, v)..., world_cs),
-      vx = unitized(vxyz(evaluate_derivative.(interps, u, v, 1, 0)..., world_cs)),
-      vy = unitized(vxyz(evaluate_derivative.(interps, u, v, 0, 1)..., world_cs))
+
+location_at(interpolator::Tuple{Spline2D,Spline2D,Spline2D}, u, v) =
+  let o = xyz(evaluate.(interpolator, u, v)..., world_cs),
+      vx = unitized(vxyz(evaluate_derivative.(interpolator, u, v, 1, 0)..., world_cs)),
+      vy = unitized(vxyz(evaluate_derivative.(interpolator, u, v, 0, 1)..., world_cs))
     loc_from_o_vx_vy(o, vx, vy)
   end
 location_at(grid::Grid, u, v) =
-  location_at_grid_interpolator(grid.interpolator, u, v)
+  location_at(grid.interpolator(), u, v)
 
 # We need to support convertion to OBJ format
 export write_obj
 write_obj(io::IO, ptss::AbstractMatrix{<:Loc}, closed_u, closed_v, smooth_u, smooth_v, interpolator) =
   let (nu, nv) = size(ptss)
     if smooth_u || smooth_v
-      ptss = [location_at_grid_interpolator(interpolator, u, v)
+      ptss = [location_at(interpolator, u, v)
               for u in division(0, 1, nu*4), v in division(0, 1, nv*4)]
       (nu, nv) = size(ptss)
     end
