@@ -1040,7 +1040,7 @@ length_at_location(path::Path, p::Loc, t0=0, t1=path_length(path)) =
       length_at_location(path, p, ts[max(1, idx-1)], ts[min(length(ts), idx+1)])
     end
 
-export Grid, grid, grid_interpolator, location_at_grid_interpolator
+export Grid, grid, grid_interpolator, location_at
 
 grid_interpolator(ptss) =
   let (nu, nv) = size(ptss).-1,
