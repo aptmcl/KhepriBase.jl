@@ -989,6 +989,13 @@ realize(b::Backend, s::TrussNode) =
 realize(b::Backend, s::TrussBar) =
   b_truss_bar(b, s.p0, s.p1, s.family)
 
+
+export truss_nodes, truss_bars
+truss_nodes(ps, family=default_truss_node_family()) =
+  [truss_node(p, family) for p in ps]
+truss_bars(ps, qs, family=default_truss_bar_family()) =
+  [truss_bar(p, q, 0, family) for (p, q) in zip(ps, qs)]
+
 export truss_node_is_supported
 truss_node_is_supported(n) =
   let s = n.family.support
