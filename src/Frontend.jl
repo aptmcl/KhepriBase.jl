@@ -119,8 +119,6 @@ current_layer(layer, backends::Backends=current_backends()) =
 =#
 @defcbs set_layer_active(layer, status)
 @defcbs switch_to_layer(layer)
-@defcb all_shapes_in_layer(layer)
-@defcbs delete_all_shapes_in_layer(layer)
 
 @defcb disable_update()
 @defcb enable_update()

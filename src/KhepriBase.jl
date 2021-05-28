@@ -54,7 +54,7 @@ function evaluate_derivative(spline::Spline2D, x::Number, y::Number, dx::Int, dy
   if dx >= spline.kx
     ϵ = 1e-9
     (evaluate(spline, x+ϵ, y) - evaluate(spline, x-ϵ, y))/2/ϵ
-elseif dy >= spline.kx
+  elseif dy >= spline.kx
     ϵ = 1e-9
     (evaluate(spline, x, y+ϵ) - evaluate(spline, x, y-ϵ))/2/ϵ
   else

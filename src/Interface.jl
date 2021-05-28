@@ -12,7 +12,6 @@ import Base:
  show
 
 import KhepriBase:
-  b_all_refs, b_delete_all_refs, b_delete_refs, b_delete_ref,
   backend,
   backend_bounding_box,
   #backend_captured_shape,

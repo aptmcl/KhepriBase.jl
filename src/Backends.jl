@@ -184,14 +184,14 @@ parametric {
 # Third tier: solids
 export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
        b_generic_pyramid_frustum_with_holes, b_generic_prism_with_holes,
-			 b_pyramid_frustum, b_pyramid, b_prism,
-			 b_regular_pyramid_frustum, b_regular_pyramid, b_regular_prism,
-			 b_cylinder,
-			 b_cuboid,
-			 b_box,
-			 b_sphere,
-			 b_cone,
-			 b_torus
+  	   b_pyramid_frustum, b_pyramid, b_prism,
+  	   b_regular_pyramid_frustum, b_regular_pyramid, b_regular_prism,
+  	   b_cylinder,
+  	   b_cuboid,
+  	   b_box,
+  	   b_sphere,
+  	   b_cone,
+  	   b_torus
 
 # Each solid can have just one material or multiple materials
 b_generic_pyramid_frustum(b::Backend, bs, ts, smooth, bmat, tmat, smat) =
@@ -405,7 +405,7 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
 #      frames = map_division(identity, path, 100),
 #	  points = [xyz(cx(p), cy(p), cz(p), frame.cs) for p in vertices, frame in frames]
   let frames = rotation_minimizing_frames(path_frames(path)),
-	  profiles = map_division(s->scale(profile, 2.1+sin(s)), 0, 32pi, 100), #map_division(identity, path, 100), #
+	  profiles = map_division(s->scale(profile, 1) #=2.1+sin(s)), 0, 32pi,=#, 0, 1, 100),# #map_division(identity, path, 100), #
 	  verticess = map(path_vertices, profiles),
 	  verticess = is_smooth_path(profile) ?
 	  	let n = mapreduce(length, max, verticess)-1
@@ -420,7 +420,7 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
 	  is_closed_path(profile),
       is_smooth_path(path),
 	  is_smooth_path(profile),
-	  LazyParameter(Any, ()->grid_interpolator(points)),
+	  grid_interpolator(points),
 	  mat)
   end
 
@@ -638,15 +638,17 @@ const letter_glyph = Dict(
 
 b_text(b::Backend, str, p, size, mat) =
   let dx = 0,
-	  inter_letter_spacing_factor = 1/3
+	  inter_letter_spacing_factor = 1/3,
+	  refs = []
     for c in str
   	  let glyph = letter_glyph[c]
   	    for vs in glyph.vss
-  	  	  b_line(b, [add_xy(p, dx + v[1]*size, v[2]*size) for v in vs], mat)
+  	  	  push!(refs, b_line(b, [add_xy(p, dx + v[1]*size, v[2]*size) for v in vs], mat))
   	    end
   	    dx += (glyph.bb[2][1]-glyph.bb[1][1] + inter_letter_spacing_factor)*size
   	  end
     end
+	refs
   end
 
 b_text_size(b::Backend, str, size, mat) =
@@ -690,8 +692,6 @@ b_all_shapes(b::Backend) = b.shapes
 Utilities for interactive development
 =#
 
-export b_all_refs, b_delete_all_refs, b_delete_refs, b_delete_ref
-
 @bdef(b_all_refs())
 
 b_delete_all_refs(b::Backend) =
@@ -704,6 +704,9 @@ b_delete_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
 
 b_delete_ref(b::Backend{K,T}, r::T) where {K,T} =
   missing_specialization(b, :b_delete_ref, r)
+
+# BIM
+export b_slab, b_roof, b_beam, b_column, b_free_column, b_wall
 
 #=
 BIM operations require some extra support from the backends.
@@ -741,8 +744,12 @@ b_slab(b::Backend, profile, level, family) =
 	material_ref(b, family.top_material),
 	material_ref(b, family.side_material))
 
-b_beam(b::Backend, c, h, family) =
-  let mat = material_ref(b, family.material)
+b_roof(b::Backend, region, level, family) =
+  b_slab(b, region, level, family)
+
+b_beam(b::Backend, c, h, angle, family) =
+  let c = loc_from_o_phi(c, angle),
+	  mat = material_ref(b, family.material)
     b_extrusion(
       b,
       family_profile(b, family),
@@ -750,6 +757,15 @@ b_beam(b::Backend, c, h, family) =
 	  c,
   	  mat, mat, mat)
   end
+
+b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
+  let base_height = level_height(bottom_level),
+      top_height = level_height(top_level)
+    b_beam(b, add_z(loc_from_o_phi(cb, angle), base_height), top_height-base_height, 0, family)
+  end
+
+b_free_column(b::Backend, cb, h, angle, family) =
+  b_beam(b, cb, h, angle, family)
 
 # A poor's man approach to deal with Z-fighting
 const support_z_fighting_factor = 0.999

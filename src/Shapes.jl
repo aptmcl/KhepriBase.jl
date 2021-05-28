@@ -39,6 +39,7 @@ export Shape,
        create_layer,
        get_or_create_layer,
        current_layer,
+       delete_all_shapes_in_layer,
        get_material,
        create_material,
        get_or_create_material,
@@ -516,6 +517,11 @@ current_layer(layer, backends::Backends=current_backends()) =
   for b in backends
     b_current_layer(b, ref(b, layer).value)
   end
+delete_all_shapes_in_layer(layer, backends::Backends=current_backends()) =
+  for b in backends
+    b_delete_all_shapes_in_layer(b, ref(b, layer).value)
+  end
+
 
 abstract type Shape0D <: Shape end
 abstract type Shape1D <: Shape end
@@ -536,7 +542,7 @@ Shapes1D = Vector{<:Any}
 Shapes2D = Vector{<:Any}
 
 # This might be usable, so
-export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D
+export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
 
 @defproxy(empty_shape, Shape0D)
 @defproxy(universal_shape, Shape3D)
@@ -626,19 +632,6 @@ rectangle(p::Loc, q::Loc) =
   end
 
 # Surfaces
-
-macro defsurface(name_typename, fields...)
-  # Merge this with defproxy
-  (name, typename) = name_typename isa Symbol ?
-    (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
-    name_typename.args
-  field_names = map(field -> field.args[1].args[1], fields)
-  esc(quote
-    @defproxy($(name_typename), Shape2D, $(fields...), material::Material=default_material())
-    realize(b::Backend, s::$(typename)) =
-      $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
-  end)
-end
 
 @defshape(Shape2D, surface_circle, center::Loc=u0(), radius::Real=1)
 @defshape(Shape2D, surface_arc, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
@@ -747,7 +740,7 @@ regular_prism(edges::Integer, cb::Loc, r::Real, angle::Real, ct::Loc, inscribed:
 
 @defshape(Shape3D, prism, bs::Locs=[ux(), uy(), uxy()], v::Vec=vz(1))
 prism(bs::Locs, h::Real) =
-  irregular_prism(bs, vz(h))
+  prism(bs, vz(h))
 
 @defshape(Shape3D, right_cuboid, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
 right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0; backend::Backend=top_backend()) =
@@ -777,6 +770,26 @@ cylinder(cb::Loc, r::Real, ct::Loc; material=default_material()) =
   let (c, h) = position_and_height(cb, ct)
     cylinder(c, r, h, material)
   end
+
+#=
+An isosurface is surface that is described by the implícit equation
+
+F(x,y,z) = k
+
+It is frequent to use the simpler form
+
+G(x,y,z) = 0,
+
+by defining G(x,y,z) = F(x,y,z) - k
+
+The name 'iso' means 'same value', which comes from the fact that F(x,y,z) has
+always the same value. The idea is that we sample all points in space, applying
+F to each one, and we those where F returns k (or G returns zero) belong to the
+isosurface. There are several algorithms that speed up this sampling process,
+being the marching cubes the most popular one.
+=#
+
+@defshape(Shape3D, isosurface, frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(+1,+1,+1)])
 
 @defproxy(extrusion, Shape3D, profile::Shape=point(), v::Vec=vz(1), cb::Loc=u0())
 extrusion(profile, h::Real) =
