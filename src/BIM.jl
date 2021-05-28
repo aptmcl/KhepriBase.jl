@@ -399,7 +399,7 @@ slab_family_thickness(b::Backend, family::RoofFamily) =
 @defproxy(roof, BIMShape, region::Region=rectangular_path(),
           level::Level=default_level(), family::RoofFamily=default_roof_family())
 realize(b::Backend, s::Roof) =
-  b_slab(b, s.region, s.level, s.family)
+  b_roof(b, s.region, s.level, s.family)
 
 # Panel
 
@@ -547,7 +547,7 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
       let currlength = prevlength + path_length(w_seg_path),
           c_r_w_path = closed_path_for_height(r_w_path, w_height),
           c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        append!(refs, b_quad_strip_closed(b, path_vertices(c_l_w_path), path_vertices(c_r_w_path), false, matside))
+        #append!(refs, b_quad_strip_closed(b, path_vertices(c_l_w_path), path_vertices(c_r_w_path), false, matside))
         openings = filter(openings) do op
           if prevlength <= op.loc.x < currlength ||
              prevlength <= op.loc.x + op.family.width <= currlength # contained (at least, partially)
@@ -584,10 +584,13 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
     refs
   end
 
-closed_path_for_height(path, h) =
+closed_offsetted_path(path, v) =
   let ps = path_vertices(path)
-    closed_polygonal_path([ps..., reverse(map(p -> p+vz(h), ps))...])
+    closed_polygonal_path([ps..., reverse(map(p -> p+v, ps))...])
   end
+
+closed_path_for_height(path, h) =
+  closed_offsetted_path(path, vz(h))
 
 subtract_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
   let idxs = closest_vertices_indexes(path_vertices(c_r_w_path), path_vertices(c_r_op_path))
@@ -823,6 +826,9 @@ beam(cb::Loc, ct::Loc, Angle::Real=0, Family::BeamFamily=default_beam_family(); 
       beam(c, h, angle, family)
     end
 
+realize(b::Backend, s::Beam) =
+  b_beam(b, s.cb, s.h, s.angle, s.family)
+
 # Column
 # Columns are mainly vertical elements. A column has its center axis aligned with a line defined by two points
 
@@ -832,25 +838,19 @@ beam(cb::Loc, ct::Loc, Angle::Real=0, Family::BeamFamily=default_beam_family(); 
 
 @defproxy(free_column, BIMShape, cb::Loc=u0(), h::Real=1, angle::Real=0, family::ColumnFamily=default_column_family())
 free_column(cb::Loc, ct::Loc, Angle::Real=0, Family::ColumnFamily=default_column_family(); angle::Real=Angle, family::ColumnFamily=Family) =
-    let (c, h) = position_and_height(cb, ct)
-      free_column(c, h, angle, family)
-    end
+  let (c, h) = position_and_height(cb, ct)
+    free_column(c, h, angle, family)
+  end
+
+realize(b::Backend, s::FreeColumn) =
+  b_free_column(b, s.cb, s.h, s.angle, s.family)
 
 @defproxy(column, BIMShape, cb::Loc=u0(), angle::Real=0,
   bottom_level::Level=default_level(), top_level::Level=upper_level(bottom_level),
   family::ColumnFamily=default_column_family())
 
-realize(b::Backend, s::Beam) =
-  b_beam(b, s.cb, s.h, s.family)
-
-realize(b::Backend, s::FreeColumn) =
-  b_beam(b, loc_from_o_phi(s.cb, s.angle), s.h, s.family)
-
 realize(b::Backend, s::Column) =
-  let base_height = level_height(s.bottom_level),
-      top_height = level_height(s.top_level)
-    b_beam(b, add_z(loc_from_o_phi(s.cb, s.angle), base_height), top_height-base_height, s.family)
-  end
+  b_column(b, s.cb, s.angle, s.bottom_level, s.top_level, s.family)
 
 # Tables and chairs
 
