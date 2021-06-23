@@ -1020,11 +1020,7 @@ map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int, backend::Backend=top
     end
   end
 
-@defproxy(surface_mesh, Shape2D, vertices::Locs=[u0(), ux(), uy()], faces::Vector{Vector{Int}}=[[0,1,2]])
-realize(b::Backend, s::SurfaceMesh) =
-  backend_surface_mesh(b, s.vertices, s.faces)
-
-
+@defshape(Shape2D, surface_mesh, vertices::Locs=[u0(), ux(), uy()], faces::Vector{Vector{Int}}=[[0,1,2]])
 
 @defproxy(parametric_surface, Shape2D, definition::Function=(u,v)->xyz(u,v,0),
           domain_u::Tuple{Real,Real}=(0,1), domain_v::Tuple{Real,Real}=(0,1))
