@@ -120,7 +120,7 @@ b_quad_strip_closed(b::Backend, ps, qs, smooth, mat) =
 # Second tier: surfaces
 export b_surface_polygon, b_surface_regular_polygon,
 	   b_surface_circle, b_surface_arc, b_surface_closed_spline,
-	   b_surface, b_surface_grid, b_smooth_surface_grid
+	   b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
 
 b_surface_polygon(b::Backend, ps, mat) =
   # This only works for convex polygons
@@ -163,6 +163,17 @@ b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, interpo
 
 b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
   b_surface_grid(b, smooth_grid(ptss), closed_u, closed_v, true, true, mat)
+
+b_surface_mesh(b::Backend, vertices, faces, mat) =
+  map(faces) do face
+	if length(face) == 3
+	  b_trig(b, vertices[face]..., mat)
+  	elseif length(face) == 4
+  	  b_quad(b, vertices[face]..., mat)
+    else
+	  b_surface_polygon(b, vertices[face], mat)
+    end
+  end
 
 # Parametric surface
 #=
@@ -481,6 +492,8 @@ b_fill(b::Backend, path::ClosedSplinePath, mat) =
   b_surface_closed_spline(b, path.vertices, mat)
 b_fill(b::Backend, path::Region, mat) =
   b_surface(b, path, mat)
+b_fill(b::Backend, path::Mesh, mat) =
+  b_surface_mesh(b, m.vertices, m.faces, mat)
 
 #=
 backend_fill(b::Backend, path::ClosedSplinePath) =
@@ -1017,10 +1030,6 @@ backend_fill(b, path) =
 backend_frame_at(b, c, t) = throw(UndefinedBackendException())
 backend_fill_curves(b, ids) = throw(UndefinedBackendException())
 
-#@bdef fill(m::Mesh)
-backend_fill(b::Backend, m::Mesh) =
-  backend_surface_mesh(b, m.vertices, m.faces)
-
 #@bdef fill(path::ClosedPathSequence)
 backend_fill(b::Backend, path::ClosedPathSequence) =
   backend_fill_curves(b, map(path->backend_stroke(b, path), path.paths))
@@ -1117,7 +1126,6 @@ backend_stroke_op(b::Backend, op::ArcOp, start::Loc, curr::Loc, refs) =
 @bdef stroke_unite(refs)
 #@bdef surface_boundary(s::Shape2D)
 #@bdef surface_domain(s::Shape2D)
-@bdef surface_mesh(vertices, faces)
 
 #@bdef wall(path, height, l_thickness, r_thickness, family)
 
@@ -1173,54 +1181,66 @@ Backends might use different communication mechanisms, e.g., sockets, COM,
 RMI, etc. We start by defining socket-based communication.
 =#
 
-struct SocketBackend{K,T} <: Backend{K,T}
-  connection::LazyParameter{TCPSocket}
+mutable struct SocketBackend{K,T} <: Backend{K,T}
+  name::String
+  port::Integer
+  connection::Union{Missing,TCPSocket}
   remote::NamedTuple
 end
 
-export connect_to, start_and_connect_to
+SocketBackend{K,T}(name::AbstractString, port::Integer, remote::NamedTuple) where {K,T} =
+  SocketBackend{K,T}(name, port, missing, remote)
 
-connect_to(backend::AbstractString, port::Integer; attempts=10, wait=8) =
-  for i in 1:attempts
-    try
-      return connect(port)
-    catch e
-      if i == attempts
-        @info("Couldn't connect with $(backend).")
-        throw(e)
-      else
-        @info("Please, start/restart $(backend).")
-        sleep(wait)
+backend_name(b::SocketBackend) = b.name
+
+connection(b::SocketBackend) =
+  begin
+	if ismissing(b.connection)
+		before_connecting(b)
+      	b.connection = start_connection(b)
+	  	after_connecting(b)
+    end
+	b.connection
+  end
+
+export before_connecting, after_connecting
+before_connecting(b::SocketBackend) = nothing
+after_connecting(b::SocketBackend) = nothing
+failed_connecting(b::SocketBackend) =
+  error("Couldn't connect with $(b.name).")
+
+reset_backend(b::SocketBackend) =
+  begin
+    for f in b.remote
+      reset_opcode(f)
+    end
+    close(b.connection)
+    b.connection = missing
+  end
+
+start_connection(b::SocketBackend) =
+  let attempts = 10,
+	  wait = 8
+    for i in 1:attempts
+      try
+        return connect(b.port)
+      catch e
+        if i == attempts
+		  failed_connecting(b)
+        else
+          @info("Please, start/restart $(b.name).")
+          sleep(wait)
+        end
       end
     end
   end
-#
-start_and_connect_to(backend, start, port; attempts=20, wait=5) =
-  for i in 1:attempts
-    try
-      return connect(port)
-    catch e
-      if i == 1
-        @info("Starting $(backend).")
-   	    start()
-        sleep(wait)
-      elseif i == attempts
-        @info("Couldn't connect with $(backend).")
-        throw(e)
-      else
-        sleep(wait)
-      end
-    end
-  end
-
-
 
 # To simplify remote calls
 macro remote(b, call)
   let op = call.args[1],
       args = map(esc, call.args[2:end]),
       b = esc(b)
-    :(call_remote(getfield(getfield($(b), :remote), $(QuoteNode(op))), $(b).connection(), $(args...)))
+    :(call_remote(getfield(getfield($(b), :remote), $(QuoteNode(op))), connection($(b)), $(args...)))
   end
 end
 
@@ -1229,21 +1249,6 @@ macro get_remote(b, op)
     :(getfield(getfield($(b), :remote), $(QuoteNode(op))))
   end
 end
-
-# A common solution is to use socket-based communication
-SocketBackend{K,T}(c::LazyParameter{TCPSocket}) where {K,T} =
-  SocketBackend{K,T}(c, NamedTuple{}())
-
-connection(b::SocketBackend) = b.connection()
-
-reset_backend(b::SocketBackend) =
-  begin
-    for f in b.remote
-      reset_opcode(f)
-    end
-    close(b.connection())
-    reset(b.connection)
-  end
 
 #One less dynamic option is to use a file-based backend. To that end, we implement
 #the IOBuffer_Backend
@@ -1254,7 +1259,8 @@ Base.@kwdef mutable struct IOBufferBackend{K,T} <: Backend{K,T}
   target::Loc=xyz(0,0,0)
   lens::Real=35
 end
-connection(backend::IOBufferBackend) = backend.out
+
+connection(b::IOBufferBackend) = b.out
 
 ################################################################
 # Not all backends support all stuff. Some of it might need to be supported
