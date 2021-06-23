@@ -275,3 +275,21 @@ quad_grid_indexes(si, sj, closed_u, closed_v) =
     end
     idxs
   end
+
+export illustrate_path
+illustrate_path(path) =
+  begin
+    for (i, v) in enumerate(path_vertices(path))
+      sphere(v, 0.01)
+      text(string(i), v+vxy(0.05, 0.05), 0.1)
+    end
+    stroke(path)
+  end
+
+illustrate_expr(expr) =
+  :(let p = $(esc(expr)); text($(string(expr)), p); p end)
+
+export illustrate
+macro illustrate(exprs...)
+  :(tuple($([illustrate_expr(expr) for expr in exprs]...)))
+end
