@@ -480,10 +480,15 @@ material_ref(b::Backend, m::Material) = ref(b, m).value
 material_ref(b::Backend, s::Shape) = material_ref(b, s.material)
 
 # These are pre-defined materials that need to be specified by each backend.
-export material_basic, material_glass,
+export material_point, material_curve, material_surface,
+       material_basic, material_glass,
        material_metal, material_wood,
        material_concrete, material_plaster,
        material_grass
+
+const material_point = material()
+const material_curve = material()
+const material_surface = material()
 const material_basic = material()
 const material_glass = material()
 const material_metal = material()
@@ -492,9 +497,11 @@ const material_concrete = material()
 const material_plaster = material()
 const material_grass = material()
 
-export default_material, default_line_material
+export default_point_material, default_curve_material, default_surface_material, default_material
+const default_point_material = Parameter{Material}(material_point)
+const default_curve_material = Parameter{Material}(material_curve)
+const default_surface_material = Parameter{Material}(material_surface)
 const default_material = Parameter{Material}(material_basic)
-const default_line_material = Parameter{Material}(material_basic)
 
 #=
 Layers are just a classification mechanism.
@@ -556,8 +563,14 @@ macro defshape(supertype, name_typename, fields...)
     (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
     name_typename.args
   field_names = map(field -> field.args[1].args[1], fields)
+  default_material =
+    supertype == :Shape0D ? :default_point_material :
+    supertype == :Shape1D ? :default_curve_material :
+    supertype == :Shape2D ? :default_surface_material :
+    supertype == :Shape3D ? :default_material :
+    error("Unknown supertype:", supertype)
   esc(quote
-    @defproxy($(name_typename), $(supertype), $(fields...), material::Material=default_material())
+    @defproxy($(name_typename), $(supertype), $(fields...), material::Material=$(default_material)())
     realize(b::Backend, s::$(typename)) =
       $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
   end)
@@ -743,10 +756,10 @@ prism(bs::Locs, h::Real) =
   prism(bs, vz(h))
 
 @defshape(Shape3D, right_cuboid, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
-right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0; backend::Backend=top_backend()) =
+right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0) =
   let (c, h) = position_and_height(cb, ct),
       o = angle == 0 ? c : loc_from_o_phi(c, angle)
-    right_cuboid(o, width, height, h, backend=backend)
+    right_cuboid(o, width, height, h)
   end
 
 @defshape(Shape3D, box, c::Loc=u0(), dx::Real=1, dy::Real=dx, dz::Real=dy)
@@ -1295,7 +1308,7 @@ nonzero_offset(l::Line, d::Real) =
 #
 export stroke, b_stroke
 stroke(path;
-    material::Material=default_material(),
+    material::Material=default_curve_material(),
 	  backend::Backend=top_backend(),
 	  backends::Backends=(backend,)) =
   let mat = material_ref(backend, material)
@@ -1305,7 +1318,7 @@ stroke(path;
   end
 export fill, b_fill
 fill(path;
-    material::Material=default_material(),
+    material::Material=default_surface_material(),
     backend::Backend=top_backend(),
     backends::Backends=(backend,)) =
   let mat = material_ref(backend, material)
