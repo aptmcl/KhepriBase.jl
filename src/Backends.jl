@@ -65,7 +65,7 @@ b_nurbs_curve(b::Backend, order, ps, knots, weights, closed, mat) =
   	b_polygon(b, ps, mat) :
   	b_line(b, ps, mat)
 
-b_spline(b::Backend, ps, v1, v2, interpolator, mat) =
+b_spline(b::Backend, ps, v1, v2, mat) =
   let ci = curve_interpolator(ps, false),
       cpts = curve_control_points(ci),
       n = length(cpts),
@@ -776,17 +776,13 @@ b_beam(b::Backend, c, h, angle, family) =
   end
 
 b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
-  let base_height = level_height(bottom_level),
-      top_height = level_height(top_level)
+  let base_height = level_height(b, bottom_level),
+      top_height = level_height(b, top_level)
     b_beam(b, add_z(loc_from_o_phi(cb, angle), base_height), top_height-base_height, 0, family)
   end
 
 b_free_column(b::Backend, cb, h, angle, family) =
   b_beam(b, cb, h, angle, family)
-
-# A poor's man approach to deal with Z-fighting
-const support_z_fighting_factor = 0.999
-const wall_z_fighting_factor = 0.998
 
 b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, lmat, rmat, smat) =
   let w_paths = subpaths(w_path),

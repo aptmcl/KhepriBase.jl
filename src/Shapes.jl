@@ -1141,7 +1141,7 @@ highlight_shapes(shapes::Shapes) =
   highlight_shapes(shapes, shapes == [] ? top_backend() : backend(shapes[1]))
 
 capture_shape(s=select_shape("Select shape to be captured")) =
-  if s != nothing
+  if ! isnothing(s)
     generate_captured_shape(s, backend(s))
   end
 
@@ -1199,7 +1199,7 @@ with_shape_dependency(f, ss) =
 export internalize_shape, internalize_shapes
 
 internalize_shape(s=select_shape("Select shape to be internalized")) =
-  if s != nothing
+  if ! isnothing(s)
     println(meta_program(s))
   end
 

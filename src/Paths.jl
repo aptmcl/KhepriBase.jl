@@ -1104,7 +1104,7 @@ write_obj(io::IO, ptss::AbstractMatrix{<:Loc}, closed_u, closed_v, smooth_u, smo
       println(io,"v  ",p.x," ",p.y," ",p.z)
     normal(n) =
       println(io,"vn ",n.x," ",n.y," ",n.z)
-    face((p0, p1, p2, p3)) = # OBJ format uses 1-based indexes
+    face(p0, p1, p2, p3) = # OBJ format uses 1-based indexes
       let p0 = p0+1, p1=p1+1, p2=p2+1, p3=p3+1
         smooth_u || smooth_v ?
           println(io,"f ",p0,"//",p0," ",p1,"//",p1," ",p2,"//",p2," ",p3,"//",p3) :

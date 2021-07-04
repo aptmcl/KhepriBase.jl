@@ -31,7 +31,7 @@ function initiate_rpc_call(conn, opcode, name)
 end
 function complete_rpc_call(conn, opcode, result)
     if show_rpc()
-        println(stderr, result == nothing ? "-> nothing" : "-> $(result)")
+        println(stderr, isnothing(result) ? "-> nothing" : "-> $(result)")
     end
     result
 end
@@ -626,15 +626,6 @@ encode(ns::SupportsTuples, ::Val{:double3}, c::IO, v) =
 decode(ns::SupportsTuples, ::Val{:double3}, c::IO) =
   decode(ns, (Val(:double),Val(:double),Val(:double)), c)
 
-decode_id(c::IO) =
-  let id = decode_int(c)
-    if id == -1
-      backend_error(c)
-    else
-      id
-    end
-  end
-
 encode(ns::SupportsTuples, ::Val{:RGB}, c::IO, v) =
   encode(ns, (Val(:float),Val(:float),Val(:float)), c, (red(v), green(v), blue(v)))
 decode(ns::SupportsTuples, ::Val{:RGB}, c::IO) =
@@ -647,7 +638,10 @@ decode(ns::SupportsTuples, ::Val{:RGBA}, c::IO) =
 
 encode(ns::SupportsTuples, ::Val{:Color}, c::IO, v) =
   encode(ns, (Val(:byte),Val(:byte),Val(:byte),Val(:byte)), c,
-         (reinterpret(v.alpha), reinterpret(v.r), reinterpret(v.g), reinterpret(v.b)))
+         (reinterpret(UInt8, v.alpha),
+          reinterpret(UInt8, v.r),
+          reinterpret(UInt8, v.g),
+          reinterpret(UInt8, v.b)))
 decode(ns::SupportsTuples, ::Val{:Color}, c::IO) =
   let a = decode(ns, Val(:byte), c),
       r = decode(ns, Val(:byte), c),

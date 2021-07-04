@@ -402,7 +402,7 @@ To collect the camera/target/lens path
 =#
 
 select_camera_target_lens_positions() =
-  select_position() == nothing ?
+  isnothing(select_position()) ?
     [] :
     [get_view(), select_camera_target_lens_path()...]
 

@@ -314,7 +314,7 @@ Khepri module.
 
 backend_family(b::Backend, family::Family) =
   get(family.implemented_as, b) do
-    family.based_on == nothing ? # this is not a family_element (nor a derivation of a family_element)
+    isnothing(family.based_on) ? # this is not a family_element (nor a derivation of a family_element)
       error("Family $(family) is missing the implementation for backend $(b)") :
       backend_family(b, family.based_on)
   end
@@ -513,7 +513,7 @@ realize_wall_openings(b::Backend, w::Wall, w_ref, openings) =
       l_thickness = l_thickness(w)
     for opening in openings
       w_ref = realize_wall_opening(b, w_ref, w_path, l_thickness, r_thickness, opening, w.family)
-      ref(opening)
+      ref(b, opening)
     end
     w_ref
   end
@@ -757,8 +757,8 @@ realize(b::Backend, s::CurtainWall) =
         tfdo = s.family.transom_frame.depth_offset,
         path = curtain_wall_path(b, s, s.family.panel),
         path_length = path_length(path),
-        bottom = level_height(s.bottom_level),
-        top = level_height(s.top_level),
+        bottom = level_height(b, s.bottom_level),
+        top = level_height(b, s.top_level),
         height = top - bottom,
         x_panels = ceil(Int, path_length/s.family.max_panel_dx),
         y_panels = ceil(Int, height/s.family.max_panel_dy),
