@@ -755,7 +755,7 @@ convert(::Type{Region}, path::ClosedPath) =
 # Operations on path containers
 translate(path::T, v::Vec) where T<:Union{PathSequence,PathSet} =
   T(translate.(path.paths, v))
-in_cs(path::T, cs::CS) where T<:Union{PathSequence,PathSet} =
+in_cs(path::T, cs::CS) where T<:Union{PathSequence,PathSet,Region} =
   T(map(p->in_cs(p, cs), path.paths))
 planar_path_normal(path::T) where T<:Union{PathSequence,PathSet} =
   planar_path_normal(path.paths[1])
