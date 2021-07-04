@@ -834,7 +834,7 @@ b_truss_bar(b::Backend, p, q, family) =
 
 # Analysis
 
-@bdef b_truss_analysis(load::Vec, self_weight::Bool)
+@bdef b_truss_analysis(load::Vec, self_weight::Bool, point_loads::Dict)
 @bdef b_node_displacement_function(res::Any)
 
 export b_truss_bars_volume
