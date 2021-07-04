@@ -17,7 +17,8 @@ AutoCAD) and by the type of reference they use
 =#
 
 abstract type Backend{K,T} end
-backend_name(::Backend) = "AbstractBackend"
+#backend_name(b::Backend) = string(Base.typename(typeof(b)).name)
+backend_name(b::Backend) = string(typeof(b))
 show(io::IO, b::Backend) = print(io, backend_name(b))
 
 # Backends need to implement operations or an exception is triggered
@@ -54,13 +55,15 @@ export b_point, b_line, b_closed_line, b_polygon, b_regular_polygon,
 @bdef(b_line(ps, mat))
 
 b_polygon(b::Backend, ps, mat) =
-  b_line(b, [ps..., p[1]], mat)
+  b_line(b, [ps..., ps[1]], mat)
 
 b_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
   b_polygon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), mat)
 
 b_nurbs_curve(b::Backend, order, ps, knots, weights, closed, mat) =
-  b_line(b, ps, closed, mat)
+  closed ?
+  	b_polygon(b, ps, mat) :
+  	b_line(b, ps, mat)
 
 b_spline(b::Backend, ps, v1, v2, interpolator, mat) =
   let ci = curve_interpolator(ps, false),
@@ -141,16 +144,19 @@ b_surface_circle(b::Backend, c, r, mat) =
 
 b_surface_arc(b::Backend, c, r, α, Δα, mat) =
   b_ngon(b,
-         [center + vpol(r, a, center.cs)
-          for a in division(α, α + Δα, Δα*32/2/π, false)],
+         [c + vpol(r, a, c.cs)
+          for a in division(α, α + Δα, Δα*32/2/π, true)],
          c, false, mat)
 
 @bdef(b_surface_closed_spline(ps, mat))
 
+b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, mat) =
+  b_surface_grid(b, ptss, closed_u, closed_v, smooth_u, smooth_v, smooth_u && smooth_v && grid_interpolator(ptss), mat)
+
 b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, interpolator, mat) =
   let (nu, nv) = size(ptss)
 	if smooth_u && smooth_v
-      ptss = [location_at_grid_interpolator(interpolator, u, v)
+      ptss = [location_at(interpolator, u, v)
 	          for u in division(0, 1, 4*nu-7), v in division(0, 1, 4*nv-7)] # 2->1, 3->5, 4->9, 5->13
 	  (nu, nv) = size(ptss)
 	end
@@ -327,13 +333,12 @@ b_cone_frustum(b::Backend, cb, rb, h, rt, bmat, tmat, smat) =
 
 b_torus(b::Backend, c, ra, rb, mat) =
   b_surface_grid(
-  	b,
+    b,
 	[add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
-	 for ψ in division(0, 2π, 16, false), ϕ in division(0, 2π, 32, false)],
+	 for ψ in division(0, 2π, 32, false), ϕ in division(0, 2π, 64, false)],
     true, true,
-	true, true,
-	mat)
-
+  	false, false,
+  	mat)
 ##################################################################
 # Paths and Regions
 b_surface(b::Backend, path::ClosedPath, mat) =
@@ -431,7 +436,6 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
 	  is_closed_path(profile),
       is_smooth_path(path),
 	  is_smooth_path(profile),
-	  grid_interpolator(points),
 	  mat)
   end
 
@@ -1080,7 +1084,9 @@ b_set_ground(b::Backend, level, mat) =
 #@bdef revolve_curve(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
 #@bdef revolve_point(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
 #@bdef revolve_surface(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
-@bdef right_cuboid(cb, width, height, h, angle, material)
+b_right_cuboid(b::Backend, cb, width, height, h, mat) =
+  b_box(b, add_xy(cb, -width/2, -height/2), width, height, h, mat)
+
 
 backend_stroke(b::Backend, path::Union{OpenPathSequence,ClosedPathSequence}) =
   backend_stroke_unite(b, map(path->backend_stroke(b, path), path.paths))
@@ -1178,10 +1184,35 @@ backend_wall_with_materials(b::Backend, w_path, w_height, l_thickness, r_thickne
 
 #=
 Backends might use different communication mechanisms, e.g., sockets, COM,
-RMI, etc. We start by defining socket-based communication.
+RMI, etc.
 =#
 
-mutable struct SocketBackend{K,T} <: Backend{K,T}
+abstract type RemoteBackend{K,T} <: Backend{K,T}
+  # connection::Union{Missing,???}
+end
+
+# There is a protocol for retrieving the connection
+connection(b::RemoteBackend) =
+  begin
+	if ismissing(b.connection)
+		before_connecting(b)
+      	b.connection = start_connection(b)
+	  	after_connecting(b)
+    end
+	b.connection
+  end
+
+export RemoteBackend, before_connecting, after_connecting, start_connection
+before_connecting(b::RemoteBackend) = nothing
+after_connecting(b::RemoteBackend) = nothing
+failed_connecting(b::RemoteBackend) =
+  error("Couldn't connect with $(b.name).")
+
+#=
+We start by defining socket-based communication.
+=#
+
+mutable struct SocketBackend{K,T} <: RemoteBackend{K,T}
   name::String
   port::Integer
   connection::Union{Missing,TCPSocket}
@@ -1192,22 +1223,6 @@ SocketBackend{K,T}(name::AbstractString, port::Integer, remote::NamedTuple) wher
   SocketBackend{K,T}(name, port, missing, remote)
 
 backend_name(b::SocketBackend) = b.name
-
-connection(b::SocketBackend) =
-  begin
-	if ismissing(b.connection)
-		before_connecting(b)
-      	b.connection = start_connection(b)
-	  	after_connecting(b)
-    end
-	b.connection
-  end
-
-export before_connecting, after_connecting
-before_connecting(b::SocketBackend) = nothing
-after_connecting(b::SocketBackend) = nothing
-failed_connecting(b::SocketBackend) =
-  error("Couldn't connect with $(b.name).")
 
 reset_backend(b::SocketBackend) =
   begin
