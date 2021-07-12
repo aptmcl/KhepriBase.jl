@@ -270,7 +270,7 @@ b_regular_pyramid(b::Backend, edges, cb, rb, angle, h, inscribed, bmat, smat) =
 b_regular_prism(b::Backend, edges, cb, rb, angle, h, inscribed, mat) =
 	b_regular_prism(b, edges, cb, rb, angle, h, inscribed, mat, mat, mat)
 b_regular_prism(b::Backend, edges, cb, rb, angle, h, inscribed, bmat, tmat, smat) =
-	b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rt, inscribed, bmat, tmat, smat)
+	b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rb, inscribed, bmat, tmat, smat)
 
 b_cylinder(b::Backend, cb, r, h, mat) =
 	b_cylinder(b, cb, r, h, mat, mat, mat)
