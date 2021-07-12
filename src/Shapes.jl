@@ -765,7 +765,16 @@ right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0) =
 @defshape(Shape3D, box, c::Loc=u0(), dx::Real=1, dy::Real=dx, dz::Real=dy)
 box(c0::Loc, c1::Loc) =
   let v = in_cs(c1, c0)-c0
-    box(c0, v.x, v.y, v.z)
+    if v.x < 0
+      c0 = add_x(c0, v.x)
+    end
+    if v.y < 0
+      c0 = add_y(c0, v.y)
+    end
+    if v.z < 0
+      c0 = add_z(c0, v.z)
+    end
+    box(c0, abs(v.x), abs(v.y), abs(v.z))
   end
 
 @defshape(Shape3D, cone, cb::Loc=u0(), r::Real=1, h::Real=1)
