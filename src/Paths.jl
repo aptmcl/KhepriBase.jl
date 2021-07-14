@@ -753,7 +753,7 @@ convert(::Type{Region}, path::ClosedPath) =
   region(path)
 
 # Operations on path containers
-translate(path::T, v::Vec) where T<:Union{PathSequence,PathSet} =
+translate(path::T, v::Vec) where T<:Union{PathSequence,PathSet,Region} =
   T(translate.(path.paths, v))
 in_cs(path::T, cs::CS) where T<:Union{PathSequence,PathSet,Region} =
   T(map(p->in_cs(p, cs), path.paths))
