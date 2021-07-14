@@ -229,7 +229,6 @@ b_generic_pyramid(b::Backend, bs, t, smooth, bmat, smat) =
 
 b_generic_prism(b::Backend, bs, smooth, v, bmat, tmat, smat) =
   b_generic_pyramid_frustum(b, bs, translate(bs, v), smooth, bmat, tmat, smat)
-
 b_generic_prism_with_holes(b::Backend, bs, smooth, bss, smooths, v, bmat, tmat, smat) =
   b_generic_pyramid_frustum_with_holes(b, bs, translate(bs, v), smooth, bss, translate.(bss, v), smooths, bmat, tmat, smat)
 
@@ -393,10 +392,7 @@ b_extrusion(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
   let outer = outer_path(profile),
       inners = inner_paths(profile)
     isempty(inners) ?
-      b_generic_prism(b,
-        path_vertices_on(outer, cb),
-        is_smooth_path(outer),
-        v,
+      b_extrusion(b, outer, v, cb,
         bmat, tmat, smat) :
       b_generic_prism_with_holes(b,
         path_vertices_on(outer, cb),
