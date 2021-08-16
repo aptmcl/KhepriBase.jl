@@ -49,7 +49,6 @@ export Shape,
        connection,
        @deffamily,
        @defproxy,
-       dimension,
        force_creation,
        subpath,
        subpath_starting_at,
@@ -380,9 +379,6 @@ all_shapes(b::Backend=top_backend()) =
 @defcb reset_backend()
 @defcb save_as(pathname::String, format::String)
 
-@defcbs dimension(p0::Loc, p1::Loc, p::Loc, scale::Real, style::Symbol)
-@defcbs dimension(p0::Loc, p1::Loc, sep::Real, scale::Real, style::Symbol)
-
 new_backend(b::Backend = top_backend()) = backend(b)
 
 struct WrongTypeForParam <: Exception
@@ -463,56 +459,14 @@ set_on!(proxy, ref) =
   end
 
 #=
-Materials
-Although it is possible to define new materials,
-there is also a pre-defined set of materials
-=#
-
-@defproxy(material, Proxy, data::BackendParameter=BackendParameter())
-material(bv::Pair, bvs...) = material(data=BackendParameter(bv, bvs...))
-realize(b::Backend, m::Material) = b_get_material(b, m.data(b))
-
-# For compatibility
-export set_material
-const set_material = set_on!
-# To facilitate accessing the material reference that is provided to the backends:
-material_ref(b::Backend, m::Material) = ref(b, m).value
-material_ref(b::Backend, s::Shape) = material_ref(b, s.material)
-
-# These are pre-defined materials that need to be specified by each backend.
-export material_point, material_curve, material_surface,
-       material_basic, material_glass,
-       material_metal, material_wood,
-       material_concrete, material_plaster,
-       material_grass
-
-const material_point = material()
-const material_curve = material()
-const material_surface = material()
-const material_basic = material()
-const material_glass = material()
-const material_metal = material()
-const material_wood = material()
-const material_concrete = material()
-const material_plaster = material()
-const material_grass = material()
-
-export default_point_material, default_curve_material, default_surface_material, default_material
-const default_point_material = Parameter{Material}(material_point)
-const default_curve_material = Parameter{Material}(material_curve)
-const default_surface_material = Parameter{Material}(material_surface)
-const default_material = Parameter{Material}(material_basic)
-
-#=
 Layers are just a classification mechanism.
 Some backends, however, can colorize the shapes that have that layer, or can make
 those shapes appear and disappear by activating or deactivating the layer.
 =#
 
 @defproxy(layer, Proxy, name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
-const create_layer = layer
-after_init(s::Layer) =
-  begin
+create_layer(args...) =
+  let s = layer(args...)
     force_realize(s)
     s
   end
@@ -529,6 +483,56 @@ delete_all_shapes_in_layer(layer, backends::Backends=current_backends()) =
     b_delete_all_shapes_in_layer(b, ref(b, layer).value)
   end
 
+#=
+Materials
+A shape can be directly associated to a material or the shape can be associated
+to a layer and the layer is then associated to the material
+=#
+@defproxy(material, Proxy, layer::Layer=current_layer(), data::BackendParameter=BackendParameter())
+material(name::String, color::RGB=rgb(1,1,1), bvs...) = material(layer(name, true, color), BackendParameter(bvs...))
+# Some backends prefer to use layers instead of materials
+export material_as_layer, with_material_as_layer
+const material_as_layer = Parameter(false)
+use_material_as_layer(b::Backend) = material_as_layer()
+
+with_material_as_layer(f::Function, backend::Backend, material::Material) =
+  use_material_as_layer(backend) ?
+    with(f, current_layer, material.layer) :
+    f()
+
+realize(b::Backend, m::Material) =
+  b_get_material(b, m.data(b))
+
+# For compatibility
+export set_material
+const set_material = set_on!
+# To facilitate accessing the material reference that is provided to the backends:
+material_ref(b::Backend, m::Material) = ref(b, m).value
+material_ref(b::Backend, s::Shape) = material_ref(b, s.material)
+
+# These are pre-defined materials that need to be specified by each backend.
+export material_point, material_curve, material_surface,
+       material_basic, material_glass,
+       material_metal, material_wood,
+       material_concrete, material_plaster,
+       material_grass
+
+const material_point = material("Points")
+const material_curve = material("Curves")
+const material_surface = material("Surfaces")
+const material_basic = material("Basic")
+const material_glass = material("Glass")
+const material_metal = material("Metal")
+const material_wood = material("Wood")
+const material_concrete = material("Concrete")
+const material_plaster = material("Plaster")
+const material_grass = material("Grass")
+
+export default_point_material, default_curve_material, default_surface_material, default_material
+const default_point_material = Parameter{Material}(material_point)
+const default_curve_material = Parameter{Material}(material_curve)
+const default_surface_material = Parameter{Material}(material_surface)
+const default_material = Parameter{Material}(material_basic)
 
 abstract type Shape0D <: Shape end
 abstract type Shape1D <: Shape end
@@ -643,6 +647,11 @@ rectangle(p::Loc, q::Loc) =
   let v = in_cs(q - p, p.cs)
     rectangle(p, v.x, v.y)
   end
+
+#
+#@defshape dimension(p0::Loc, p1::Loc, p::Loc, scale::Real, style::Symbol)
+#@defshape dimension(p0::Loc, p1::Loc, sep::Real, scale::Real, style::Symbol)
+@defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::AbstractString=string(distance(p0, p1)), size::Real=1)
 
 # Surfaces
 
