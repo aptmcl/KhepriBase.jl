@@ -742,9 +742,11 @@ end
 
 region(outer, inners...) =
   Region([convert(ClosedPath, outer), convert.(ClosedPath, inners)...])
-
 outer_path(region::Region) = region.paths[1]
 inner_paths(region::Region) = region.paths[2:end]
+
+region(r::Region, inners...) =
+  region(outer_path(r), inner_paths(r)..., inners...)
 
 # Convertions from/to paths
 convert(::Type{Region}, vs::Locs) =
@@ -997,9 +999,19 @@ path_vertices_on(vs::Locs, p) =
 
 
 ## Utility operations
+Base.reverse(path::CircularPath) =
+  circular_path(loc_from_o_vz(path.center, vz(-1)), path.radius)
+
 
 Base.reverse(path::OpenPolygonalPath) =
   open_polygonal_path(reverse(path_vertices(path)))
+
+Base.reverse(path::ClosedPolygonalPath) =
+  closed_polygonal_path(reverse(path_vertices(path)))
+
+Base.reverse(path::Region) =
+  region(reverse(outer_path(path)), reverse.(inner_paths(path))...)
+
 
 mirrored_path(path::Path, p::Loc, v::Vec) =
   error("Mush be finished")
