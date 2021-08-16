@@ -74,7 +74,7 @@ Another option is the definition of different defaults:
 thick_wall_defaults = wall_defaults(thickness=10)
 thin_wall_defaults = wall_defaults(thickness=5)
 
-which then can be make current:
+which then can be made current:
 
 current_wall_defaults(thin_wall_defaults)
 
@@ -130,7 +130,7 @@ RevitFamily(
   ("radius_window" => :radius),
   ("angle_window" => :opening_angle))
 
-If no parameters are needed on a particular phases, we might use an empty dictionary
+If no parameters are needed on a particular phase, we might use an empty dictionary
 to describe that phase. Given the typical Revit families, defaults parameters seem
 to be the best approach here. This means that the previous beam family might be
 equivalent to
@@ -216,18 +216,22 @@ family_ref(b::Backend, f::Family) =
     realize(b, f)
   end
 
-# Default implementation in CAD tools classify BIM elements in layers
-export family_in_layer
-const family_in_layer = Parameter(false)
 
-use_family_in_layer(b::Backend) = family_in_layer()
+# CAD tools that support Layers might benefit from this typical implementation:
+struct LayerFamily <: Family
+  name::String
+  color::RGB
+  ref::Parameter{Any}
+end
 
-with_family_in_layer(f::Function, backend::Backend, family::Family) =
-  use_family_in_layer(backend) ?
-    with(f, current_layer, layer_from_family(backend, family_ref(backend, family))) :
-    f()
+export LayerFamily, layer_family
+layer_family(name, color::RGB=rgb(1,1,1)) =
+  LayerFamily(name, color, Parameter{Any}(nothing))
 
-layer_from_family(backend, f) = f
+backend_get_family_ref(b::Backend, f::Family, af::LayerFamily) =
+  b_layer(b, af.name, true, af.color)
+
+
 
 macro deffamily(name, parent, fields...)
   name_str = string(name)
@@ -335,7 +339,6 @@ realize(b::Backend, f::Family) =
 backend_get_family_ref(b::Backend, f::Family, bf) = bf
 export backend_family, set_backend_family
 
-
 #=
 We can now define specific families for slabs, beams, etc., the corresponding
 specific building elements and even, when possible, default implementations.
@@ -426,16 +429,15 @@ realize(b::Backend, s::Panel) =
       ps = path_vertices(s.path),
       cs = cs_from_o_vz(ps[1], vertices_normal(ps)),
       v = vz(-thickness/2, cs),
-      ps = translate(ps, v),
-      path = closed_polygonal_path([xy(p.x, p.y) for p in in_cs(ps, cs)]),
-      mat = material_ref(b, family.material)
-    with_family_in_layer(b, s.family) do
+      pathbot = translate(s.path, v),
+      pathtop = translate(s.path, -v)
+    with_material_as_layer(b, family.material) do #HACK Fix this to multiple materials
       b_extrusion(
         b,
         path,
         vz(thickness, cs),
         u0(cs),
-        mat, mat, mat)
+        mat)
     end
   end
 
@@ -459,7 +461,8 @@ A wall contains doors and windows
     left_coating_thickness::Real=0.0,
     right_coating_thickness::Real=0.0,
     right_material::Material=material_plaster,
-    left_material::Material=material_plaster)
+    left_material::Material=material_plaster,
+    side_material::Material=material_plaster)
 
 @defproxy(wall, BIMShape, path::Path=rectangular_path(),
           bottom_level::Level=default_level(),
@@ -492,7 +495,7 @@ realize(b::B, w::Wall) where B<:Backend =
   realize(has_boolean_ops(B), b, w)
 
 realize(::HasBooleanOps{true}, b::Backend, w::Wall) =
-  with_family_in_layer(b, w.family) do
+  with_material_as_layer(b, w.family) do
     realize_wall_openings(b, w, realize_wall_no_openings(b, w), [w.doors..., w.windows...])
   end
 
@@ -539,15 +542,15 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
       l_w_paths = subpaths(offset(w_path, l_thickness)),
       openings = [w.doors..., w.windows...],
       prevlength = 0,
-      matright = material_ref(b, w.family.right_material),
-      matleft = material_ref(b, w.family.left_material),
-      matside = matleft,
+      matright = w.family.right_material,
+      matleft = w.family.left_material,
+      matside = w.family.side_material,
       refs = []
     for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
       let currlength = prevlength + path_length(w_seg_path),
           c_r_w_path = closed_path_for_height(r_w_path, w_height),
           c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        #append!(refs, b_quad_strip_closed(b, path_vertices(c_l_w_path), path_vertices(c_r_w_path), false, matside))
+        append!(refs, materialize_path(b, c_r_w_path, c_l_w_path, matside))
         openings = filter(openings) do op
           if prevlength <= op.loc.x < currlength ||
              prevlength <= op.loc.x + op.family.width <= currlength # contained (at least, partially)
@@ -558,7 +561,7 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
                                   max(prevlength, op.loc.x),
                                   min(currlength, op.loc.x + op.family.width)),
                 r_op_path = offset(op_path, -r_thickness),
-                l_op_path = offset(op_path, l_thickness),
+                l_op_path = offset(op_path,  l_thickness),
                 fixed_r_op_path =
                   open_polygonal_path([path_start(op_at_start ? r_w_path : r_op_path),
                                        path_end(op_at_end ? r_w_path : r_op_path)]),
@@ -567,7 +570,7 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
                                        path_end(op_at_end ? l_w_path : l_op_path)]),
                 c_r_op_path = closed_path_for_height(translate(fixed_r_op_path, vz(op.loc.y)), op_height),
                 c_l_op_path = closed_path_for_height(translate(fixed_l_op_path, vz(op.loc.y)), op_height)
-              append!(refs, b_quad_strip_closed(b, path_vertices(c_r_op_path), path_vertices(c_l_op_path), false, matside))
+              append!(refs, materialize_path(b, reverse(c_r_op_path), reverse(c_l_op_path), matside))
               c_r_w_path, c_l_w_path = subtract_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
               # preserve if not totally contained
               ! (op.loc.x >= prevlength && op.loc.x + op.family.width <= currlength)
@@ -577,8 +580,8 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
           end
         end
         prevlength = currlength
-        push!(refs, b_surface_polygon(b, path_vertices(c_l_w_path), matleft))
-        push!(refs, b_surface_polygon(b, reverse(path_vertices(c_r_w_path)), matright))
+        push!(refs, materialize_path(b, reverse(c_l_w_path), matleft))
+        push!(refs, materialize_path(b, c_r_w_path, matright))
       end
     end
     refs
@@ -593,11 +596,22 @@ closed_path_for_height(path, h) =
   closed_offsetted_path(path, vz(h))
 
 subtract_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
+  region(c_r_w_path, c_r_op_path), region(c_l_w_path, c_l_op_path)
+  #=
   let idxs = closest_vertices_indexes(path_vertices(c_r_w_path), path_vertices(c_r_op_path))
     closed_polygonal_path(
       inject_polygon_vertices_at_indexes(path_vertices(c_r_w_path), path_vertices(c_r_op_path), idxs)),
     closed_polygonal_path(
       inject_polygon_vertices_at_indexes(path_vertices(c_l_w_path), path_vertices(c_l_op_path), idxs))
+  end=#
+
+materialize_path(b, c_r_w_path, c_l_w_path, mat) =
+  with_material_as_layer(b, mat) do
+    b_strip(b, c_l_w_path, c_r_w_path, material_ref(b, mat))
+  end
+materialize_path(b, path, mat) =
+  with_material_as_layer(b, mat) do
+    b_surface(b, path, material_ref(b, mat))
   end
 
 #=
@@ -657,7 +671,9 @@ l_thickness(w::Wall) = l_thickness(w.offset, w.family.thickness + w.family.left_
   width::Real=1.0,
   height::Real=2.0,
   thickness::Real=0.05,
-  material::Material=material_wood)
+  right_material::Material=material_wood,
+  left_material::Material=material_wood,
+  side_material::Material=material_wood)
 
 @defproxy(door, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, family::DoorFamily=default_door_family())
 
@@ -667,26 +683,21 @@ l_thickness(w::Wall) = l_thickness(w.offset, w.family.thickness + w.family.left_
   width::Real=1.0,
   height::Real=1.0,
   thickness::Real=0.05,
-  material::Material=material_glass)
+  right_material::Material=material_glass,
+  left_material::Material=material_glass,
+  side_material::Material=material_glass)
 
 @defproxy(window, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, family::WindowFamily=default_window_family())
 
 realize(b::Backend, s::Union{Door, Window}) =
-  with_family_in_layer(b, s.family) do
-    let base_height = s.wall.bottom_level.height + s.loc.y,
-        height = s.family.height,
-        subpath = translate(subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width), vz(base_height)),
-        r_thickness = r_thickness(s.wall),
-        l_thickness = l_thickness(s.wall),
-        thickness = s.family.thickness,
-        matright = material_ref(b, s.family.material),
-        matleft = matright,
-        matside = matleft
-      b_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2,
-              matleft,
-              matright,
-              matside)
-    end
+  let base_height = s.wall.bottom_level.height + s.loc.y,
+      height = s.family.height,
+      subpath = translate(subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width), vz(base_height)),
+      r_thickness = r_thickness(s.wall),
+      l_thickness = l_thickness(s.wall),
+      thickness = s.family.thickness
+    b_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2,
+           s.family)
   end
 ##
 
@@ -744,7 +755,7 @@ curtain_wall(p0::Loc, p1::Loc;
          family=family, offset=offset)
 
 realize(b::Backend, s::CurtainWall) =
-  with_family_in_layer(b, s.family) do
+  with_material_as_layer(b, s.family) do
     let th = s.family.panel.thickness,
         bfw = s.family.boundary_frame.width,
         bfd = s.family.boundary_frame.depth,
