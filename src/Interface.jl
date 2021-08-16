@@ -18,7 +18,6 @@ import KhepriBase:
   #backend_captured_shapes,
   #backend_changed_shape,
   #backend_create_block,
-  #backend_dimension,
   #backend_disable_update,
   #backend_enable_update,
   backend_extrusion,
