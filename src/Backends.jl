@@ -95,7 +95,7 @@ b_rectangle(b::Backend, c, dx, dy, mat) =
   b_polygon(b, [c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy)], mat)
 
 # First tier: everything is a triangle or a set of triangles
-export b_trig, b_quad, b_ngon, b_quad_strip, b_quad_strip_closed
+export b_trig, b_quad, b_ngon, b_quad_strip, b_quad_strip_closed, b_strip
 
 @bdef(b_trig(p1, p2, p3))
 
@@ -118,6 +118,23 @@ b_quad_strip(b::Backend, ps, qs, smooth, mat) =
 
 b_quad_strip_closed(b::Backend, ps, qs, smooth, mat) =
   b_quad_strip(b, [ps..., ps[1]], [qs..., qs[1]], smooth, mat)
+
+b_strip(b::Backend, path1, path2, mat) =
+  let v1s = path_vertices(path1),
+	    v2s = path_vertices(path2)
+	  length(v1s) != length(v2s) ?
+  	  error("Paths with different resolution") :
+  	  is_closed_path(path1) && is_closed_path(path2) ?
+        b_quad_strip_closed(
+          b, v1s, v2s, is_smooth_path(path1) || is_smooth_path(path2), mat) :
+        b_quad_strip(
+          b, v1s, v2s, is_smooth_path(path1) || is_smooth_path(path2), mat)
+  end
+
+b_strip(b::Backend, path1::Region, path2::Region, mat) =
+  [b_strip(b, outer_path(path1), outer_path(path2), mat),
+   [b_strip(b, p2, p1, mat) for (p1, p2) in zip(inner_paths(path1), inner_paths(path2))]...
+  ]
 
 ############################################################
 # Second tier: surfaces
@@ -155,15 +172,15 @@ b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, mat) =
 
 b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, interpolator, mat) =
   let (nu, nv) = size(ptss)
-	if smooth_u && smooth_v
+    if smooth_u && smooth_v
       ptss = [location_at(interpolator, u, v)
-	          for u in division(0, 1, 4*nu-7), v in division(0, 1, 4*nv-7)] # 2->1, 3->5, 4->9, 5->13
-	  (nu, nv) = size(ptss)
-	end
-	closed_u ?
+	            for u in division(0, 1, 4*nu-7), v in division(0, 1, 4*nv-7)] # 2->1, 3->5, 4->9, 5->13
+	    (nu, nv) = size(ptss)
+	  end
+	  closed_u ?
       vcat([b_quad_strip_closed(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
-	       closed_v ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : []) :
-	  vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
+	      closed_v ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : []) :
+	    vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
 	       closed_v ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : [])
   end
 
@@ -172,14 +189,14 @@ b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
 
 b_surface_mesh(b::Backend, vertices, faces, mat) =
   map(faces) do face
-	if length(face) == 3
-	  b_trig(b, vertices[face]..., mat)
-  	elseif length(face) == 4
-  	  b_quad(b, vertices[face]..., mat)
-    else
-	  b_surface_polygon(b, vertices[face], mat)
+	  if length(face) == 3
+	    b_trig(b, vertices[face]..., mat)
+    	elseif length(face) == 4
+    	  b_quad(b, vertices[face]..., mat)
+      else
+	    b_surface_polygon(b, vertices[face], mat)
+      end
     end
-  end
 
 # Parametric surface
 #=
@@ -495,25 +512,6 @@ b_fill(b::Backend, path::Region, mat) =
 b_fill(b::Backend, path::Mesh, mat) =
   b_surface_mesh(b, m.vertices, m.faces, mat)
 
-#=
-backend_fill(b::Backend, path::ClosedSplinePath) =
-  backend_fill_curves(b, @remote(b, ClosedSpline(path.vertices)))
-
-b_stroke_unite(b::Backend, refs) = @remote(b, JoinCurves(refs))
-
-backend_fill_curves(b::Backend, gs::Guids) = @remote(b, SurfaceFrom(gs))
-backend_fill_curves(b::Backend, g::Guid) = @remote(b, SurfaceFrom([g]))
-
-b_stroke_arc(b::Backend, center::Loc, radius::Real, start_angle::Real, amplitude::Real) =
-    let end_angle = start_angle + amplitude
-        if end_angle > start_angle
-            @remote(b, Arc(center, vx(1, center.cs), vy(1, center.cs), radius, start_angle, end_angle))
-        else
-            @remote(b, Arc(center, vx(1, center.cs), vy(1, center.cs), radius, end_angle, start_angle))
-        end
-    end
-=#
-
 ##################################################################
 # Dimensions
 #=
@@ -530,14 +528,14 @@ export b_dimension, b_ext_line, b_dim_line, b_text, b_text_size
 
 b_dimension(b::Backend, p, q, str, size, mat) =
   let qp = in_world(q - p),
-	  phi = pol_phi(qp),
-	  outside = pi/2 <= phi <= 3pi/2,
-	  v = vpol(outside ? size : 2*size, phi-pi/2),
-	  uv = unitized(v),
-	  (si, se) = (0.1*size, 0.2*size),
-	  (vi, ve) = (uv*si, uv*se),
-	  (tp, tq, tv) = outside ? (q, p, vpol(1, phi + pi)) : (p, q, vpol(1, phi))
-	[b_ext_line(b, p + vi, p + v + ve, mat),
+	    phi = pol_phi(qp),
+	    outside = pi/2 <= phi <= 3pi/2,
+	    v = vpol(outside ? size : 2*size, phi-pi/2),
+	    uv = unitized(v),
+	    (si, se) = (0.1*size, 0.2*size),
+	    (vi, ve) = (uv*si, uv*se),
+	    (tp, tq, tv) = outside ? (q, p, vpol(1, phi + pi)) : (p, q, vpol(1, phi))
+	  [b_ext_line(b, p + vi, p + v + ve, mat),
      b_ext_line(b, q + vi, q + v + ve, mat),
      b_dim_line(b, tp + v, tq + v, tv, str, size, outside, mat)]
   end
@@ -748,14 +746,23 @@ material_refs(b::Backend, materials) =
   [material_ref(b, mat) for mat in materials]
 
 b_slab(b::Backend, profile, level, family) =
-  b_extrusion(
-    b,
-	profile,
-    vz(slab_family_thickness(b, family)),
-	z(level_height(b, level) + slab_family_elevation(b, family)),
-    material_ref(b, family.bottom_material),
-	material_ref(b, family.top_material),
-	material_ref(b, family.side_material))
+  let tmat = family.top_material,
+      bmat = family.bottom_material,
+      smat = family.side_material,
+      bprof = translate(profile, vz(level_height(b, level) + slab_family_elevation(b, family))),
+      tprof = translate(bprof, vz(slab_family_thickness(b, family)))
+    [materialize_path(b, tprof, tmat),
+     materialize_path(b, bprof, tprof, smat)...,
+     materialize_path(b, reverse(bprof), bmat)]
+  end
+  # b_extrusion(
+  #   b,
+  #   profile,
+  #   vz(slab_family_thickness(b, family)),
+	#   z(level_height(b, level) + slab_family_elevation(b, family)),
+  #   material_ref(b, family.bottom_material),
+	#   material_ref(b, family.top_material),
+	#   material_ref(b, family.side_material))
 
 b_roof(b::Backend, region, level, family) =
   b_slab(b, region, level, family)
@@ -763,12 +770,9 @@ b_roof(b::Backend, region, level, family) =
 b_beam(b::Backend, c, h, angle, family) =
   let c = loc_from_o_phi(c, angle),
 	  mat = material_ref(b, family.material)
-    b_extrusion(
-      b,
-      family_profile(b, family),
-      vz(h, c.cs),
-	  c,
-  	  mat, mat, mat)
+	with_material_as_layer(b, family.material) do
+      b_extrusion(b, family_profile(b, family), vz(h, c.cs), c,	mat)
+	end
   end
 
 b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
@@ -780,28 +784,33 @@ b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
 b_free_column(b::Backend, cb, h, angle, family) =
   b_beam(b, cb, h, angle, family)
 
-b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, lmat, rmat, smat) =
-  let w_paths = subpaths(w_path),
-      r_w_paths = subpaths(offset(w_path, -r_thickness)),
-      l_w_paths = subpaths(offset(w_path, l_thickness)),
-      w_height = w_height*wall_z_fighting_factor,
-      prevlength = 0,
-      refs = []
-    for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
-      let currlength = prevlength + path_length(w_seg_path),
-          c_r_w_path = closed_path_for_height(r_w_path, w_height),
-          c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        append!(refs, b_pyramid_frustum(b, path_vertices(c_r_w_path), path_vertices(c_l_w_path), rmat, lmat, smat))
-        prevlength = currlength
-      end
-    end
-    [refs...]
-  end
-
 b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
   path_length(w_path) < path_tolerance() ?
-    void_ref(b) :
-    b_wall(b, w_path, w_height, l_thickness, r_thickness, family_materials(b, family)[1:3])
+  	void_ref(b) :
+    let w_paths = subpaths(w_path),
+        r_w_paths = subpaths(offset(w_path, -r_thickness)),
+        l_w_paths = subpaths(offset(w_path, l_thickness)),
+        w_height = w_height*wall_z_fighting_factor,
+  	    (lmat, rmat, smat) = (family.left_material, family.right_material, family.side_material),
+        prevlength = 0,
+        refs = []
+      for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
+        let currlength = prevlength + path_length(w_seg_path),
+            c_r_w_path = closed_path_for_height(r_w_path, w_height),
+            c_l_w_path = closed_path_for_height(l_w_path, w_height)
+          #append!(refs, b_pyramid_frustum(b, path_vertices(c_r_w_path), path_vertices(c_l_w_path), rmat, lmat, smat))
+          append!(refs, materialize_path(b, c_r_w_path, c_l_w_path, smat))
+          push!(refs, materialize_path(b, reverse(c_l_w_path), lmat))
+          push!(refs, materialize_path(b, c_r_w_path, rmat))
+          prevlength = currlength
+        end
+      end
+      [refs...]
+    end
+
+#AML TO BE CONTINUED!!!
+#b_wall(b::Backend, w_path, w_openings, l_thickness, r_thickness, family) =
+
 
 # Lights
 
