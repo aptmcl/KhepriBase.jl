@@ -410,43 +410,10 @@ realize(b::Backend, s::Roof) =
   thickness::Real=0.02,
   material::Material=material_glass)
 
-@defproxy(panel, BIMShape, path::Path=rectangular_path(), family::PanelFamily=default_panel_family())
-
-#=
-panel(outline, openings; family=default_panel_family()) =
-  let outline=convert(ClosedPath, outline)
-    panel(isnothing(openings) ?
-            outline :
-            region(outline, openings),
-          family)
-  end
-=#
+@defproxy(panel, BIMShape, region::Region=rectangular_path(), family::PanelFamily=default_panel_family())
 
 realize(b::Backend, s::Panel) =
-  let family = s.family,
-      thickness = family.thickness,
-    # THIS IS WRONG!!!! Panels should be based on planar paths, like the rest
-      ps = path_vertices(s.path),
-      cs = cs_from_o_vz(ps[1], vertices_normal(ps)),
-      v = vz(-thickness/2, cs),
-      pathbot = translate(s.path, v),
-      pathtop = translate(s.path, -v)
-    with_material_as_layer(b, family.material) do #HACK Fix this to multiple materials
-      b_extrusion(
-        b,
-        path,
-        vz(thickness, cs),
-        u0(cs),
-        mat)
-    end
-  end
-
-realize_slab(b::Backend, region::Region, level::Level, family::Family) =
-  let base = vz(level.height + slab_family_elevation(b, family)),
-      thickness = slab_family_thickness(b, family)
-      # Change this to a better named protocol?
-    backend_slab(b, translate(region, base), thickness, family)
-  end
+  b_panel(b, s.region, s.family)
 
 #=
 

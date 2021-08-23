@@ -759,7 +759,7 @@ translate(path::T, v::Vec) where T<:Union{PathSequence,PathSet,Region} =
   T(translate.(path.paths, v))
 in_cs(path::T, cs::CS) where T<:Union{PathSequence,PathSet,Region} =
   T(map(p->in_cs(p, cs), path.paths))
-planar_path_normal(path::T) where T<:Union{PathSequence,PathSet} =
+planar_path_normal(path::T) where T<:Union{PathSequence,PathSet,Region} =
   planar_path_normal(path.paths[1])
 
 # Convertions from/to paths
@@ -1001,14 +1001,12 @@ path_vertices_on(vs::Locs, p) =
 ## Utility operations
 Base.reverse(path::CircularPath) =
   circular_path(loc_from_o_vz(path.center, vz(-1)), path.radius)
-
-
+Base.reverse(path::RectangularPath) =
+  rectangular_path(loc_from_o_vz(path.corner, vz(-1)), path.dy, path.dx)
 Base.reverse(path::OpenPolygonalPath) =
   open_polygonal_path(reverse(path_vertices(path)))
-
 Base.reverse(path::ClosedPolygonalPath) =
   closed_polygonal_path(reverse(path_vertices(path)))
-
 Base.reverse(path::Region) =
   region(reverse(outer_path(path)), reverse.(inner_paths(path))...)
 

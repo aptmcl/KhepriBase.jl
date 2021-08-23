@@ -767,6 +767,17 @@ b_slab(b::Backend, profile, level, family) =
 b_roof(b::Backend, region, level, family) =
   b_slab(b, region, level, family)
 
+b_panel(b::Backend, region, family) =
+  let mat = family.material,
+	  th = family.thickness,
+	  v = planar_path_normal(region),
+  	  bot = translate(region, v*-th),
+  	  top = translate(region, v*th)
+    [materialize_path(b, top, mat),
+     materialize_path(b, bot, top, mat)...,
+     materialize_path(b, reverse(bot), mat)]
+  end
+
 b_beam(b::Backend, c, h, angle, family) =
   let c = loc_from_o_phi(c, angle),
 	  mat = material_ref(b, family.material)
