@@ -745,6 +745,15 @@ Horizontal BIM elements rely on the level
 material_refs(b::Backend, materials) =
   [material_ref(b, mat) for mat in materials]
 
+materialize_path(b, c_r_w_path, c_l_w_path, mat) =
+  with_material_as_layer(b, mat) do
+    b_strip(b, c_l_w_path, c_r_w_path, material_ref(b, mat))
+  end
+materialize_path(b, path, mat) =
+  with_material_as_layer(b, mat) do
+    b_surface(b, path, material_ref(b, mat))
+  end
+
 b_slab(b::Backend, profile, level, family) =
   let tmat = family.top_material,
       bmat = family.bottom_material,
@@ -833,19 +842,25 @@ b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
 export b_truss_node, b_truss_node_support, b_truss_bar
 
 b_truss_node(b::Backend, p, family) =
-  b_sphere(b, p, family.radius, material_ref(b, family.material))
+  with_material_as_layer(b, family.material) do
+  	b_sphere(b, p, family.radius, material_ref(b, family.material))
+  end
 
 b_truss_node_support(b::Backend, cb, family) =
-  b_regular_pyramid(
-    b, 4, add_z(cb, -3*family.radius),
-    family.radius, 0, 3*family.radius, false,
-    material_ref(b, family.material))
+  with_material_as_layer(b, family.material) do
+    b_regular_pyramid(
+      b, 4, add_z(cb, -3*family.radius),
+      family.radius, 0, 3*family.radius, false,
+      material_ref(b, family.material))
+  end
 
 b_truss_bar(b::Backend, p, q, family) =
-  let (c, h) = position_and_height(p, q)
-    b_cylinder(
-      b, c, family.radius, h,
-      material_ref(b, family.material))
+  with_material_as_layer(b, family.material) do
+    let (c, h) = position_and_height(p, q)
+      b_cylinder(
+        b, c, family.radius, h,
+        material_ref(b, family.material))
+    end
   end
 
 # Analysis
@@ -1059,7 +1074,6 @@ backend_fill(b::Backend, path::ClosedPathSequence) =
 #@bdef map_division(f::Function, s::Shape2D, nu::Int, nv::Int)
 #@bdef map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int)
 @bdef name()
-#@bdef panel(bot::Locs, top::Locs, family::PanelFamily)
 
 # We assume there are properties to store the view details
 export b_get_view, b_set_view, b_set_view_top

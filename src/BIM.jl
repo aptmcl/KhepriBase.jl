@@ -572,15 +572,6 @@ subtract_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
       inject_polygon_vertices_at_indexes(path_vertices(c_l_w_path), path_vertices(c_l_op_path), idxs))
   end=#
 
-materialize_path(b, c_r_w_path, c_l_w_path, mat) =
-  with_material_as_layer(b, mat) do
-    b_strip(b, c_l_w_path, c_r_w_path, material_ref(b, mat))
-  end
-materialize_path(b, path, mat) =
-  with_material_as_layer(b, mat) do
-    b_surface(b, path, material_ref(b, mat))
-  end
-
 #=
 Walls can be joined. That is very important because the wall needs to have
 uniform thickness along the entire path.
