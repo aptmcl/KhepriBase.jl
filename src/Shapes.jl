@@ -231,7 +231,7 @@ collect_ref(ss::Shapes) = error("mapreduce(collect_ref, vcat, ss, init=[])")
 
 #=
 Whenever a shape is created, it might be eagerly realized in its backend,
-depending on the kind of shape and on the kind of backend (and/or its current state).
+depending on the kind of shape and kind of backend (and/or its current state).
 Another possibility is for the shape to be saved in some container.
 It might also be necessary to record the control flow that caused the shape to be created.
 This means that we need to control what happens immediately after a shape is initialized.
@@ -474,6 +474,7 @@ realize(b::Backend, l::Layer) =
   b_layer(b, l.name, l.active, l.color)
 current_layer(backends::Backends=current_backends()) =
   layer(ref=DynRefs(b=>ensure_ref(b, b_current_layer(b)) for b in backends))
+
 current_layer(layer, backends::Backends=current_backends()) =
   for b in backends
     b_current_layer(b, ref(b, layer).value)
@@ -494,10 +495,20 @@ material(name::String, color::RGB=rgb(1,1,1), bvs...) = material(layer(name, tru
 export material_as_layer, with_material_as_layer
 const material_as_layer = Parameter(false)
 use_material_as_layer(b::Backend) = material_as_layer()
-
-with_material_as_layer(f::Function, backend::Backend, material::Material) =
-  use_material_as_layer(backend) ?
-    with(f, current_layer, material.layer) :
+with_material_as_layer(f::Function, b::Backend, m::Material) =
+  use_material_as_layer(b) ?
+    let cur_layer = b_current_layer(b),
+        new_layer = ref(b, m.layer).value
+      cur_layer == new_layer ?
+        f() :
+        begin
+          b_current_layer(b, new_layer)
+          let res = f()
+            b_current_layer(b, cur_layer)
+            res
+          end
+        end
+      end :
     f()
 
 realize(b::Backend, m::Material) =
@@ -705,31 +716,6 @@ text_centered(str::String="", center::Loc=u0(), height::Real=1) =
 # This is for unknown shapes (they are opaque, the only thing you can do with then
 # might be just delete them)
 @defproxy(unknown, Shape3D, baseref::Any=required())
-
-#=
-macro defsolid(name, fields...)
-  fields = (fields..., :(material::Material=default_material()))
-  field_names = map(field -> field.args[1].args[1], fields)
-  field_types = map(field -> esc(field.args[1].args[2]), fields)
-  field_inits = map(field -> field.args[2], fields)
-  mk_param(name,typ,init) = Expr(:kw, name, init)
-  key_params = map(mk_param, field_names, field_types, field_inits)
-  esc(:(@defproxy($(name), Shape3D, $(key_params...))))
-end
-=#
-
-macro defsolid(name_typename, fields...)
-  # Merge this with defproxy
-  (name, typename) = name_typename isa Symbol ?
-    (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
-    name_typename.args
-  field_names = map(field -> field.args[1].args[1], fields)
-  esc(quote
-    @defproxy($(name_typename), Shape3D, $(fields...), material::Material=default_material())
-    realize(b::Backend, s::$(typename)) =
-      $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
-  end)
-end
 
 @defshape(Shape3D, sphere, center::Loc=u0(), radius::Real=1)
 
@@ -1285,14 +1271,12 @@ abstract type Analysis end
 abstract type StructuralAnalysis <: Analysis end
 abstract type LightingAnalysis <: Analysis end
 
-
 ###########################################################
 # Geometric properties
 
 # Axis-aligned Bounding Box
 
 # Centroid
-
 export centroid
 centroid(s::Sphere) = s.center
 centroid(s::Cylinder) = add_z(s.cb, s.h/2)
@@ -1318,7 +1302,6 @@ show_cs(p, scale=1) =
               cone(pz, rcon, add_z(pz, lcon)))
     end
 
-
 #
 nonzero_offset(l::Line, d::Real) =
   line(offset(l.vertices, d, false))
@@ -1329,8 +1312,8 @@ stroke(path;
     material::Material=default_curve_material(),
 	  backend::Backend=top_backend(),
 	  backends::Backends=(backend,)) =
-  let mat = material_ref(backend, material)
-	  for backend in backends
+  for backend in backends
+    let mat = material_ref(backend, material)
       b_stroke(backend, path, mat)
     end
   end
@@ -1339,8 +1322,8 @@ fill(path;
     material::Material=default_surface_material(),
     backend::Backend=top_backend(),
     backends::Backends=(backend,)) =
-  let mat = material_ref(backend, material)
- 	  for backend in backends
+  for backend in backends
+    let mat = material_ref(backend, material)
       b_fill(backend, path, mat)
     end
   end
