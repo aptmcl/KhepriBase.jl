@@ -778,8 +778,8 @@ b_roof(b::Backend, region, level, family) =
 
 b_panel(b::Backend, region, family) =
   let mat = family.material,
-	  th = family.thickness,
-	  v = planar_path_normal(region),
+	    th = family.thickness,
+	    v = planar_path_normal(region),
   	  bot = translate(region, v*-th),
   	  top = translate(region, v*th)
     [materialize_path(b, top, mat),
@@ -789,10 +789,10 @@ b_panel(b::Backend, region, family) =
 
 b_beam(b::Backend, c, h, angle, family) =
   let c = loc_from_o_phi(c, angle),
-	  mat = material_ref(b, family.material)
-	with_material_as_layer(b, family.material) do
+	    mat = material_ref(b, family.material)
+  	with_material_as_layer(b, family.material) do
       b_extrusion(b, family_profile(b, family), vz(h, c.cs), c,	mat)
-	end
+	  end
   end
 
 b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
@@ -1075,24 +1075,47 @@ backend_fill(b::Backend, path::ClosedPathSequence) =
 #@bdef map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int)
 @bdef name()
 
-# We assume there are properties to store the view details
-export b_get_view, b_set_view, b_set_view_top
+# We assume there is a property to store the view details
+# A simple approach is to use a mutable struct
+mutable struct View
+  camera::Loc
+  target::Loc
+  lens::Real
+  aperture::Real
+end
+default_view() = View(xyz(10,10,10), xyz(0,0,0), 35, 22)
+
+export View, default_view, b_get_view, b_set_view, b_set_view_top
+
 b_set_view(b::Backend, camera, target, lens, aperture) =
   begin
-    b.camera = camera
-    b.target = target
-    b.lens = lens
+    b.view.camera = camera
+    b.view.target = target
+    b.view.lens = lens
+	b.view.aperture = aperture
   end
 b_set_view_top(b::Backend) =
   begin
-    b.camera = u0()
-    b.target = u0()
-    b.lens = 0
+    b.camera = z(1000)
+    b.target = z(0)
+    b.lens = 1000
   end
+# For legacy reasons, we only return camera, target, and lens.
 b_get_view(b::Backend) =
-  b.camera, b.target, b.lens
+  b.view.camera, b.view.target, b.view.lens
 
 @bdef b_zoom_extents()
+
+# Similarly, we need an environment for rendering
+
+abstract type RenderEnvironment end
+struct SkyEnvironment <: RenderEnvironment
+  sun_altitude::Real
+	sun_azimuth::Real
+end
+default_render_environment() = SkyEnvironment(90, 0)
+
+export RenderEnvironment, SkyEnvironment, default_render_environment
 
 export b_realistic_sky
 b_realistic_sky(b::Backend, date, latitude, longitude, elevation, meridian, turbidity, withsun) =
@@ -1220,19 +1243,21 @@ end
 # There is a protocol for retrieving the connection
 connection(b::RemoteBackend) =
   begin
-	if ismissing(b.connection)
-		before_connecting(b)
-      	b.connection = start_connection(b)
+    if ismissing(b.connection)
+		  before_connecting(b)
+      b.connection = start_connection(b)
 	  	after_connecting(b)
     end
 	b.connection
   end
 
-export RemoteBackend, before_connecting, after_connecting, start_connection
+export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting
 before_connecting(b::RemoteBackend) = nothing
 after_connecting(b::RemoteBackend) = nothing
 failed_connecting(b::RemoteBackend) =
-  error("Couldn't connect with $(b.name).")
+  @error("Couldn't connect to $(b.name).")
+retry_connecting(b::RemoteBackend) =
+  (@info("Please, start/restart $(b.name)."); sleep(8))
 
 #=
 We start by defining socket-based communication.
@@ -1260,17 +1285,15 @@ reset_backend(b::SocketBackend) =
   end
 
 start_connection(b::SocketBackend) =
-  let attempts = 10,
-	  wait = 8
+  let attempts = 10
     for i in 1:attempts
       try
         return connect(b.port)
       catch e
         if i == attempts
-		  failed_connecting(b)
+		      failed_connecting(b)
         else
-          @info("Please, start/restart $(b.name).")
-          sleep(wait)
+          retry_connecting(b)
         end
       end
     end
@@ -1294,11 +1317,9 @@ end
 #One less dynamic option is to use a file-based backend. To that end, we implement
 #the IOBuffer_Backend
 
-Base.@kwdef mutable struct IOBufferBackend{K,T} <: Backend{K,T}
+@kwdef mutable struct IOBufferBackend{K,T} <: Backend{K,T}
   out::IOBuffer=IOBuffer()
-  camera::Loc=xyz(10,10,10)
-  target::Loc=xyz(0,0,0)
-  lens::Real=35
+  view::View=default_view()
 end
 
 connection(b::IOBufferBackend) = b.out
