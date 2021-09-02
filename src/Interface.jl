@@ -1,3 +1,4 @@
+using Base: @kwdef
 using Reexport
 @reexport using KhepriBase
 using Dates
@@ -9,7 +10,7 @@ using KhepriBase:
   Text
 
 import Base:
- show
+  show
 
 import KhepriBase:
   backend,
@@ -61,5 +62,7 @@ import KhepriBase:
   subtract_ref,
   switch_to_layer,
   truss_bar_family_cross_section_area,
-  unite_ref
+  unite_ref,
   #unite_refs,
+  with_material_as_layer,
+  use_material_as_layer
