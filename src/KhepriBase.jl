@@ -6,6 +6,7 @@ using Dierckx
 using Dates
 using Sockets
 using Base.Iterators
+using Base: @kwdef
 
 #=
 Dierckx does not yet support derivatives. Until they update it,
