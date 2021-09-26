@@ -108,6 +108,7 @@ macro cbscall(name_args)
 end
 
 @defcbs delete_all_refs()
+@defcbs unhighlight_all_refs()
 #=
 export current_layer
 current_layer(backends::Backends=current_backends()) =

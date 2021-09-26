@@ -21,7 +21,7 @@ import KhepriBase:
   #backend_create_block,
   #backend_disable_update,
   #backend_enable_update,
-  backend_extrusion,
+  #backend_extrusion,
   backend_fill_curves,
   backend_frame_at,
   #backend_generate_captured_shape,

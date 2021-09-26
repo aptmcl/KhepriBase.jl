@@ -103,7 +103,7 @@ map_ref(b::Backend{K,T}, f::Function, r::SubtractionRef{K,T}) where {K,T} = Subt
 collect_ref(b::Backend{K,T}) where {K,T} = r -> collect_ref(b, r)
 
 collect_ref(b::Backend{K,T}, r::EmptyRef{K,T}) where {K,T} = T[]
-collect_ref(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = [r.value]
+collect_ref(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = T[r.value]
 collect_ref(b::Backend{K,T}, r::UnionRef{K,T}) where {K,T} =
   mapreduce(collect_ref(b), vcat, r.values, init=T[])
 collect_ref(b::Backend{K,T}, r::SubtractionRef{K,T}) where {K,T} =
@@ -808,15 +808,9 @@ being the marching cubes the most popular one.
 
 @defshape(Shape3D, isosurface, frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(+1,+1,+1)])
 
-@defproxy(extrusion, Shape3D, profile::Shape=point(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape3D, extrusion, profile::Path=circular_path(), v::Vec=vz(1), cb::Loc=u0())
 extrusion(profile, h::Real) =
   extrusion(profile, vz(h))
-
-realize(b::Backend, s::Extrusion) =
-  backend_extrusion(backend(s), s.profile, s.v)
-
-backend_extrusion(b::Backend, p::Point, v::Vec) =
-  realize_and_delete_shapes(line([p.position, p.position + v], backend=b), [p])
 
 @defshape(Shape3D, sweep, path::Union{Shape1D, Path}=circle(), profile::Union{Shape,Path}=point(), rotation::Real=0, scale::Real=1)
 
@@ -939,16 +933,18 @@ bounding_rectangle(ss::Shapes) =
 #####################################################################
 ## Conversions
 
-convert(::Type{ClosedPath}, s::Rectangle) =
-  closed_path([MoveToOp(s.corner), RectOp(vxy(s.dx, s.dy))])
-convert(::Type{ClosedPath}, s::Circle) =
-  closed_path([CircleOp(s.center, s.radius)])
-convert(::Type{Path}, s::Line) = convert(OpenPath, s.vertices)
-
-convert(::Type{ClosedPath}, s::Polygon) =
-    let vs = polygon_vertices(s)
-        closed_path(vcat([MoveToOp(vs[1])], map(LineToOp, vs[2:end]), [CloseOp()]))
-    end
+convert(::Type{Path}, s::Rectangle) =
+  and_delete_shape(rectangular_path(s.corner, s.dx, s.dy), s)
+convert(::Type{Path}, s::Line) =
+  and_delete_shape(convert(OpenPath, s.vertices), s)
+convert(::Type{Path}, s::Circle) =
+  and_delete_shape(circular_path(s.center, s.radius), s)
+convert(::Type{Path}, s::Polygon) =
+  and_delete_shape(polygonal_path(s.vertices), s)
+convert(::Type{Region}, s::SurfaceCircle) =
+  and_delete_shape(region(circular_path(s.center, s.radius)), s)
+convert(::Type{Region}, s::SurfacePolygon) =
+  and_delete_shape(region(polygonal_path(s.vertices), s))
 #####################################################################
 ## Paths can be used to generate surfaces and solids
 
@@ -1066,12 +1062,12 @@ bounding_box(shapes::Shapes=Shape[]) =
 backend_bounding_box(backend::Backend, shape::Shape) =
   throw(UndefinedBackendException())
 
-delete_shape(s::Shape, bs=current_backends()) =
-  for b in bs
-    if realized(b, s)
-      b_delete_refs(b, collect_ref(b, ref(b, s)))
-      reset_ref(b, s)
-    end
+@defcbs delete_shape(s::Shape)
+
+b_delete_shape(b::Backend, s::Shape) =
+  if realized(b, s)
+    b_delete_refs(b, collect_ref(b, ref(b, s)))
+    reset_ref(b, s)
   end
 
 delete_shapes(ss::Shapes=Shape[], bs=current_backends()) =
@@ -1080,15 +1076,15 @@ delete_shapes(ss::Shapes=Shape[], bs=current_backends()) =
   end
 
 export and_delete_shape, and_delete_shapes, and_mark_deleted
-and_delete_shape(b::Backend, r::Any, shape::Shape) =
+and_delete_shape(r::Any, shape::Shape) =
   begin
-    delete_shape(b, shape)
+    delete_shape(shape)
     r
   end
 
-and_delete_shapes(b::Backend, r::Any, shapes::Shapes) =
+and_delete_shapes(r::Any, shapes::Shapes) =
   begin
-    delete_shapes(b, shapes)
+    delete_shapes(shapes)
     r
   end
 
@@ -1097,9 +1093,6 @@ and_mark_deleted(b::Backend, r::Any, shape) =
     mark_deleted(b, shape)
     r
   end
-
-realize_and_delete_shapes(b::Backend, shape::Shape, shapes::Shapes) =
-    and_delete_shapes(b, ref(b, shape), shapes)
 
 # Common implementations for realize function
 
@@ -1134,15 +1127,39 @@ end
 @defcb select_solids(prompt::String="Select solids")
 @defcb select_shape(prompt::String="Select a shape")
 @defcb select_shapes(prompt::String="Select shapes")
-@defshapeop highlight_shape()
 @defshapeop register_shape_for_changes(s::Shape)
 @defshapeop unregister_shape_for_changes(s::Shape)
 @defshapeop waiting_for_changes()
 @defcb changed_shape(shapes::Shapes)
 
+@defcbs highlight_shape(s::Shape)
+b_highlight_shape(b::Backend, s::Shape) =
+  if realized(b, s)
+    b_highlight_refs(b, collect_ref(b, ref(b, s)))
+  end
+
 export highlight_shapes
-highlight_shapes(shapes::Shapes) =
-  highlight_shapes(shapes, shapes == [] ? top_backend() : backend(shapes[1]))
+highlight_shapes(ss::Shapes=Shape[], bs=current_backends()) =
+  for s in ss
+    highlight_shape(s, bs)
+  end
+
+#
+@defcbs unhighlight_shape(s::Shape)
+b_unhighlight_shape(b::Backend, s::Shape) =
+  if realized(b, s)
+    b_unhighlight_refs(b, collect_ref(b, ref(b, s)))
+  end
+
+export unhighlight_shapes
+unhighlight_shapes(ss::Shapes=Shape[], bs=current_backends()) =
+  for s in ss
+    unhighlight_shape(s, bs)
+  end
+
+export unhighlight_all_shapes
+const unhighlight_all_shapes = unhighlight_all_refs
+
 
 capture_shape(s=select_shape("Select shape to be captured")) =
   if ! isnothing(s)
@@ -1210,14 +1227,6 @@ internalize_shape(s=select_shape("Select shape to be internalized")) =
 internalize_shapes(ss=select_shapes("Select shapes to be internalized")) =
     println(meta_program(ss))
 
-# Later, this will be used to create images.
-export to_render
-to_render(f, name) =
-  begin
-    delete_all_shapes()
-    f()
-    render_view(name)
-  end
 
 # Seletion
 

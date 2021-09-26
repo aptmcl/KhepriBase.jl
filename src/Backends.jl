@@ -229,9 +229,11 @@ export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
 
 # Each solid can have just one material or multiple materials
 b_generic_pyramid_frustum(b::Backend, bs, ts, smooth, bmat, tmat, smat) =
-  [b_surface_polygon(b, reverse(bs), bmat),
-   b_quad_strip_closed(b, bs, ts, smooth, smat),
-   b_surface_polygon(b, ts, tmat)]
+  collect(
+  	skipmissing(
+	  (isnothing(bmat) ? missing : b_surface_polygon(b, reverse(bs), bmat),
+  	   b_quad_strip_closed(b, bs, ts, smooth, smat),
+  	   isnothing(tmat) ? missing : b_surface_polygon(b, ts, tmat))))
 
 b_generic_pyramid_frustum_with_holes(b::Backend, bs, ts, smooth, bbs, tts, smooths, bmat, tmat, smat) =
   [b_surface_polygon_with_holes(b, reverse(bs), bbs, bmat),
@@ -326,15 +328,15 @@ b_sphere(b::Backend, c, r, mat) =
 	end
 
 b_cone(b::Backend, cb, r, h, mat) =
-	b_cone(b, cb, r, h, mat, mat)
+  b_cone(b, cb, r, h, mat, mat)
 
 b_cone(b::Backend, cb, r, h, bmat, smat) =
-	b_generic_pyramid(
-		b,
-		regular_polygon_vertices(32, cb, r, 0, true),
-		add_z(cb, h),
-		true,
-		bmat, smat)
+  b_generic_pyramid(
+	b,
+	regular_polygon_vertices(32, cb, r, 0, true),
+	add_z(cb, h),
+	true,
+	bmat, smat)
 
 b_cone_frustum(b::Backend, cb, rb, h, rt, mat) =
 	b_cone_frustum(b, cb, rb, h, rt, mat, mat, mat)
@@ -706,7 +708,7 @@ Utilities for interactive development
 @bdef(b_all_refs())
 
 b_delete_all_refs(b::Backend) =
-  b_delete_refs(b, b_all_shapes(b))
+  b_delete_refs(b, b_all_refs(b))
 
 b_delete_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
   for r in rs
@@ -715,6 +717,26 @@ b_delete_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
 
 b_delete_ref(b::Backend{K,T}, r::T) where {K,T} =
   missing_specialization(b, :b_delete_ref, r)
+
+
+b_highlight_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
+  for r in rs
+ 	b_highlight_ref(b, r)
+  end
+
+b_highlight_ref(b::Backend{K,T}, r::T) where {K,T} =
+  missing_specialization(b, :b_highlight_ref, r)
+
+b_unhighlight_all_refs(b::Backend) =
+  b_unhighlight_refs(b, b_all_refs(b))
+
+b_unhighlight_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
+  for r in rs
+   	b_unhighlight_ref(b, r)
+  end
+
+b_unhighlight_ref(b::Backend{K,T}, r::T) where {K,T} =
+  missing_specialization(b, :b_unhighlight_ref, r)
 
 # BIM
 export b_slab, b_roof, b_beam, b_column, b_free_column, b_wall
@@ -1244,9 +1266,9 @@ end
 connection(b::RemoteBackend) =
   begin
     if ismissing(b.connection)
-		  before_connecting(b)
+	  before_connecting(b)
       b.connection = start_connection(b)
-	  	after_connecting(b)
+	  after_connecting(b)
     end
 	b.connection
   end
@@ -1291,7 +1313,7 @@ start_connection(b::SocketBackend) =
         return connect(b.port)
       catch e
         if i == attempts
-		      failed_connecting(b)
+		  failed_connecting(b)
         else
           retry_connecting(b)
         end
