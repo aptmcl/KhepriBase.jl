@@ -14,7 +14,9 @@ export render_dir,
        prepare_for_saving_file,
        render_pathname,
        render_view,
-       rendering_with
+       rendering_with,
+       to_render,
+       to_film
 
 # There is a render directory
 const render_dir = Parameter(homedir())
@@ -206,6 +208,21 @@ rendering_with(f;
             end
         end
     end
+
+
+to_render(f, name) =
+  begin
+    delete_all_shapes()
+    f()
+    render_view(name)
+  end
+
+to_film(f, name) =
+  begin
+    start_film(name)
+    f()
+  end
+
 
 export default_lens,
        default_aperture,
