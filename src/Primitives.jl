@@ -392,6 +392,14 @@ show(io::IO, e::BackendError) =
 backend_error(ns::Val{NS}, c::IO) where {NS} =
   throw(BackendError(decode(ns, Val(:string), c), backtrace()))
 
+## To present errors in the backends that call back to Julia
+exception_backtrace(e) = backtrace()
+exception_backtrace(e::BackendError) = e.backtrace
+
+export errormsg
+errormsg(e) =
+  sprint((io, e) -> showerror(io, e, exception_backtrace(e), backtrace=true), e)
+
 # Encoding and decoding vectors
 encode(ns::Val{NS}, t::Vector{T}, c::IO, v) where {NS,T} = begin
   sub = T()
