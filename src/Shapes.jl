@@ -98,6 +98,8 @@ map_ref(b::Backend{K,T}, f::Function) where {K,T} = r -> map_ref(b, f, r)
 map_ref(b::Backend{K,T}, f::Function, r::NativeRef{K,T}) where {K,T} = ensure_ref(b, f(r.value))
 map_ref(b::Backend{K,T}, f::Function, r::UnionRef{K,T}) where {K,T} = UnionRef{K,T}(map(map_ref(b, f), r.values))
 map_ref(b::Backend{K,T}, f::Function, r::SubtractionRef{K,T}) where {K,T} = SubtractionRef{K,T}(map_ref(b, f, r.value), map(map_ref(b, f), r.values))
+map_ref(b::Backend{K,T}, f::Function, r::NativeRefs{K,T}) where {K,T} = ensure_ref(b, map(r -> map_ref(b, f, NativeRef{K,T}(r)), r.values))
+
 
 # currying
 collect_ref(b::Backend{K,T}) where {K,T} = r -> collect_ref(b, r)
