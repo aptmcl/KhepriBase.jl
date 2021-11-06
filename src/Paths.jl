@@ -343,6 +343,16 @@ scale(path::OpenPolygonalPath, s::Real, p::Loc=u0()) =
 scale(path::ClosedPolygonalPath, s::Real, p::Loc=u0()) =
   closed_polygonal_path([q + (q-p)*s for q in path.vertices])
 
+#
+transform(s, p::Loc) = in_cs(s, p)
+
+export planar_polygonal_path
+planar_polygonal_path(path) =
+  let normal = planar_path_normal(path)
+    typeof(path)(in_cs(path.vertices, cs_from_o_vz(path.vertices[1], normal)))
+  end
+
+#
 path_length(path::CircularPath) = 2*pi*path.radius
 path_length(path::ArcPath) = path.radius*abs(path.amplitude)
 path_length(path::RectangularPath) = 2*(path.dx + path.dy)
@@ -1000,15 +1010,15 @@ path_vertices_on(vs::Locs, p) =
 
 ## Utility operations
 Base.reverse(path::CircularPath) =
-  circular_path(loc_from_o_vz(path.center, vz(-1)), path.radius)
+  circular_path(loc_from_o_vz(path.center, vz(-1, path.center.cs)), path.radius)
 Base.reverse(path::RectangularPath) =
-  rectangular_path(loc_from_o_vz(path.corner, vz(-1)), path.dy, path.dx)
+  rectangular_path(loc_from_o_vz(path.corner, vz(-1, path.corner.cs)), -path.dx, path.dy)
 Base.reverse(path::OpenPolygonalPath) =
   open_polygonal_path(reverse(path_vertices(path)))
 Base.reverse(path::ClosedPolygonalPath) =
   closed_polygonal_path(reverse(path_vertices(path)))
 Base.reverse(path::Region) =
-  region(reverse(outer_path(path)), reverse.(inner_paths(path))...)
+  region(reverse.(path.paths)...)
 
 
 mirrored_path(path::Path, p::Loc, v::Vec) =
