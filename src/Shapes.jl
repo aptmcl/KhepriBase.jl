@@ -528,7 +528,7 @@ export material_point, material_curve, material_surface,
        material_basic, material_glass,
        material_metal, material_wood,
        material_concrete, material_plaster,
-       material_grass
+       material_grass, material_clay
 
 const material_point = material("Points")
 const material_curve = material("Curves")
@@ -540,6 +540,7 @@ const material_wood = material("Wood")
 const material_concrete = material("Concrete")
 const material_plaster = material("Plaster")
 const material_grass = material("Grass")
+const material_clay = material("Clay")
 
 export default_point_material, default_curve_material, default_surface_material, default_material
 const default_point_material = Parameter{Material}(material_point)
@@ -1231,7 +1232,7 @@ internalize_shapes(ss=select_shapes("Select shapes to be internalized")) =
 
 
 # Seletion
-
+export select_one_with_prompt, select_many_with_prompt
 select_one_with_prompt(prompt::String, b::Backend, f::Function) =
   let ans = select_many_with_prompt(prompt, b, f)
     length(ans) > 0 ? ans[1] : nothing
@@ -1240,7 +1241,7 @@ select_one_with_prompt(prompt::String, b::Backend, f::Function) =
 select_many_with_prompt(prompt::String, b::Backend, f::Function) =
   begin
     @info "$(prompt) on the $(b) backend."
-    map(id -> shape_from_ref(id, b), f(connection(b), prompt))
+    map(id -> b_shape_from_ref(b, id), f(connection(b), prompt))
   end
 
 export save_view
@@ -1250,25 +1251,10 @@ save_view(name::String="View") =
     path
   end
 
-export realistic_sky
-realistic_sky(;
-    date::DateTime=DateTime(2020, 9, 21, 10, 0, 0),
-    latitude::Real=39,
-    longitude::Real=9,
-    elevation::Real=0,
-    meridian::Real=0,
-    altitude::Union{Missing,Real}=missing,
-    azimuth::Union{Missing,Real}=missing,
-    turbidity::Real=5,
-    withsun::Bool=true,
-    backend::Backend=top_backend()) =
-  ismissing(altitude) ?
-    b_realistic_sky(
-      backend,
-      date, latitude, longitude, elevation, meridian, turbidity, withsun) :
-    b_realistic_sky(
-      backend,
-      altitude, azimuth, turbidity, withsun)
+@defcbs set_time_place(date::DateTime=DateTime(2020, 9, 21, 10, 0, 0), latitude::Real=39, longitude::Real=-9, elevation::Real=0, meridian::Real=0)
+@defcbs set_sky(turbidity::Real=5, sun::Bool=true)
+@defcbs set_ground(level::Real=0, material::Material=material_basic)
+@defcbs realistic_sky(date::DateTime=DateTime(2020, 9, 21, 10, 0, 0), latitude::Real=39, longitude::Real=-9, elevation::Real=0, meridian::Real=0, turbidity::Real=5, sun::Bool=true)
 
 export ground
 ground(level::Real=0, material::Material=material_basic, backend::Backend=top_backend()) =
