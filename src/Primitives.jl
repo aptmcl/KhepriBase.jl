@@ -55,73 +55,7 @@ int[] -> (:array, :int)
 A parametric type is represented with a tuple, e.g.,
 Dict<int, string> -> (:Dict, :int, :string)
 =#
-#=
-# C++
-parse_signature(::Val{:CPP}, sig::AbstractString) =
-  let func_name(name) = replace(name, ":" => "_"),
-      type_name(name) = replace(name, r"[:<>]" => "_"),
-      m = match(r"^ *(public|) *(\w+) *([\[\]]*) +((?:\w|:|<|>)+) *\( *(.*) *\)", sig),
-      ret = type_name(m.captures[2]),
-      array_level = count(c -> c=='[', something(m.captures[3], "")),
-      name = m.captures[4],
-      params = split(m.captures[5], r" *, *", keepempty=false),
-      parse_c_decl(decl) =
-        let m = match(r"^ *((?:\w|:|<|>)+) *([\[\]]*) *(\w+)$", decl)
-          (type_name(m.captures[1]), count(c -> c=='[', something(m.captures[2], "")), Symbol(m.captures[3]))
-        end
-    (func_name(name), name, [parse_c_decl(decl) for decl in params], (ret, array_level))
-  end
-
-# C#
-parse_signature(::Val{:CS}, sig::AbstractString) =
-  let m = match(r"^ *(public|) *(\w+) *([\[\]]*) +(\w+) *\( *(.*) *\)", sig),
-      ret = m.captures[2],
-      array_level = count(c -> c=='[', something(m.captures[3], "")),
-      name = m.captures[4],
-      params = split(m.captures[5], r" *, *", keepempty=false),
-      parse_c_decl(decl) =
-        let m = match(r"^ *(\w+) *([\[\]]*) *(\w+)$", decl)
-          (m.captures[1], count(c -> c=='[', something(m.captures[2], "")), Symbol(m.captures[3]))
-    end
-    (name, name, [parse_c_decl(decl) for decl in params], (ret, array_level))
-  end
-
-# Python
-parse_signature(::Val{:PY}, sig::AbstractString) =
-  let m = match(r"^ *def +(\w+) *(\(.*\)) *-> *(.+) *: *", sig),
-      name = m.captures[1],
-      params = m.captures[2],
-      ret = m.captures[3],
-      parse_type(t) =
-        if t isa Symbol
-          (t, 0)
-        elseif t.head === :ref
-          if t.args[1] === :List
-            (s, l) = parse_type(t.args[2])
-            (s, l + 1)
-          elseif t.args[1] === :Tuple
-            (Symbol(:T, join(t.args[2:end], "_"), :T), 0)
-          else
-            error("Uknown expression $(t)")
-          end
-        else
-          error("Uknown expression $(t)")
-        end,
-      parse_params(ast) =
-        let parse_param(p) = (parse_type(p.args[3])..., p.args[2])
-          if ast.head === :tuple
-            map(parse_param, ast.args)
-          elseif ast.head === :call
-            [parse_param(ast)]
-          else
-            error("Uknown expression $(t)")
-          end
-        end
-    (name, name, parse_params(Meta.parse(params)), parse_type(Meta.parse(ret)))
-  end
-=#
 ###########################################################
-# New version
 # C++
 parse_signature(::Val{:CPP}, sig::AbstractString) =
   let func_name(name) = replace(name, ":" => "_"),
@@ -251,36 +185,6 @@ The most important part is the lang_rpc function. It parses the string describin
 signature of the remote function, generates a function to encode arguments and
 retrieve results and, finally, creates the remote_function object.
 =#
-#=
-remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
-  let packtype(t, n) =
-        let init = t isa Tuple ? :(Tuple{$(t...)}) : t
-          foldr((i,v)->:(Vector{$v}), 1:n, init=:(Val{$(QuoteNode(Symbol(t)))}))
-        end,
-      namespace = :(Val{$(nssym)}())
-    :(remote_function(
-           $(namespace),
-           $(sig),
-           $(local_name),
-           $(remote_name),
-           (opcode, conn, buf, $([:($(p[3])) for p in params]...)) -> begin
-              initiate_rpc_call(conn, opcode, $(remote_name))
-              take!(buf) # Reset the buffer just in case there was an encoding error on a previous call
-              encode($(namespace), Val(:int), buf, opcode)
-              $([:(encode($(namespace),
-                          $(packtype(p[1], p[2]))(),
-                          buf,
-                          $(p[3])))
-                 for p in params]...)
-              write(conn, take!(buf))
-              complete_rpc_call(conn, opcode,
-                decode($(namespace),
-                       $(packtype(ret[1], ret[2]))(), conn))
-            end))
-  end
-=#
-###################################################
-# New version
 type_constructor(t) =
   t <: Tuple ?
     Expr(:tuple, map(type_constructor, t.types)...) :
@@ -644,17 +548,17 @@ encode(ns::SupportsTuples, ::Val{:RGBA}, c::IO, v) =
 decode(ns::SupportsTuples, ::Val{:RGBA}, c::IO) =
   RGBA(decode(ns, (Val(:float),Val(:float),Val(:float),Val(:float)), c)...)
 
+# encodes/decodes ColorTypes' RGB to Windows' System.Drawing.Color
 encode(ns::SupportsTuples, ::Val{:Color}, c::IO, v) =
-  encode(ns, (Val(:byte),Val(:byte),Val(:byte),Val(:byte)), c,
-         (reinterpret(UInt8, v.alpha),
-          reinterpret(UInt8, v.r),
-          reinterpret(UInt8, v.g),
-          reinterpret(UInt8, v.b)))
+  let v = convert(RGBA{ColorTypes.N0f8}, v)
+    encode(ns, (Val(:byte),Val(:byte),Val(:byte),Val(:byte)), c,
+           (v.alpha, v.r, v.g, v.b))
+  end
 decode(ns::SupportsTuples, ::Val{:Color}, c::IO) =
-  let a = decode(ns, Val(:byte), c),
-      r = decode(ns, Val(:byte), c),
-      g = decode(ns, Val(:byte), c),
-      b = decode(ns, Val(:byte), c)
+  let a = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
+      r = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
+      g = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
+      b = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c))
     RGBA(r, g, b, a)
   end
 
