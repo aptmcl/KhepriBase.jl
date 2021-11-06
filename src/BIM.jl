@@ -1154,6 +1154,35 @@ max_displacement(results, b::Backend=top_backend()) =
     maximum(map(norm∘disp, b.truss_node_data))
   end
 
+#=
+bar_length_variation(bar, disp) =
+  let (node1, node2) = (bar.node1, bar.node2),
+      (p1, p2) = (node1.loc, node2.loc),
+      pre_length = distance(p1, p2),
+      (d1, d2) = disp.((node1, node2)),
+      pos_length = distance(p1 + d1, p2 + d2)
+    pos_length - pre_length
+  end
+
+show_stresses(results, b::Backend=autocad) =
+  let disp = node_displacement_function(results),
+      to255(x) = round(UInt8, x*255),
+      (min, max) = extrema([bar_length_variation(bar, disp) for bar in frame3dd.truss_bar_data])
+    for bar in frame3dd.truss_bar_data
+      let diff = bar_length_variation(bar, disp),
+          color = diff > 0 ?
+            KhepriBase.rgb(diff/max, 0, 0) :
+            KhepriBase.rgb(0, 0, diff/min),
+          bar_radius = 0.05,
+          (node1, node2) = (bar.node1, bar.node2),
+          (p1, p2) = (node1.loc, node2.loc),
+          (d1, d2) = disp.((node1, node2)),
+          s = cylinder(p1+d1, bar_radius, p2+d2)
+        KhepriBase.@remote(b, SetShapeColor(KhepriBase.ref(b, s).value, to255(KhepriBase.red(color)), to255(KhepriBase.green(color)), to255(KhepriBase.blue(color))))
+      end
+    end
+  end
+=#
 
 @defcb lighting_analysis()
 
