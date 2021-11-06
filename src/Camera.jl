@@ -143,6 +143,8 @@ julia> filter(contains(r"DomeTrussRibsDay-frame-...\.png"), readdir())
  "DomeTrussRibsDay-frame-155.png"
  "DomeTrussRibsDay-frame-156.png"
 
+add FileIO, ImageIO, VideoIO
+
 julia> using FileIO
 julia> using ImageIO
 julia> using VideoIO
