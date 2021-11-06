@@ -29,7 +29,7 @@ macro defcb(expr)
   esc(
     quote
       export $(name), $(backend_name)
-      $(name)($(params...), backend::Backend=top_backend()) =
+      @named_params $(name)($(params...), backend::Backend=top_backend()) =
           $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
       #$(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
       #    $(body)
@@ -44,7 +44,7 @@ macro defcbs(expr)
   esc(
     quote
       export $(name), $(backend_name)
-      $(name)($(params...), backends::Backends=current_backends()) =
+      @named_params $(name)($(params...), backends::Backends=current_backends()) =
         for backend in backends
           $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
         end
@@ -128,9 +128,6 @@ current_layer(layer, backends::Backends=current_backends()) =
 @defcb get_view()
 @defcbs b_zoom_extents()
 @defcbs set_view_top()
-
-@defcbs set_sun(altitude::Real, azimuth::Real)
-@defcbs set_ground(level, material)
 
 @defcbs zoom_extents()
 #@defcb get_material(ref::Any)
