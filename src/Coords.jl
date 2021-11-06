@@ -357,10 +357,6 @@ in_world(p) = in_cs(p, world_cs)
 export inverse_transformation
 inverse_transformation(p::Loc) = xyz(0,0,0, CS(inv(translated_cs(p.cs, p.x, p.y, p.z).transform)))
 
-transform(p, trans::Loc) =
-  let pw = in_world(p)
-    xyz(pw.x, pw.y, pw.z, trans.cs)
-  end
 cs_from_o_vx_vy_vz(o::Loc, ux::Vec, uy::Vec, uz::Vec) =
   CS(SMatrix{4,4,Float64}(ux.x, ux.y, ux.z, 0, uy.x, uy.y, uy.z, 0, uz.x, uz.y, uz.z, 0, o.x, o.y, o.z, 1))
 
