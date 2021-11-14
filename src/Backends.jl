@@ -228,8 +228,9 @@ KhepriBase.b_delete_shapes(b::POVRay, shapes::Shapes) =
   end
 =#
 
-
-
+# HACK: This should be filtered on the plugin, not here.
+KhepriBase.b_all_shapes(b::IOBufferBackend) = b.shapes
+KhepriBase.b_all_shapes_in_layer(b::IOBufferBackend, layer) = b.layers[layer]
 
 b_set_time_place(b::IOBufferBackend, date, latitude, longitude, elevation, meridian) =
   begin

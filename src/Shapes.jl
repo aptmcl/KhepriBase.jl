@@ -371,7 +371,8 @@ end
 
 export all_shapes, delete_all_shapes
 const delete_all_shapes = delete_all_refs
-all_shapes(b::Backend=top_backend()) =
+@defcb all_shapes()
+b_all_shapes(b::Backend) =
   Shape[b_shape_from_ref(b, r) for r in b_all_refs(b)]
 @bdef(b_shape_from_ref(r))
 
