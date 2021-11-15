@@ -723,11 +723,6 @@ convert the generic material parameters into specific model parameters.
 @bdef b_glass_material(b::Backend, name, color, roughness, ior)
 @bdef b_mirror_material(b::Backend, name, color)
 
-# Retrieval operations
-
-export b_all_shapes
-b_all_shapes(b::Backend) = b.shapes
-
 #=
 Utilities for interactive development
 =#
