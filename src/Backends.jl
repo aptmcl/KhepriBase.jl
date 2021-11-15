@@ -188,6 +188,16 @@ save_shape!(b::IOBufferBackend, s::Shape) =
     s
   end
 
+export realize_shapes
+realize_shapes(b::IOBufferBackend) =
+  if ! b.cached
+    take!(b.buffer)
+    for s in b.shapes
+  	  force_realize(b, s)
+    end
+    b.cached = true
+  end
+
 export used_materials
 used_materials(b::IOBufferBackend) =
   let materials=Set{Material}()
