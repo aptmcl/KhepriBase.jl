@@ -419,7 +419,7 @@ macro defproxy(name_typename, parent, fields...)
   field_converts = map(mk_convert, field_names, field_types)
   selector_names = map(field_name -> esc(Symbol(name_str, "_", string(field_name))), field_names)
   quote
-    export $(constructor_name), $(struct_name), $(predicate_name) #, $(selector_names...)
+    export $(constructor_name), $(struct_name), $(predicate_name), $(selector_names...)
     struct $struct_name <: $parent
       ref::DynRefs
       $(struct_fields...)
