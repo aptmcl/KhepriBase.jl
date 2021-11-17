@@ -324,7 +324,7 @@ b_sphere(b::Backend, c, r, mat) =
   			[add_sph(c, r, ϕ, ψ+π/16) for ϕ in ϕs],
   			[add_sph(c, r, ϕ, ψ) for ϕ in ϕs],
   			true, mat) for ψ in π/16:π/16:π-π/16]...,
-  	 b_ngon(b, [add_sph(c, r, ϕ, π-π/16) for ϕ in ϕs], add_sph(c, r, 0, π), true, mat)]
+  	 b_ngon(b, reverse!([add_sph(c, r, ϕ, π-π/16) for ϕ in ϕs]), add_sph(c, r, 0, π), true, mat)]
 	end
 
 b_cone(b::Backend, cb, r, h, mat) =
