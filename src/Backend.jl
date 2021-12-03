@@ -514,6 +514,12 @@ b_fill(b::Backend, path::Region, mat) =
 b_fill(b::Backend, path::Mesh, mat) =
   b_surface_mesh(b, m.vertices, m.faces, mat)
 
+export b_realize_path
+b_realize_path(b::Backend, path::Region, mat) =
+  b_fill(b, path, mat)
+b_realize_path(b::Backend, path, mat) =
+  b_stroke(b, path, mat)
+
 ##################################################################
 # Dimensions
 #=
