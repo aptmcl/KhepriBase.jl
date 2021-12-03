@@ -447,10 +447,10 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
     b_surface_grid(
       b,
       points,
-      is_closed_path(path),
 	  is_closed_path(profile),
-      is_smooth_path(path),
+	  is_closed_path(path),
 	  is_smooth_path(profile),
+	  is_smooth_path(path),
 	  mat)
   end
 
