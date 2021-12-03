@@ -193,6 +193,7 @@ realize_shapes(b::IOBufferBackend) =
   if ! b.cached
     take!(b.buffer)
     for s in b.shapes
+      reset_ref(b, s)
   	  force_realize(b, s)
     end
     b.cached = true
