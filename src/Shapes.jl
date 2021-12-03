@@ -813,11 +813,11 @@ being the marching cubes the most popular one.
 
 @defshape(Shape3D, isosurface, frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(+1,+1,+1)])
 
-@defshape(Shape3D, extrusion, profile::Path=circular_path(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape3D, extrusion, profile::Union{Shape,Path,Region}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
 extrusion(profile, h::Real) =
   extrusion(profile, vz(h))
 
-@defshape(Shape3D, sweep, path::Union{Shape1D, Path}=circle(), profile::Union{Shape,Path}=point(), rotation::Real=0, scale::Real=1)
+@defshape(Shape3D, sweep, path::Union{Shape1D, Path}=circle(), profile::Union{Shape,Path,Region}=point(), rotation::Real=0, scale::Real=1)
 
 @defproxy(revolve_point, Shape1D, profile::Shape0D=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defproxy(revolve_curve, Shape2D, profile::Shape1D=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
