@@ -408,7 +408,9 @@ realize(b::Backend, s::Roof) =
 
 @deffamily(panel_family, Family,
   thickness::Real=0.02,
-  material::Material=material_glass)
+  right_material::Material=material_glass,
+  left_material::Material=material_glass,
+  side_material::Material=material_glass)
 
 @defproxy(panel, BIMShape, region::Region=rectangular_path(), family::PanelFamily=default_panel_family())
 
@@ -685,7 +687,9 @@ A curtain wall is a special kind of wall that is made of a frame with windows.
   width::Real=0.1,
   depth::Real=0.1,
   depth_offset::Real=0.25,
-  material::Material=material_metal)
+  right_material::Material=material_metal,
+  left_material::Material=material_metal,
+  side_material::Material=material_metal)
 
 @deffamily(curtain_wall_family, Family,
   max_panel_dx::Real=1,
@@ -713,41 +717,39 @@ curtain_wall(p0::Loc, p1::Loc;
          family=family, offset=offset)
 
 realize(b::Backend, s::CurtainWall) =
-  with_material_as_layer(b, s.family) do
-    let th = s.family.panel.thickness,
-        bfw = s.family.boundary_frame.width,
-        bfd = s.family.boundary_frame.depth,
-        bfdo = s.family.boundary_frame.depth_offset,
-        mfw = s.family.mullion_frame.width,
-        mfd = s.family.mullion_frame.depth,
-        mdfo = s.family.mullion_frame.depth_offset,
-        tfw = s.family.transom_frame.width,
-        tfd = s.family.transom_frame.depth,
-        tfdo = s.family.transom_frame.depth_offset,
-        path = curtain_wall_path(b, s, s.family.panel),
-        path_length = path_length(path),
-        bottom = level_height(b, s.bottom_level),
-        top = level_height(b, s.top_level),
-        height = top - bottom,
-        x_panels = ceil(Int, path_length/s.family.max_panel_dx),
-        y_panels = ceil(Int, height/s.family.max_panel_dy),
-        refs = []
-      push!(refs, backend_curtain_wall(b, s, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, :panel))
-      push!(refs, backend_curtain_wall(b, s, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-      push!(refs, backend_curtain_wall(b, s, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-      push!(refs, backend_curtain_wall(b, s, subpath(path, 0, bfw), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-      push!(refs, backend_curtain_wall(b, s, subpath(path, path_length-bfw, path_length), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-      for i in 1:y_panels-1
-        l = height/y_panels*i
-        sub = subpath(path, bfw, path_length-bfw)
-        push!(refs, backend_curtain_wall(b, s, sub, bottom+l-tfw/2, tfw, l_thickness(tfdo, tfd), r_thickness(tfdo, tfd), :transom_frame))
-      end
-      for i in 1:x_panels-1
-        l = path_length/x_panels*i
-        push!(refs, backend_curtain_wall(b, s, subpath(path, l-mfw/2, l+mfw/2), bottom+bfw, height-2*bfw, l_thickness(mdfo, mfd), r_thickness(mdfo, mfd), :mullion_frame))
-      end
-      [ensure_ref(b,r) for r in refs]
+  let th = s.family.panel.thickness,
+      bfw = s.family.boundary_frame.width,
+      bfd = s.family.boundary_frame.depth,
+      bfdo = s.family.boundary_frame.depth_offset,
+      mfw = s.family.mullion_frame.width,
+      mfd = s.family.mullion_frame.depth,
+      mdfo = s.family.mullion_frame.depth_offset,
+      tfw = s.family.transom_frame.width,
+      tfd = s.family.transom_frame.depth,
+      tfdo = s.family.transom_frame.depth_offset,
+      path = curtain_wall_path(b, s, s.family.panel),
+      path_length = path_length(path),
+      bottom = level_height(b, s.bottom_level),
+      top = level_height(b, s.top_level),
+      height = top - bottom,
+      x_panels = ceil(Int, path_length/s.family.max_panel_dx),
+      y_panels = ceil(Int, height/s.family.max_panel_dy),
+      refs = []
+    push!(refs, b_curtain_wall(b, s, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, :panel))
+    push!(refs, b_curtain_wall(b, s, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
+    push!(refs, b_curtain_wall(b, s, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
+    push!(refs, b_curtain_wall(b, s, subpath(path, 0, bfw), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
+    push!(refs, b_curtain_wall(b, s, subpath(path, path_length-bfw, path_length), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
+    for i in 1:y_panels-1
+      l = height/y_panels*i
+      sub = subpath(path, bfw, path_length-bfw)
+      push!(refs, b_curtain_wall(b, s, sub, bottom+l-tfw/2, tfw, l_thickness(tfdo, tfd), r_thickness(tfdo, tfd), :transom_frame))
     end
+    for i in 1:x_panels-1
+      l = path_length/x_panels*i
+      push!(refs, b_curtain_wall(b, s, subpath(path, l-mfw/2, l+mfw/2), bottom+bfw, height-2*bfw, l_thickness(mdfo, mfd), r_thickness(mdfo, mfd), :mullion_frame))
+    end
+    [ensure_ref(b,r) for r in refs]
   end
 
 # By default, curtain wall panels are planar
