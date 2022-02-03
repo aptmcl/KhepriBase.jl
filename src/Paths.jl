@@ -842,7 +842,7 @@ convert(::Type{OpenPolygonalPath}, path::OpenSplinePath) =
 curve_interpolator(pts::Locs, closed::Bool) =
   ParametricSpline(
     [pt.raw[i] for i in 1:3, pt in in_world.(closed ? [pts..., pts[1]] : pts)],
-    k=length(pts)<=3 ? 2 : 3,
+    k=min(length(pts)-1, 3),
     periodic=closed)
 curve_control_points(interpolator) =
   let cps = get_coeffs(interpolator)
