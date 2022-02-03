@@ -199,6 +199,8 @@ ref(b, s) calls
 
 ref(b::Backend, s::Proxy) =
   force_realize(b, s)
+ref(b::Backend) =
+  s::Proxy -> ref(b, s)
 
 reset_ref(b::Backend, s::Proxy) =
   delete!(s.ref, b)
