@@ -121,10 +121,10 @@ b_quad_strip_closed(b::Backend, ps, qs, smooth, mat) =
 
 b_strip(b::Backend, path1, path2, mat) =
   let v1s = path_vertices(path1),
-	    v2s = path_vertices(path2)
-	  length(v1s) != length(v2s) ?
-  	  error("Paths with different resolution") :
-  	  is_closed_path(path1) && is_closed_path(path2) ?
+	  v2s = path_vertices(path2)
+    length(v1s) != length(v2s) ?
+  	  error("Paths with different resolution ($(length(v1s)) vs $(length(v2s)))") :
+      is_closed_path(path1) && is_closed_path(path2) ?
         b_quad_strip_closed(
           b, v1s, v2s, is_smooth_path(path1) || is_smooth_path(path2), mat) :
         b_quad_strip(
@@ -500,6 +500,10 @@ b_stroke(b::Backend, path::Mesh, mat) =
       b_line(b, vs[face.+1], mat) #1-indexed
     end
   end
+b_stroke(b::Backend, path::PathSequence, mat) =
+  for path in path.paths
+    b_stroke(b, path, mat)
+  end
 
 b_fill(b::Backend, path::CircularPath, mat) =
   b_surface_circle(b, path.center, path.radius, mat)
@@ -804,37 +808,47 @@ materialize_path(b, path, mat) =
     b_surface(b, path, material_ref(b, mat))
   end
 
+# b_slab(b::Backend, profile, level, family) =
+#   let tmat = family.top_material,
+#       bmat = family.bottom_material,
+#       smat = family.side_material,
+#       bprof = translate(profile, vz(level_height(b, level) + slab_family_elevation(b, family))),
+#       tprof = translate(bprof, vz(slab_family_thickness(b, family)))
+#     [materialize_path(b, tprof, tmat),
+#      materialize_path(b, bprof, tprof, smat)...,
+#      materialize_path(b, reverse(bprof), bmat)]
+#   end
+# It is preferable to do an extrusion because separate discretization of the top and bottom
+# paths do not ensure an equal number of vertices.
 b_slab(b::Backend, profile, level, family) =
-  let tmat = family.top_material,
-      bmat = family.bottom_material,
-      smat = family.side_material,
+  let tmat = material_ref(b, family.top_material),
+      bmat = material_ref(b, family.bottom_material),
+      smat = material_ref(b, family.side_material),
       bprof = translate(profile, vz(level_height(b, level) + slab_family_elevation(b, family))),
-      tprof = translate(bprof, vz(slab_family_thickness(b, family)))
-    [materialize_path(b, tprof, tmat),
-     materialize_path(b, bprof, tprof, smat)...,
-     materialize_path(b, reverse(bprof), bmat)]
-  end
-  # b_extrusion(
-  #   b,
-  #   profile,
-  #   vz(slab_family_thickness(b, family)),
-	#   z(level_height(b, level) + slab_family_elevation(b, family)),
-  #   material_ref(b, family.bottom_material),
-	#   material_ref(b, family.top_material),
-	#   material_ref(b, family.side_material))
+      v = vz(slab_family_thickness(b, family))
+    b_extrusion(b, bprof, v, u0(), bmat, tmat, smat)
+   end
 
 b_roof(b::Backend, region, level, family) =
   b_slab(b, region, level, family)
 
-b_panel(b::Backend, region, family) =
-  let mat = family.material,
-	    th = family.thickness,
-	    v = planar_path_normal(region),
-  	  bot = translate(region, v*-th),
-  	  top = translate(region, v*th)
-    [materialize_path(b, top, mat),
-     materialize_path(b, bot, top, mat)...,
-     materialize_path(b, reverse(bot), mat)]
+# b_panel(b::Backend, region, family) =
+#   let th = family.thickness,
+# 	    v = planar_path_normal(region),
+#   	  left = translate(region, v*-th),
+#   	  right = translate(region, v*th)
+#     [materialize_path(b, right, family.right_material),
+#      materialize_path(b, left, right, family.side_material)...,
+#      materialize_path(b, reverse(left), family.left_material)]
+#   end
+b_panel(b::Backend, profile, family) =
+  let lmat = material_ref(b, family.left_material),
+      rmat = material_ref(b, family.right_material),
+      smat = material_ref(b, family.side_material),
+      th = family.thickness,
+      v = planar_path_normal(profile),
+      lprof = translate(profile, v*(th/-2))
+    b_extrusion(b, lprof, v*th, u0(), lmat, rmat, smat)
   end
 
 b_beam(b::Backend, c, h, angle, family) =
@@ -1095,12 +1109,9 @@ b_table_and_chairs(b::Backend, p, table::Function, chair::Function,
   end
 
 #@bdef curtain_wall(s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol)
-backend_curtain_wall(b::Backend, s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol) =
-  let family = getproperty(s.family, kind),
-      mat = material_ref(b, family.material)
-    with_family_in_layer(b, family) do
-      b_wall(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, mat, mat, mat)
-    end
+b_curtain_wall(b::Backend, s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol) =
+  let family = getproperty(s.family, kind)
+    b_wall(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, family)
   end
 
 @bdef curtain_wall(s, path::Path, bottom::Real, height::Real, thickness::Real, kind::Symbol)
