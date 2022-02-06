@@ -86,7 +86,7 @@ b_circle(b::Backend, c, r, mat) =
 
 b_arc(b::Backend, c, r, α, Δα, mat) =
   b_spline(b,
-    [center + vpol(r, a, center.cs)
+    [c + vpol(r, a, c.cs)
      for a in division(α, α + Δα, Δα*32/2/π, false)],
     nothing, nothing, # THIS NEEDS TO BE FIXED
     mat)
@@ -489,7 +489,7 @@ b_stroke(b::Backend, path::OpenPolygonalPath, mat) =
 b_stroke(b::Backend, path::ClosedPolygonalPath, mat) =
   b_polygon(b, path.vertices, mat)
 b_stroke(b::Backend, path::OpenSplinePath, mat) =
-  b_spline(b, path.vertices, path.v0, path.v1, path.interpolator, mat)
+  b_spline(b, path.vertices, path.v0, path.v1, mat)
 b_stroke(b::Backend, path::ClosedSplinePath, mat) =
   b_closed_spline(b, path.vertices, mat)
 b_stroke(b::Backend, path::Region, mat) =

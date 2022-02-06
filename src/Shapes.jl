@@ -604,8 +604,7 @@ end
 line(v0::Loc, v1::Loc, vs...) = line([v0, v1, vs...])
 @defshape(Shape1D, closed_line, vertices::Locs=[u0(), ux(), uy()])
 closed_line(v0::Loc, v1::Loc, vs...) = closed_line([v0, v1, vs...])
-@defshape(Shape1D, spline, points::Locs=[u0(), ux(), uy()], v0::Union{Bool,Vec}=false, v1::Union{Bool,Vec}=false,
-          interpolator::Parameter{Any}=Parameter{Any}(missing))
+@defshape(Shape1D, spline, points::Locs=[u0(), ux(), uy()], v0::Union{Bool,Vec}=false, v1::Union{Bool,Vec}=false)
 spline(v0::Loc, v1::Loc, vs...) = spline([v0, v1, vs...])
 
 #=
