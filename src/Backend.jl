@@ -60,25 +60,25 @@ b_polygon(b::Backend, ps, mat) =
 b_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
   b_polygon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), mat)
 
-b_nurbs_curve(b::Backend, order, ps, knots, weights, closed, mat) =
+b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat) =
   closed ?
   	b_polygon(b, ps, mat) :
   	b_line(b, ps, mat)
 
 b_spline(b::Backend, ps, v1, v2, mat) =
   let ci = curve_interpolator(ps, false),
-      cpts = curve_control_points(ci),
-      n = length(cpts),
+      cps = curve_control_points(ci),
+      n = length(cps),
       knots = curve_knots(ci)
-    b_nurbs_curve(b, 5, cpts, knots, fill(1.0, n), false, mat)
+    b_nurbs_curve(b, ps, 5, cps, knots, fill(1.0, n), false, mat)
   end
 
 b_closed_spline(b::Backend, ps, mat) =
   let ci = curve_interpolator(ps, true),
-      cpts = curve_control_points(ci),
-      n = length(cpts),
+      cps = curve_control_points(ci),
+      n = length(cps),
       knots = curve_knots(ci)
-    b_nurbs_curve(b, 5, cpts, knots, fill(1.0, n), true, mat)
+    b_nurbs_curve(b, ps, 5, cps, knots, fill(1.0, n), true, mat)
   end
 
 b_circle(b::Backend, c, r, mat) =
@@ -87,7 +87,7 @@ b_circle(b::Backend, c, r, mat) =
 b_arc(b::Backend, c, r, α, Δα, mat) =
   b_spline(b,
     [c + vpol(r, a, c.cs)
-     for a in division(α, α + Δα, Δα*32/2/π, false)],
+     for a in division(α, α + Δα, max(ceil(Int, Δα*32/2/π), 2), true)],
     nothing, nothing, # THIS NEEDS TO BE FIXED
     mat)
 
