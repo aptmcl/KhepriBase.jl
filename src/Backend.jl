@@ -899,7 +899,7 @@ b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
 # Lights
 
 @bdef b_ieslight(file::String, loc::Loc, dir::Vec, alpha::Real, beta::Real, gamma::Real)
-@bdef b_pointlight(loc::Loc, color::RGB, range::Real, intensity::Real)
+@bdef b_pointlight(loc::Loc, color::RGB, intensity::Real, range::Real)
 @bdef b_spotlight(loc::Loc, dir::Vec, hotspot::Real, falloff::Real)
 
 # Trusses

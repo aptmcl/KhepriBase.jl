@@ -895,11 +895,11 @@ realize(b::Backend, s::TableAndChairs) =
   end
 
 # Lights
-
-@defproxy(pointlight, BIMShape, loc::Loc=z(3), color::RGB=rgb(1,1,1), range::Real=10, intensity::Real=4, level::Level=default_level())
+# A pointlight has a fixed, inverse-square attenuation. Intensity is in Candela, range is irrelevant for physically correct lighting
+@defproxy(pointlight, BIMShape, loc::Loc=z(3), color::RGB=rgb(1,1,1), intensity::Real=1500.0, range::Real=10, level::Level=default_level())
 
 realize(b::Backend, s::Pointlight) =
-  b_pointlight(b, add_z(s.loc, s.level.height), s.color, s.range, s.intensity)
+  b_pointlight(b, add_z(s.loc, s.level.height), s.color, s.intensity, s.range)
 
 @defproxy(spotlight, BIMShape, loc::Loc=z(3), dir::Vec=vz(-1), hotspot::Real=pi/4, falloff::Real=pi/3)
 
