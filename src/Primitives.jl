@@ -552,7 +552,7 @@ decode(ns::SupportsTuples, ::Val{:RGBA}, c::IO) =
 encode(ns::SupportsTuples, ::Val{:Color}, c::IO, v) =
   let v = convert(RGBA{ColorTypes.N0f8}, v)
     encode(ns, (Val(:byte),Val(:byte),Val(:byte),Val(:byte)), c,
-           (v.alpha, v.r, v.g, v.b))
+           (reinterpret(v.alpha), reinterpret(v.r), reinterpret(v.g), reinterpret(v.b)))
   end
 decode(ns::SupportsTuples, ::Val{:Color}, c::IO) =
   let a = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
