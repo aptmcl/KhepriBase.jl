@@ -705,8 +705,8 @@ In general, backends need to specialize this function to address additional case
 export b_get_material
 
 b_get_material(b::Backend, spec::Nothing) = void_ref(b)
-#Is this really needed?
-#b_get_material(b::Backend, spec::Any) = spec
+#Is this really needed? Yes, e.g., POVRay.
+b_get_material(b::Backend, spec::Any) = spec
 
 #=
 In other cases, the material can be algorithmically created.

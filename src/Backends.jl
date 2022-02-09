@@ -140,8 +140,6 @@ export RenderEnvironment, RealisticSkyEnvironment, ClayEnvironment, default_rend
 
 abstract type RenderEnvironment end
 struct RealisticSkyEnvironment <: RenderEnvironment
-  sun_altitude::Real
-  sun_azimuth::Real
   turbidity::Real
   sun::Bool
 end
@@ -167,7 +165,7 @@ abstract type LocalBackend{K,T} <: LazyBackend{K,T} end
   layers::Dict{AbstractLayer,Vector{Shape}}=Dict{AbstractLayer,Vector{Shape}}()
   date::DateTime=DateTime(2020, 9, 21, 10, 0, 0)
   place::GeographicLocation=GeographicLocation(39, 9, 0, 0)
-  render_env::RenderEnvironment=RealisticSkyEnvironment(90, 0, 5, true)
+  render_env::RenderEnvironment=RealisticSkyEnvironment(5, true)
   ground_level::Float64=0.0
   ground_material::Union{Nothing,Material}=nothing
   view::View=default_view()
@@ -203,7 +201,9 @@ export used_materials
 used_materials(b::IOBufferBackend) =
   let materials=Set{Material}()
 	for s in b.shapes
-  	  push!(materials, s.material)
+	  if hasproperty(s, :material)
+  	  	push!(materials, s.material)
+	  end
     end
 	if !isnothing(b.ground_material)
 	  push!(materials, b.ground_material)
@@ -248,6 +248,9 @@ b_set_time_place(b::IOBufferBackend, date, latitude, longitude, elevation, merid
 	b.date = date
     b.place = GeographicLocation(latitude, longitude, elevation, meridian)
   end
+
+b_set_sky(b::IOBufferBackend, turbidity, sun) =
+  b.render_env = RealisticSkyEnvironment(turbidity, sun)
 
 b_set_ground(b::IOBufferBackend, level, mat) =
   begin
