@@ -598,6 +598,9 @@ macro defshape(supertype, name_typename, fields...)
   end)
 end
 
+used_materials(s::Shape) = (s.material, )
+
+
 @defshape(Shape0D, point, position::Loc=u0())
 
 @defshape(Shape1D, line, vertices::Locs=[u0(), ux()])
@@ -764,7 +767,7 @@ right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0) =
   end
 
 @defshape(Shape3D, box, c::Loc=u0(), dx::Real=1, dy::Real=dx, dz::Real=dy)
-box(c0::Loc, c1::Loc) =
+box(c0::Loc, c1::Loc, others...) =
   let v = in_cs(c1, c0)-c0
     if v.x < 0
       c0 = add_x(c0, v.x)
@@ -775,7 +778,7 @@ box(c0::Loc, c1::Loc) =
     if v.z < 0
       c0 = add_z(c0, v.z)
     end
-    box(c0, abs(v.x), abs(v.y), abs(v.z))
+    box(c0, abs(v.x), abs(v.y), abs(v.z), others...)
   end
 
 @defshape(Shape3D, cone, cb::Loc=u0(), r::Real=1, h::Real=1)

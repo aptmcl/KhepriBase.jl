@@ -201,8 +201,8 @@ export used_materials
 used_materials(b::IOBufferBackend) =
   let materials=Set{Material}()
 	for s in b.shapes
-	  if hasproperty(s, :material)
-  	  	push!(materials, s.material)
+	  for m in used_materials(s)
+  	  	push!(materials, m)
 	  end
     end
 	if !isnothing(b.ground_material)
@@ -243,14 +243,12 @@ KhepriBase.b_delete_shapes(b::POVRay, shapes::Shapes) =
 KhepriBase.b_all_shapes(b::IOBufferBackend) = b.shapes
 KhepriBase.b_all_shapes_in_layer(b::IOBufferBackend, layer) = b.layers[layer]
 
-b_set_time_place(b::IOBufferBackend, date, latitude, longitude, elevation, meridian) =
+KhepriBase.b_realistic_sky(b::IOBufferBackend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
   begin
 	b.date = date
     b.place = GeographicLocation(latitude, longitude, elevation, meridian)
+	b.render_env = RealisticSkyEnvironment(turbidity, sun)
   end
-
-b_set_sky(b::IOBufferBackend, turbidity, sun) =
-  b.render_env = RealisticSkyEnvironment(turbidity, sun)
 
 b_set_ground(b::IOBufferBackend, level, mat) =
   begin

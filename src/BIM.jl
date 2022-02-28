@@ -216,6 +216,12 @@ family_ref(b::Backend, f::Family) =
     realize(b, f)
   end
 
+#=
+Some families might specify materials (particularly, those that are not backed up by a BIM tool)
+We can retrieve those materials by querying the BIM shape.
+=#
+
+used_materials(s::BIMShape) = used_materials(s.family)
 
 # CAD tools that support Layers might benefit from this typical implementation:
 struct LayerFamily <: Family
@@ -356,6 +362,9 @@ slab_family_elevation(b::Backend, family::SlabFamily) =
 slab_family_thickness(b::Backend, family::SlabFamily) =
   family.coating_thickness + family.thickness
 
+used_materials(f::SlabFamily) = (f.bottom_material, f.top_material, f.side_material)
+
+
 @defproxy(slab, BIMShape, region::Region=rectangular_path(),
           level::Level=default_level(), family::SlabFamily=default_slab_family())
 
@@ -399,6 +408,8 @@ slab_family_elevation(b::Backend, family::RoofFamily) = 0
 slab_family_thickness(b::Backend, family::RoofFamily) =
   family.coating_thickness + family.thickness
 
+used_materials(f::RoofFamily) = (f.bottom_material, f.top_material, f.side_material)
+
 @defproxy(roof, BIMShape, region::Region=rectangular_path(),
           level::Level=default_level(), family::RoofFamily=default_roof_family())
 realize(b::Backend, s::Roof) =
@@ -411,6 +422,9 @@ realize(b::Backend, s::Roof) =
   right_material::Material=material_glass,
   left_material::Material=material_glass,
   side_material::Material=material_glass)
+
+used_materials(f::PanelFamily) = (f.right_material, f.left_material, f.side_material)
+
 
 @defproxy(panel, BIMShape, region::Region=rectangular_path(), family::PanelFamily=default_panel_family())
 
@@ -426,12 +440,14 @@ A wall contains doors and windows
 # Wall
 
 @deffamily(wall_family, Family,
-    thickness::Real=0.2,
-    left_coating_thickness::Real=0.0,
-    right_coating_thickness::Real=0.0,
-    right_material::Material=material_plaster,
-    left_material::Material=material_plaster,
-    side_material::Material=material_plaster)
+  thickness::Real=0.2,
+  left_coating_thickness::Real=0.0,
+  right_coating_thickness::Real=0.0,
+  right_material::Material=material_plaster,
+  left_material::Material=material_plaster,
+  side_material::Material=material_plaster)
+
+used_materials(f::WallFamily) = (f.right_material, f.left_material, f.side_material)
 
 @defproxy(wall, BIMShape, path::Path=rectangular_path(),
           bottom_level::Level=default_level(),
@@ -635,6 +651,9 @@ l_thickness(w::Wall) = l_thickness(w.offset, w.family.thickness + w.family.left_
   left_material::Material=material_wood,
   side_material::Material=material_wood)
 
+used_materials(f::DoorFamily) = (f.right_material, f.left_material, f.side_material)
+
+
 @defproxy(door, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, family::DoorFamily=default_door_family())
 
 # Window
@@ -646,6 +665,9 @@ l_thickness(w::Wall) = l_thickness(w.offset, w.family.thickness + w.family.left_
   right_material::Material=material_glass,
   left_material::Material=material_glass,
   side_material::Material=material_glass)
+
+used_materials(f::WindowFamily) = (f.right_material, f.left_material, f.side_material)
+
 
 @defproxy(window, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, family::WindowFamily=default_window_family())
 
@@ -691,6 +713,8 @@ A curtain wall is a special kind of wall that is made of a frame with windows.
   left_material::Material=material_metal,
   side_material::Material=material_metal)
 
+used_materials(f::CurtainWallFrameFamily) = (f.right_material, f.left_material, f.side_material)
+
 @deffamily(curtain_wall_family, Family,
   max_panel_dx::Real=1,
   max_panel_dy::Real=2,
@@ -701,6 +725,11 @@ A curtain wall is a special kind of wall that is made of a frame with windows.
     curtain_wall_frame_family(width=0.08,depth=0.09,depth_offset=0.2),
   transom_frame::CurtainWallFrameFamily=
     curtain_wall_frame_family(width=0.06,depth=0.1,depth_offset=0.11))
+
+used_materials(f::CurtainWallFamily) =
+  (used_materials(f.boundary_frame)...,
+   used_materials(f.mullion_frame)...,
+   used_materials(f.transom_frame)...)
 
 @defproxy(curtain_wall, BIMShape,
           path::Path=rectangular_path(),
@@ -791,6 +820,9 @@ meta_program(w::Wall) =
   profile::ClosedPath=top_aligned_rectangular_profile(1, 2),
   material::Material=material_metal)
 
+used_materials(f::BeamFamily) = (f.material, )
+
+
 @defproxy(beam, BIMShape, cb::Loc=u0(), h::Real=1, angle::Real=0, family::BeamFamily=default_beam_family())
 beam(cb::Loc, ct::Loc, Angle::Real=0, Family::BeamFamily=default_beam_family(); angle::Real=Angle, family::BeamFamily=Family) =
     let (c, h) = position_and_height(cb, ct)
@@ -806,6 +838,8 @@ realize(b::Backend, s::Beam) =
 @deffamily(column_family, Family,
   profile::ClosedPath=rectangular_profile(0.2, 0.2),
   material::Material=material_concrete)
+
+used_materials(f::ColumnFamily) = (f.material, )
 
 @defproxy(free_column, BIMShape, cb::Loc=u0(), h::Real=1, angle::Real=0, family::ColumnFamily=default_column_family())
 free_column(cb::Loc, ct::Loc, Angle::Real=0, Family::ColumnFamily=default_column_family(); angle::Real=Angle, family::ColumnFamily=Family) =
@@ -826,29 +860,38 @@ realize(b::Backend, s::Column) =
 # Tables and chairs
 
 @deffamily(table_family, Family,
-    length::Real=1.6,
-    width::Real=0.9,
-    height::Real=0.75,
-    top_thickness::Real=0.05,
-    leg_thickness::Real=0.05,
-    material::Material=material_wood)
+  length::Real=1.6,
+  width::Real=0.9,
+  height::Real=0.75,
+  top_thickness::Real=0.05,
+  leg_thickness::Real=0.05,
+  material::Material=material_wood)
+
+used_materials(f::TableFamily) = (f.material, )
+
 
 @deffamily(chair_family, Family,
-    length::Real=0.4,
-    width::Real=0.4,
-    height::Real=1.0,
-    seat_height::Real=0.5,
-    thickness::Real=0.05,
-    material::Material=material_wood)
+  length::Real=0.4,
+  width::Real=0.4,
+  height::Real=1.0,
+  seat_height::Real=0.5,
+  thickness::Real=0.05,
+  material::Material=material_wood)
+
+used_materials(f::ChairFamily) = (f.material, )
 
 @deffamily(table_chair_family, Family,
-    table_family::TableFamily=default_table_family(),
-    chair_family::ChairFamily=default_chair_family(),
-    chairs_top::Int=1,
-    chairs_bottom::Int=1,
-    chairs_right::Int=2,
-    chairs_left::Int=2,
-    spacing::Real=0.7)
+  table_family::TableFamily=default_table_family(),
+  chair_family::ChairFamily=default_chair_family(),
+  chairs_top::Int=1,
+  chairs_bottom::Int=1,
+  chairs_right::Int=2,
+  chairs_left::Int=2,
+  spacing::Real=0.7)
+
+used_materials(f::TableChairFamily) =
+  (used_materials(f.table_family)..., used_materials(f.chair_family))
+
 
 @defproxy(table, BIMShape, loc::Loc=u0(), level::Level=default_level(), family::TableFamily=default_table_family())
 table(loc::Loc, angle::Real, level=default_level(), family::TableFamily=default_table_family()) =
