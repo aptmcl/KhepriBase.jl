@@ -824,9 +824,8 @@ b_slab(b::Backend, profile, level, family) =
   let tmat = material_ref(b, family.top_material),
       bmat = material_ref(b, family.bottom_material),
       smat = material_ref(b, family.side_material),
-      bprof = translate(profile, vz(level_height(b, level) + slab_family_elevation(b, family))),
       v = vz(slab_family_thickness(b, family))
-    b_extrusion(b, bprof, v, u0(), bmat, tmat, smat)
+    b_extrusion(b, profile, v, z(level_height(b, level) + slab_family_elevation(b, family)), bmat, tmat, smat)
    end
 
 b_roof(b::Backend, region, level, family) =
@@ -846,9 +845,8 @@ b_panel(b::Backend, profile, family) =
       rmat = material_ref(b, family.right_material),
       smat = material_ref(b, family.side_material),
       th = family.thickness,
-      v = planar_path_normal(profile),
-      lprof = translate(profile, v*(th/-2))
-    b_extrusion(b, lprof, v*th, u0(), lmat, rmat, smat)
+      v = planar_path_normal(profile)
+    b_extrusion(b, profile, v*th, u0(v.cs)+v*(th/-2), lmat, rmat, smat)
   end
 
 b_beam(b::Backend, c, h, angle, family) =
@@ -856,7 +854,7 @@ b_beam(b::Backend, c, h, angle, family) =
 	    mat = material_ref(b, family.material)
   	with_material_as_layer(b, family.material) do
       b_extrusion(b, family_profile(b, family), vz(h, c.cs), c,	mat)
-	  end
+	end
   end
 
 b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
@@ -1138,24 +1136,12 @@ backend_fill(b::Backend, path::ClosedPathSequence) =
 
 @bdef b_zoom_extents()
 
-
-@bdef b_set_sun_orientation(altitude, azimuth)
-
-export b_set_time_place
-b_set_time_place(b::Backend, date, latitude, longitude, elevation, meridian) =
-  b_set_sun_orientation(b, sun_pos(date, meridian, latitude, longitude)...)
-
-@bdef b_set_sky(turbidity, sun)
-
 export b_set_ground
 b_set_ground(b::Backend, level, mat) =
   b_surface_regular_polygon(b, 16, z(level), 10000, 0, true, material_ref(b, mat))
 
 b_realistic_sky(b::Backend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
-  begin
-	b_set_time_place(b, date, latitude, longitude, elevation, meridian)
-	b_set_sky(b, turbidity, sun)
-  end
+  b_realistic_sky(b::Backend, sun_pos(date, meridian, latitude, longitude)..., turbidity, sun)
 
 @bdef b_render_view(path)
 
