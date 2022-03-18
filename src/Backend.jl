@@ -17,7 +17,6 @@ AutoCAD) and by the type of reference they use
 =#
 
 abstract type Backend{K,T} end
-#backend_name(b::Backend) = string(Base.typename(typeof(b)).name)
 backend_name(b::Backend) = string(typeof(b))
 show(io::IO, b::Backend) = print(io, backend_name(b))
 
