@@ -378,7 +378,7 @@ add_slab_opening(s::Slab=required(), contour::ClosedPath=circular_path()) =
     let b = backend(s)
         push!(s.openings, contour)
         if realized(s)
-            set_ref!(s, realize_slab_openings(b, s, ref(s), [contour]))
+            set_ref!(s, realize_slab_openings(b, s, ref(b, s), [contour]))
         end
         s
     end
