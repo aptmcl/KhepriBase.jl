@@ -565,6 +565,10 @@ is_curve(s::Shape1D) = true
 is_surface(s::Shape2D) = true
 is_solid(s::Shape3D) = true
 
+# To handle the direct use of shapes as paths:
+b_stroke(b::Backend, path::Shape, mat) =
+  and_mark_deleted(b, ref(b, path).value, path)
+
 # HACK: Fix element type
 Shapes0D = Vector{<:Any}
 Shapes1D = Vector{<:Any}
