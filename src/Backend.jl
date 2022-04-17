@@ -56,6 +56,8 @@ export b_point, b_line, b_closed_line, b_polygon, b_regular_polygon,
 b_polygon(b::Backend, ps, mat) =
   b_line(b, [ps..., ps[1]], mat)
 
+b_closed_line = b_polygon
+
 b_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
   b_polygon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), mat)
 
@@ -539,14 +541,14 @@ export b_dimension, b_ext_line, b_dim_line, b_text, b_text_size
 
 b_dimension(b::Backend, p, q, str, size, mat) =
   let qp = in_world(q - p),
-	    phi = pol_phi(qp),
-	    outside = pi/2 <= phi <= 3pi/2,
-	    v = vpol(outside ? size : 2*size, phi-pi/2),
-	    uv = unitized(v),
-	    (si, se) = (0.1*size, 0.2*size),
-	    (vi, ve) = (uv*si, uv*se),
-	    (tp, tq, tv) = outside ? (q, p, vpol(1, phi + pi)) : (p, q, vpol(1, phi))
-	  [b_ext_line(b, p + vi, p + v + ve, mat),
+	  phi = pol_phi(qp),
+	  outside = pi/2 <= phi <= 3pi/2,
+	  v = vpol(outside ? size : 2*size, phi-pi/2),
+	  uv = unitized(v),
+	  (si, se) = (0.1*size, 0.2*size),
+	  (vi, ve) = (uv*si, uv*se),
+	  (tp, tq, tv) = outside ? (q, p, vpol(1, phi + pi)) : (p, q, vpol(1, phi))
+	[b_ext_line(b, p + vi, p + v + ve, mat),
      b_ext_line(b, q + vi, q + v + ve, mat),
      b_dim_line(b, tp + v, tq + v, tv, str, size, outside, mat)]
   end
