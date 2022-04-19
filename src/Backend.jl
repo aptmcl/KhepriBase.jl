@@ -66,6 +66,9 @@ b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat) =
   	b_polygon(b, ps, mat) :
   	b_line(b, ps, mat)
 
+b_spline(b::Backend, ps, mat) =
+  b_spline(b, ps, false, false, mat)
+
 b_spline(b::Backend, ps, v1, v2, mat) =
   let ci = curve_interpolator(ps, false),
       cps = curve_control_points(ci),
@@ -1126,10 +1129,7 @@ backend_fill(b::Backend, path::ClosedPathSequence) =
   backend_fill_curves(b, map(path->backend_stroke(b, path), path.paths))
 
 @bdef ground(level::Loc, color::RGB)
-#@bdef loft_curve_point(profile::Shape, point::Shape)
-#@bdef loft_points(profiles::Shapes, rails::Shapes, ruled::Bool, closed::Bool)
-#@bdef loft_surface_point(profile::Shape, point::Shape)
-#@bdef loft_surfaces(profiles::Shapes, rails::Shapes, ruled::Bool, closed::Bool)
+
 #@bdef map_division(f::Function, s::Shape1D, n::Int)
 #@bdef map_division(f::Function, s::Shape2D, nu::Int, nv::Int)
 #@bdef map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int)
@@ -1146,9 +1146,10 @@ b_realistic_sky(b::Backend, date, latitude, longitude, elevation, meridian, turb
 
 @bdef b_render_view(path)
 
-#@bdef revolve_curve(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
-#@bdef revolve_point(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
-#@bdef revolve_surface(profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real)
+@bdef b_revolve_curve(profile, p, n, start_angle, amplitude, mat)
+@bdef b_revolve_point(profile, p, n, start_angle, amplitude, mat)
+@bdef b_revolve_surface(profile, p, n, start_angle, amplitude, mat)
+
 b_right_cuboid(b::Backend, cb, width, height, h, mat) =
   b_box(b, add_xy(cb, -width/2, -height/2), width, height, h, mat)
 
