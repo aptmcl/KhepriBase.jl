@@ -1,7 +1,7 @@
 name = "KhepriBase"
 uuid = "4cc0fe96-1163-46f3-ba32-de1e65d9548f"
 authors = ["António Menezes Leitão <antonio.menezes.leitao@gmail.com>"]
-version = "0.4.3"
+version = "0.4.4"
 
 [deps]
 ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
