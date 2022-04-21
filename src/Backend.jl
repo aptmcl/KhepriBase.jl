@@ -1130,9 +1130,6 @@ backend_fill(b::Backend, path::ClosedPathSequence) =
 
 @bdef ground(level::Loc, color::RGB)
 
-#@bdef map_division(f::Function, s::Shape1D, n::Int)
-#@bdef map_division(f::Function, s::Shape2D, nu::Int, nv::Int)
-#@bdef map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int)
 @bdef name()
 
 @bdef b_zoom_extents()

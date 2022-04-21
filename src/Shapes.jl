@@ -230,8 +230,8 @@ show(io::IO, s::Shape) =
 Shapes = Vector{<:Shape}
 
 map_ref(f::Function, b::Backend, s::Shape) = map_ref(b, f, ref(b, s))
-collect_ref(s::Shape) = error("collect_ref(s.ref.backend, ref(s))")
-collect_ref(ss::Shapes) = error("mapreduce(collect_ref, vcat, ss, init=[])")
+collect_ref(b::Backend, s::Shape) = collect_ref(b, ref(b, s))
+collect_ref(b::Backend, ss::Shapes) = mapreduce(s->collect_ref(b, ref(b, s)), vcat, ss, init=[])
 
 #=
 Whenever a shape is created, it might be eagerly realized in its backend,
@@ -614,47 +614,6 @@ closed_line(v0::Loc, v1::Loc, vs...) = closed_line([v0, v1, vs...])
 @defshape(Shape1D, spline, points::Locs=[u0(), ux(), uy()], v0::Union{Bool,Vec}=false, v1::Union{Bool,Vec}=false)
 spline(v0::Loc, v1::Loc, vs...) = spline([v0, v1, vs...])
 
-#=
-evaluate(s::Spline, t::Real) =
-  let interpolator = s.interpolator
-    if ismissing(interpolator())
-      interpolator(curve_interpolator(s.points))
-    end
-    let p = interpolator()(t),
-        vt = Interpolations.gradient(interpolator(), t)[1],
-        vn = Interpolations.hessian(interpolator(), t)[1]
-      loc_from_o_vx_vy(
-        xyz(p[1], p[2], p[3], world_cs),
-        vxyz(vt[1], vt[2], vt[3], world_cs),
-        vxyz(vn[1], vn[2], vn[3], world_cs))
-    end
-  end
-
-evaluate(s::Spline, t::Real) =
-  let interpolator = s.interpolator
-    if ismissing(interpolator())
-      interpolator(curve_interpolator(s.points))
-    end
-    let p = interpolator()(t),
-        vt = Interpolations.gradient(interpolator(), t)[1],
-        vn = Interpolations.hessian(interpolator(), t)[1],
-        vy = cross(vt, vn)
-      loc_from_o_vx_vy(
-        xyz(p[1], p[2], p[3], world_cs),
-        vxyz(vn[1], vn[2], vn[3], world_cs),
-        vxyz(vy[1], vy[2], vy[3], world_cs))
-    end
-  end
-=#
-map_division(f::Function, s::Spline, n::Int, backend::Backend=backend(s)) =
-  backend_map_division(backend, f, s, n)
-#=HACK, THIS IS NOT READY, YET. COMPARE WITH THE BACKEND VERSION!!!!!!
-  let (t1, t2) = curve_domain(s)
-    map_division(t1, t2, n) do t
-        f(frame_at(s, t))
-    end
-  end
-=#
 #(def-base-shape 1D-shape (spline* [pts : (Listof Loc) (list (u0) (ux) (uy))] [v0 : (U Boolean Vec) #f] [v1 : (U Boolean Vec) #f]))
 
 @defshape(Shape1D, closed_spline, points::Locs=[u0(), ux(), uy()])
@@ -692,7 +651,7 @@ surface_rectangle(p::Loc, q::Loc) =
     surface_rectangle(p, v.x, v.y)
   end
 
-@defproxy(surface, Shape2D, frontier::Shapes1D=[circle()])
+@defshape(Shape2D, surface, frontier::Shapes1D=[circle()])
 surface(c0::Shape, cs...) = surface([c0, cs...])
 #To be removed
 surface_from = surface
@@ -706,17 +665,26 @@ surface_boundary(s::Shape2D, backend::Backend=top_backend()) =
 
 curve_domain(s::Shape1D, backend::Backend=top_backend()) =
   backend_curve_domain(backend, s)
-map_division(f::Function, s::Shape1D, n::Int, backend::Backend=top_backend()) =
-  backend_map_division(backend, f, s, n)
+map_division(f::Function, s::Shape1D, n::Int) =
+  b_map_division(backend(s), f, s, n)
 
 surface_domain(s::Shape2D, backend::Backend=top_backend()) =
   backend_surface_domain(backend, s)
-map_division(f::Function, s::Shape2D, nu::Int, nv::Int, backend::Backend=top_backend()) =
-  backend_map_division(backend, f, s, nu, nv)
+map_division(f::Function, s::Shape2D, nu::Int, nv::Int) =
+  b_map_division(backend(s), f, s, nu, nv)
 
+b_map_division(b::Backend, f::Function, s::Shape1D, n::Int) =
+  map_division(f, shape_path(s), n)
+
+#=
+b_map_division(b::Backend, f::Function, s::Shape2D, nu::Int, nv::Int) =
+  map_division(f, )
+  #@bdef map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int)
+=#
 
 path_vertices(s::Shape1D) = path_vertices(shape_path(s))
 shape_path(s::Circle) = circular_path(s.center, s.radius)
+shape_path(s::SurfaceCircle) = circular_path(s.center, s.radius)
 shape_path(s::Spline) = open_spline_path(s.points, s.v0, s.v1)
 shape_path(s::ClosedSpline) = closed_spline_path(s.points)
 
@@ -827,9 +795,9 @@ extrusion(profile, h::Real) =
 
 @defshape(Shape3D, sweep, path::Union{Shape1D, Path}=circle(), profile::Union{Shape,Path,Region}=point(), rotation::Real=0, scale::Real=1)
 
-@defproxy(revolve_point, Shape1D, profile::Shape0D=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
-@defproxy(revolve_curve, Shape2D, profile::Shape1D=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
-@defproxy(revolve_surface, Shape3D, profile::Shape2D=circle(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
+@defshape(Shape1D, revolve_point, profile::Union{Loc,Point}=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
+@defshape(Shape2D, revolve_curve, profile::Union{Shape,Path}=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
+@defshape(Shape3D, revolve_surface, profile::Union{Shape,Path,Region}=circle(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 revolve(profile::Shape=point(x(1)), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi) =
   if is_point(profile)
     revolve_point(profile, p, n, start_angle, amplitude)
@@ -845,22 +813,11 @@ revolve(profile::Shape=point(x(1)), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle:
     error("Profile is neither a point nor a curve nor a surface")
   end
 
-backend_revolve_point(b::Backend, profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real) = error("Finish this")
-backend_revolve_curve(b::Backend, profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real) = error("Finish this")
-backend_revolve_surface(b::Backend, profile::Shape, p::Loc, n::Vec, start_angle::Real, amplitude::Real) = error("Finish this")
-
-realize(b::Backend, s::RevolvePoint) =
-  backend_revolve_point(b, s.profile, s.p, s.n, s.start_angle, s.amplitude)
-realize(b::Backend, s::RevolveCurve) =
-  backend_revolve_curve(b, s.profile, s.p, s.n, s.start_angle, s.amplitude)
-realize(b::Backend, s::RevolveSurface) =
-  backend_revolve_surface(b, s.profile, s.p, s.n, s.start_angle, s.amplitude)
-
-@defproxy(loft_points, Shape1D, profiles::Shapes0D=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed::Bool=false)
-@defproxy(loft_curves, Shape2D, profiles::Shapes1D=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed::Bool=false)
-@defproxy(loft_surfaces, Shape3D, profiles::Shapes2D=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed::Bool=false)
-@defproxy(loft_curve_point, Shape2D, profile::Shape1D=circle(), point::Shape0D=point(z(1)))
-@defproxy(loft_surface_point, Shape3D, profile::Shape2D=surface_circle(), point::Shapes=point(z(1)))
+@defshape(Shape1D, loft_points, profiles::Shapes0D=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed::Bool=false)
+@defshape(Shape2D, loft_curves, profiles::Shapes1D=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed::Bool=false)
+@defshape(Shape3D, loft_surfaces, profiles::Shapes2D=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed::Bool=false)
+@defshape(Shape2D, loft_curve_point, profile::Shape1D=circle(), point::Shape0D=point(z(1)))
+@defshape(Shape3D, loft_surface_point, profile::Shape2D=surface_circle(), point::Shape0D=point(z(1)))
 
 loft(profiles::Shapes=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed::Bool=false) =
   if all(is_point, profiles)
@@ -891,17 +848,33 @@ loft(profiles::Shapes=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed:
 
 loft_ruled(profiles::Shapes=Shape[]) = loft(profiles, Shape[], true, false)
 export loft, loft_ruled
+export b_loft_points, b_loft_curve_point, b_loft_curves, b_loft_surfaces
 
-realize(b::Backend, s::LoftPoints) = backend_loft_points(backend(s), s.profiles, s.rails, s.ruled, s.closed)
-realize(b::Backend, s::LoftCurves) = backend_loft_curves(backend(s), s.profiles, s.rails, s.ruled, s.closed)
-realize(b::Backend, s::LoftSurfaces) = backend_loft_surfaces(backend(s), s.profiles, s.rails, s.ruled, s.closed)
-realize(b::Backend, s::LoftCurvePoint) = backend_loft_curve_point(backend(s), s.profile, s.point)
-realize(b::Backend, s::LoftSurfacePoint) = backend_loft_surface_point(backend(s), s.profile, s.point)
-
-backend_loft_points(b::Backend, profiles::Shapes, rails::Shapes, ruled::Bool, closed::Bool) =
-  let f = (ruled ? (closed ? polygon : line) : (closed ? closed_spline : spline))
-    and_delete_shapes(ref(b, f(map(point_position, profiles), backend=b)),
+# Lofts
+b_loft_points(b::Backend, profiles, rails, ruled, closed, mat) =
+  let f = (ruled ? (closed ? b_polygon : b_line) : (closed ? b_closed_spline : b_spline))
+    and_delete_shapes(f(b, map(point_position, profiles), mat),
                       vcat(profiles, rails))
+	end
+
+b_loft_curve_point(b::Backend, profile, point) =
+  let p = point_position(point),
+	    path = shape_path(profile),
+	    ps = path_vertices(path)
+	and_delete_shapes(b_ngon(b, ps, p, is_smooth_path(path), mat),
+					          [profile, point])
+  end
+
+@bdef b_loft_surface_point(profile, point)
+
+b_loft_curves(b::Backend, profiles, rails, ruled, closed, mat) =
+  b_loft(b, shape_path.(profiles), closed, ! ruled, mat)
+
+b_loft_surfaces(b::Backend, profiles, rails, ruled, closed, mat) =
+  let paths = shape_path.(profiles)
+    [b_surface(b, paths[begin], mat),
+     b_loft(b, paths, closed, ! ruled, mat),
+     b_surface(b, paths[end], mat)]
   end
 
 @defproxy(move, Shape3D, shape::Shape=point(), v::Vec=vx())
@@ -1100,6 +1073,9 @@ and_delete_shapes(r::Any, shapes::Shapes) =
     delete_shapes(shapes)
     r
   end
+# If they are not shapes (presumably, they are paths) don't do anything
+and_delete_shapes(r::Any, paths) =
+  r
 
 and_mark_deleted(b::Backend, r::Any, shape) =
   begin
