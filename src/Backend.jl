@@ -172,13 +172,14 @@ b_surface_arc(b::Backend, c, r, α, Δα, mat) =
 @bdef(b_surface_closed_spline(ps, mat))
 
 b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, mat) =
-  b_surface_grid(b, ptss, closed_u, closed_v, smooth_u, smooth_v, smooth_u && smooth_v && grid_interpolator(ptss), mat)
+  b_surface_grid(b, ptss, closed_u, closed_v, smooth_u, smooth_v, smooth_u || smooth_v ? grid_interpolator(ptss) : nothing, mat)
 
 b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, interpolator, mat) =
   let (nu, nv) = size(ptss)
-    if smooth_u && smooth_v
+    if smooth_u || smooth_v
       ptss = [location_at(interpolator, u, v)
-	            for u in division(0, 1, 4*nu-7), v in division(0, 1, 4*nv-7)] # 2->1, 3->5, 4->9, 5->13
+	            for v in division(0, 1, smooth_v ? 4*nv-7 : nv-1),
+                  u in division(0, 1, smooth_u ? 4*nu-7 : nu-1)] # 2->1, 3->5, 4->9, 5->13
 	    (nu, nv) = size(ptss)
 	  end
 	  closed_u ?
@@ -388,19 +389,25 @@ b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
 	  bmat, tmat, smat)
 	end
 
-# Extruding a profile
-b_extrusion(b::Backend, profile, v, cb, mat) =
-  b_extrusion(b, profile, v, cb, mat, mat, mat)
+# Extrusions, lofts, sweeps, etc
+export b_extrusion, b_sweep, b_loft
 
-b_extrusion(b::Backend, profile, v, cb, bmat, tmat, smat) =
-  let path = profile
-  	b_generic_prism(
-  	  b,
-  	  path_vertices_on(path, cb),
-  	  is_smooth_path(path),
-      v,
-  	  bmat, tmat, smat)
-  end
+# Extruding a profile
+b_extrusion(b::Backend, path, v, cb, mat) =
+  is_open_path(path) ?
+  	let bs = path_vertices_on(path, cb),
+	  	ts = translate(bs, v)
+  	  b_quad_strip(b, bs, ts, is_smooth_path(path), mat)
+    end :
+    b_extrusion(b, path, v, cb, mat, mat, mat)
+
+b_extrusion(b::Backend, path, v, cb, bmat, tmat, smat) =
+  b_generic_prism(
+    b,
+    path_vertices_on(path, cb),
+    is_smooth_path(path),
+    v,
+    bmat, tmat, smat)
 
 b_extrusion(b::Backend, profile::CircularPath, v, cb, bmat, tmat, smat) =
   v.cs === cb.cs && iszero(v.x) && iszero(v.y) ?
@@ -426,8 +433,6 @@ b_extrusion(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
         bmat, tmat, smat)
   end
 
-# Lofts, sweeps, etc
-export b_sweep, b_loft
 b_loft(b::Backend, profiles, closed, smooth, mat) =
   let ptss = path_vertices.(profiles),
 	  n = mapreduce(length, max, ptss),
@@ -440,22 +445,22 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
 #      frames = map_division(identity, path, 100),
 #	  points = [xyz(cx(p), cy(p), cz(p), frame.cs) for p in vertices, frame in frames]
   let frames = rotation_minimizing_frames(path_frames(path)),
-	  profiles = map_division(s->scale(profile, 1) #=2.1+sin(s)), 0, 32pi,=#, 0, 1, 100),# #map_division(identity, path, 100), #
+	  profiles = map_division(s->scale(profile, s) #=2.1+sin(s)), 0, 32pi,=#, 1, scaling, length(frames)),# #map_division(identity, path, 100), #
 	  verticess = map(path_vertices, profiles),
 	  verticess = is_smooth_path(profile) ?
 	  	let n = mapreduce(length, max, verticess)-1
-		  map(path->map_division(identity, path, n), profiles)
+		    map(path->map_division(identity, path, n), profiles)
 	    end :
 	    verticess
 	  points = hcat(map(path_vertices_on, verticess, frames)...)
     b_surface_grid(
       b,
       points,
-	  is_closed_path(profile),
-	  is_closed_path(path),
-	  is_smooth_path(profile),
-	  is_smooth_path(path),
-	  mat)
+  	  is_closed_path(profile),
+      is_closed_path(path),
+  	  is_smooth_path(profile),
+      is_smooth_path(path),
+	    mat)
   end
 
 # Stroke and fill operations over paths
@@ -975,22 +980,18 @@ switch_to_backend(from::Backend, to::Backend) =
   current_backend(to)
 
 # Variables with backend-specific values can be useful.
-# Basically, they are dictionaries
+# Basically, they are dictionaries.
 # but they also support a default value for the case
 # where there is no backend-specific value available
 export BackendParameter
-mutable struct BackendParameter
-	default::Any
+struct BackendParameter
 	value::IdDict{Backend, Any}
-	BackendParameter(v::Any, ps::Pair{<:Backend}...) = new(v, IdDict{Backend, Any}(ps...))
-	BackendParameter(p::BackendParameter) = new(p.default, copy(p.value))
-	BackendParameter() = BackendParameter(nothing)
-  	BackendParameter(ps::Pair{<:Backend}...) = BackendParameter(nothing, ps...)
+	BackendParameter(ps::Pair{<:Backend}...) = new(IdDict{Backend, Any}(ps...))
+	BackendParameter(p::BackendParameter) = new(copy(p.value))
 end
 
-(p::BackendParameter)(b::Backend=top_backend()) = get(p.value, b, p.default)
+(p::BackendParameter)(b::Backend=top_backend()) = get(p.value, b, nothing)
 (p::BackendParameter)(b::Backend, newvalue) = p.value[b] = newvalue
-(p::BackendParameter)(newvalue) = p.default = newvalue
 
 Base.copy(p::BackendParameter) = BackendParameter(p)
 
