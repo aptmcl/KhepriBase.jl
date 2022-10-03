@@ -111,10 +111,12 @@ mutable struct View
   target::Loc
   lens::Real
   aperture::Real
+  is_top_view::Bool
 end
-default_view() = View(xyz(10,10,10), xyz(0,0,0), 35, 22)
+default_view() = View(xyz(10,10,10), xyz(0,0,0), 35, 22, false)
+top_view() = View(xyz(10,10,10), xyz(0,0,0), 0, 0, true)
 
-export View, default_view, b_get_view, b_set_view, b_set_view_top
+export View, default_view, top_view, b_get_view, b_set_view, b_set_view_top
 
 b_set_view(b::Backend, camera, target, lens, aperture) =
   begin
@@ -122,12 +124,14 @@ b_set_view(b::Backend, camera, target, lens, aperture) =
     b.view.target = target
     b.view.lens = lens
 	b.view.aperture = aperture
+	b.view.is_top_view = norm(cross(target - camera, vz(1, world_cs))) < 1e-9  # aligned with Z?
   end
 b_set_view_top(b::Backend) =
   begin
     b.view.camera = z(1000)
     b.view.target = z(0)
     b.view.lens = 1000
+	b.view.is_top_view = true
   end
 # For legacy reasons, we only return camera, target, and lens.
 b_get_view(b::Backend) =
