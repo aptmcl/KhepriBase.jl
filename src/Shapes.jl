@@ -42,6 +42,7 @@ export Shape,
        delete_all_shapes_in_layer,
        get_material,
        create_material,
+       merge_materials,
        get_or_create_material,
        create_block,
        instantiate_block,
@@ -496,7 +497,7 @@ A shape can be directly associated to a material or the shape can be associated
 to a layer and the layer is then associated to the material
 =#
 @defproxy(material, Proxy, layer::Layer=current_layer(), data::BackendParameter=BackendParameter())
-material(name::String, color::RGB=rgb(1,1,1), bvs...) = material(layer(name, true, color), BackendParameter(bvs...))
+material(name::String, bvs...) = material(layer(name, true), BackendParameter(bvs...))
 # Some backends prefer to use layers instead of materials
 export material_as_layer, with_material_as_layer
 const material_as_layer = Parameter(false)
@@ -519,6 +520,20 @@ with_material_as_layer(f::Function, b::Backend, m::Material) =
 
 realize(b::Backend, m::Material) =
   b_get_material(b, m.data(b))
+
+export merge_materials, merge_backend_material
+merge_materials(materials...) =
+  let name = join([material.layer.name for material in materials], "_"),
+      newdata = IdDict{Backend,Any}()
+    for material in reverse(materials)
+      # Violating an abstraction barrier!
+      for (b, v) in material.data.value
+        newdata[b] = haskey(newdata, b) ? merge_backend_materials(b, v, newdata[b]) : v
+      end
+    end
+    material(name, newdata...)
+  end
+merge_backend_materials(b::Backend, v1, v2) = v1
 
 # For compatibility
 export set_material
@@ -634,7 +649,7 @@ rectangle(p::Loc, q::Loc) =
 #
 #@defshape dimension(p0::Loc, p1::Loc, p::Loc, scale::Real, style::Symbol)
 #@defshape dimension(p0::Loc, p1::Loc, sep::Real, scale::Real, style::Symbol)
-@defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::AbstractString=string(distance(p0, p1)), size::Real=1)
+@defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::AbstractString=string(distance(from, to)), size::Real=1)
 
 # Surfaces
 
@@ -683,10 +698,13 @@ b_map_division(b::Backend, f::Function, s::Shape2D, nu::Int, nv::Int) =
 =#
 
 path_vertices(s::Shape1D) = path_vertices(shape_path(s))
+path_frames(s::Shape1D) = path_frames(shape_path(s))
 shape_path(s::Circle) = circular_path(s.center, s.radius)
 shape_path(s::SurfaceCircle) = circular_path(s.center, s.radius)
 shape_path(s::Spline) = open_spline_path(s.points, s.v0, s.v1)
 shape_path(s::ClosedSpline) = closed_spline_path(s.points)
+shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
+shape_path(s::SurfaceRectangle) = rectangular_path(s.corner, s.dx, s.dy)
 
 @defshape(Shape0D, text, str::String="", corner::Loc=u0(), height::Real=1)
 
@@ -794,6 +812,9 @@ extrusion(profile, h::Real) =
   extrusion(profile, vz(h))
 
 @defshape(Shape3D, sweep, path::Union{Shape1D, Path}=circle(), profile::Union{Shape,Path,Region}=point(), rotation::Real=0, scale::Real=1)
+
+b_sweep(b::Backend, path::Shape1D, profile::Shape, rotation, scaling, mat) =
+  b_sweep(b, shape_path(path), shape_path(profile), rotation, scaling, mat)
 
 @defshape(Shape1D, revolve_point, profile::Union{Loc,Point}=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defshape(Shape2D, revolve_curve, profile::Union{Shape,Path}=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
