@@ -343,6 +343,17 @@ scale(path::OpenPolygonalPath, s::Real, p::Loc=u0()) =
 scale(path::ClosedPolygonalPath, s::Real, p::Loc=u0()) =
   closed_polygonal_path([q + (q-p)*s for q in path.vertices])
 
+rotate(path::Path, Δα, rot_p = path_start(path)) =
+  Δα == 0 ?
+    path :
+    let rotate_vertex(p) = let v = p - rot_p
+          rot_p + vcyl(pol_rho(v), pol_phi(v) + Δα, cyl_z(v))
+        end
+      polygonal_path([rotate_vertex(p) for p in path_vertices(path)])
+    end
+
+
+
 #
 transform(s, p::Loc) = in_cs(s, p)
 
