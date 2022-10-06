@@ -654,7 +654,7 @@ l_thickness(w::Wall) = l_thickness(w.offset, w.family.thickness + w.family.left_
 used_materials(f::DoorFamily) = (f.right_material, f.left_material, f.side_material)
 
 
-@defproxy(door, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, family::DoorFamily=default_door_family())
+@defproxy(door, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, angle::Real=0, family::DoorFamily=default_door_family())
 
 # Window
 
@@ -669,12 +669,12 @@ used_materials(f::DoorFamily) = (f.right_material, f.left_material, f.side_mater
 used_materials(f::WindowFamily) = (f.right_material, f.left_material, f.side_material)
 
 
-@defproxy(window, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, family::WindowFamily=default_window_family())
+@defproxy(window, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, angle::Real=0, family::WindowFamily=default_window_family())
 
 realize(b::Backend, s::Union{Door, Window}) =
   let base_height = s.wall.bottom_level.height + s.loc.y,
       height = s.family.height,
-      subpath = translate(subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width), vz(base_height)),
+      subpath = translate(rotate(subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width), s.angle), vz(base_height)),
       r_thickness = r_thickness(s.wall),
       l_thickness = l_thickness(s.wall),
       thickness = s.family.thickness
@@ -686,6 +686,14 @@ realize(b::Backend, s::Union{Door, Window}) =
 export add_door
 add_door(w::Wall=required(), loc::Loc=u0(), family::DoorFamily=default_door_family()) =
   let d = door(w, loc, family=family)
+    push!(w.doors, d)
+    delete_shape(w)
+    force_realize(w)
+    w
+  end
+
+add!(d::Door) =
+  let w = d.wall
     push!(w.doors, d)
     delete_shape(w)
     force_realize(w)
