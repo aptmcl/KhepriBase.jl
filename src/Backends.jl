@@ -49,6 +49,7 @@ reset_backend(b::SocketBackend) =
     b.connection = missing
   end
 
+# AML: replace with the Base.retry function?
 start_connection(b::SocketBackend) =
   let attempts = 10
     for i in 1:attempts
