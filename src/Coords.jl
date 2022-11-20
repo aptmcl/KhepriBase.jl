@@ -1,7 +1,9 @@
-export Loc, Locs, LocOrZ,
-       Vec, Vecs, VecOrZ,
-       XYZ, xyz, cyl, sph,
-       VXYZ, vxyz, vcyl, vsph,
+export LocOrZ,
+       VecOrZ,
+       X, XY, XYZ, Pol, Pold, Cyl, Sph,
+       VX, VY, VXY, VXYZ, VPol, VPold, VCyl, VSph,
+       xyz, cyl, sph,
+       vxyz, vcyl, vsph,
        world_cs,
        current_cs,
        distance,
@@ -84,6 +86,9 @@ struct CS
   transform::Mat4f
 end
 
+show(io::IO, cs::CS) =
+  print(io, cs == world_cs ? "world_cs" : "..._cs")
+
 translated_cs(cs::CS, x::Real, y::Real, z::Real) =
   CS(cs.transform * Mat4f([
       1 0 0 x;
@@ -140,13 +145,13 @@ center_scaled_cs(cs::CS, x::Real, y::Real, z::Real) =
     end
 
 export rotated_around_p_v_cs
-rotated_around_p_v_cs(cs::CS, a::Real, b::Real, c::Real, u::Real, v::Real, w::Real, phi::Real) =
+rotated_around_p_v_cs(cs::CS, a::Real, b::Real, c::Real, u::Real, v::Real, w::Real, ϕ::Real) =
   let u2 = u*u,
       v2 = v*v,
       w2 = w*w,
-      cosT = cos(phi),
+      cosT = cos(ϕ),
       oneMinusCosT = 1-cosT,
-      sinT = sin(phi),
+      sinT = sin(ϕ),
       m11 = u2 + (v2 + w2) * cosT,
       m12 = u*v * oneMinusCosT - w*sinT,
       m13 = u*w * oneMinusCosT + v*sinT,
@@ -194,105 +199,64 @@ translating_current_cs(f, _dx::Real=0, _dy::Real=0, _dz::Real=0; dx::Real=_dx, d
         f()
     end
 
-abstract type Loc end
-abstract type Vec end
 
-zero(::Type{<:Loc}) = u0()
-
-#ideally, this should be Vector{Loc} but empty vectors of Loc are
-#actually of type Vector{Any}
-const Locs = Vector{<:Loc}
-const Vecs = Vector{<:Vec}
-
-#Base.==(cs0::CS, cs1::CS) = (cs0 === cs1) || (cs0.transform == cs1.transform)
-
-#translation_matrix(x::Real, y::Real, z::Real) = CS(SMatrix{4,4,Float64}())
-
-#Location
-
-struct XYZ <: Loc
-  x::Real
-  y::Real
-  z::Real
-  cs::CS
-  raw::Vec4f
+macro coord_structs(T, cs...)
+  let gen_struct(T, ST, cs) =
+        quote
+            struct $T <: $ST
+                    $([:($c :: Real) for c in cs]...)
+                    cs::CS
+                    raw::Vec4f
+            end
+        end,
+      VT = Symbol("V", T),                   # VX, VXY, ...
+      LocT = Symbol("Loc", length(cs), "D"), # Loc1D, Loc2D, ...
+      VecT = Symbol("Vec", length(cs), "D")  # Vec1D, Vec2D, ...
+    esc(
+      quote
+        $(gen_struct(T, LocT, cs))
+        $(gen_struct(VT, VecT, cs))
+      end)
+  end
 end
 
-# TODO add other fields, e.g.,
-# Base.getproperty(p::XYZ, f::Symbol) = f === :rho ? pol_rho(p) : ...
+@coord_structs(X, x)
+@coord_structs(XY, x, y)
+@coord_structs(Pol, ρ, ϕ)
+@coord_structs(Pold, ρ, ϕ)
+@coord_structs(XYZ, x, y, z)
+@coord_structs(Cyl, ρ, ϕ, z)
+@coord_structs(Sph, ρ, ϕ, ψ)
 
-# Basic conversions
-# From tuples of Loc
-convert(::Type{Locs}, ps::NTuple{N,Loc}) where {N} = collect(XYZ, ps)
-
-# From arrays of Any. This looks like a failure in Julia type inference, particularly when
-# an empty array is involved, e.g., line(vcat([xy(10,20), xy(30,40)], []))
-convert(::Type{Locs}, ps::Vector{<:Any}) = collect(XYZ, ps)
-
-show(io::IO, loc::XYZ) =
-  print(io, "xyz($(loc.x),$(loc.y),$(loc.z)$(loc.cs == world_cs ? "" : ", ..."))")
-
-#import Base.getfield, Base.Field
-#getfield(p::XYZ, ::Field{:cyl_rho}) = hypot(p.x, p.y)
-
-xyz(x::Real, y::Real, z::Real,cs::CS=current_cs()) =
-  XYZ(x,y,z,cs,Vec4f(convert(Float64,x),convert(Float64,y),convert(Float64,z), 1.0))
-xyz(s::Vec4f,cs::CS) =
-  XYZ(s[1], s[2], s[3], cs, s)
-
-scaled_cs(p::XYZ, x::Real, y::Real, z::Real) = xyz(p.x, p.y, p.z, scaled_cs(p.cs, x, y, z))
-center_scaled_cs(p::XYZ, x::Real, y::Real, z::Real) = xyz(p.x/x, p.y/y, p.z/z, center_scaled_cs(p.cs, x, y, z))
-
-cyl(rho::Real, phi::Real, z::Real, cs::CS=current_cs()) =
-  xyz(rho*cos(phi), rho*sin(phi), z, cs)
-add_cyl(p::Loc, rho::Real, phi::Real, z::Real) =
-  p + vcyl(rho, phi, z, p.cs)
-
-pol(rho::Real, phi::Real, cs::CS=current_cs()) =
-  cyl(rho, phi, 0, cs)
-add_pol(p::Loc, rho::Real, phi::Real) =
-  p + vcyl(rho, phi, 0, p.cs)
-
-sph(rho::Real, phi::Real, psi::Real, cs::CS=current_cs()) =
-  let sin_psi = sin(psi)
-    xyz(rho*cos(phi)*sin_psi, rho*sin(phi)*sin_psi, rho*cos(psi), cs)
+macro coord_constructs(sig, cons, exprs...)
+  let c = sig.args[1],
+      params = sig.args[2:end],
+      C = cons.args[1],
+      args = cons.args[2:end],
+      gen_construct(C, c, v) =
+        :($c($([:($p :: Real) for p in params]...), cs::CS=current_cs()) =
+            $C($(args...), cs, Vec4f($(exprs...), $v))),
+      vc = Symbol("v", c), # vx, vy, ...
+      VC = Symbol("V", C) # VX, VXY, ...
+    esc(
+      quote
+        $(gen_construct(C, c, 1.0))
+        $(gen_construct(VC, vc, 0.0))
+      end)
   end
-add_sph(p::Loc, rho::Real, phi::Real, psi::Real) =
-  p + vsph(rho, phi, psi, p.cs)
-
-# Vector
-struct VXYZ <: Vec
-    x::Real
-    y::Real
-    z::Real
-    cs::CS
-    raw::SVector{4,Float64}
 end
 
-show(io::IO, vec::VXYZ) =
-  print(io, "vxyz($(vec.x),$(vec.y),$(vec.z)$(vec.cs == world_cs ? "" : ", ..."))")
-
-
-vxyz(x::Real, y::Real, z::Real, cs::CS=current_cs()) =
-  VXYZ(x,y,z,cs,Vec4f(convert(Float64,x),convert(Float64,y),convert(Float64,z), 0.0))
-vxyz(s::Vec4f,cs::CS) = VXYZ(s[1], s[2], s[3], cs, s)
-
-vcyl(rho::Real, phi::Real, z::Real, cs::CS=current_cs()) =
-  vxyz(rho*cos(phi), rho*sin(phi), z, cs)
-add_vcyl(v::Vec, rho::Real, phi::Real, z::Real) =
-  v + vcyl(rho, phi, z, v.cs)
-
-vpol(rho::Real, phi::Real, cs::CS=current_cs()) =
-  vcyl(rho, phi, 0, cs)
-add_vpol(v::Vec, rho::Real, phi::Real) =
-  add_vcyl(v, rho, phi, 0)
-
-vsph(rho::Real, phi::Real, psi::Real, cs::CS=current_cs()) =
-  let sin_psi = sin(psi)
-    vxyz(rho*cos(phi)*sin_psi, rho*sin(phi)*sin_psi, rho*cos(psi), cs)
-  end
-add_vsph(v::Vec, rho::Real, phi::Real, psi::Real) =
-  v + vsph(rho, phi, psi, v.cs)
+@coord_constructs(x(x), X(x), x, 0.0, 0.0)
+@coord_constructs(xy(x, y), XY(x, y), x, y, 0.0)
+@coord_constructs(y(y), XY(0, y), 0.0, y, 0.0)
+@coord_constructs(pol(ρ, ϕ), Pol(ρ, ϕ), ρ*cos(ϕ), ρ*sin(ϕ), 0.0)
+@coord_constructs(pold(ρ, ϕ), Pold(ρ, ϕ), ρ*cosd(ϕ), ρ*sind(ϕ), 0.0)
+@coord_constructs(xyz(x, y, z), XYZ(x, y, z), x, y, z)
+@coord_constructs(xz(x, z), XYZ(x, 0, z), x, 0.0, z)
+@coord_constructs(yz(y, z), XYZ(0, y, z), 0.0, y, z)
+@coord_constructs(z(z), XYZ(0, 0, z), 0.0, 0.0, z)
+@coord_constructs(cyl(ρ, ϕ, z), Cyl(ρ, ϕ, z), ρ*cos(ϕ), ρ*sin(ϕ), z)
+@coord_constructs(sph(ρ, ϕ, ψ), Sph(ρ, ϕ, ψ), ρ*cos(ϕ)*sin(ψ), ρ*sin(ϕ)*sin(ψ), ρ*cos(ψ))
 
 # Selectors
 
@@ -306,11 +270,14 @@ sph_rho(p::Union{Loc,Vec}) =
   end
 sph_phi(p::Union{Loc,Vec}) =
   let (x, y) = (p.x, p.y)
-    0 == x == y ? 0 : mod(atan(y, x),2pi)
+    0 == x == y ? 0 : mod(atan(y, x), 2pi)
   end
+sph_phi(p::Union{Pol,VPol,Cyl,VCyl,Sph,VSph}) =
+  p.ϕ
+
 sph_psi(p::Union{Loc,Vec}) =
   let (x, y, z) = (p.x, p.y, p.z)
-    0 == x == y == z ? 0 : mod(atan(sqrt(x*x + y*y), z),2pi)
+    0 == x == y == z ? 0 : mod(atan(sqrt(x*x + y*y), z), 2pi)
   end
 
 cyl_rho(p::Union{Loc,Vec}) =
@@ -322,6 +289,220 @@ cyl_z(p::Union{Loc,Vec}) = p.z
 
 pol_rho = cyl_rho
 pol_phi = cyl_phi
+import Base.getproperty
+getproperty(s::Union{X,VX}, sym::Symbol) =
+    sym === :y ? 0 :
+    sym === :z ? 0 :
+    sym === :ρ ? s.x :
+    sym === :ϕ ? 0 :
+    sym === :ψ ? 0 :
+    getfield(s, sym)
+getproperty(s::Union{XY,VXY}, sym::Symbol) =
+    sym === :z ? 0 :
+    sym === :ρ ? (0 == s.x ? s.y : s.y == 0 ? s.x : sqrt(s.x^2 + s.y^2)) :
+    sym === :ϕ ? (0 == s.x == s.y ? 0 : mod(atan(s.y, s.x), 2pi)) :
+    sym === :ψ ? 0 :
+    getfield(s, sym)
+getproperty(s::Union{XYZ,VXYZ}, sym::Symbol) =
+    sym === :ρ ? sqrt(s.x^2 + s.y^2 + s.z^2) :
+    sym === :ϕ ? (0 == s.x == s.y ? 0 : mod(atan(s.y, s.x), 2pi)) :
+    sym === :ψ ? (0 == s.x == s.y == s.z ? 0 : mod(atan(sqrt(s.x^2 + s.y^2), s.z), 2pi)) :
+    getfield(s, sym)
+getproperty(s::Union{Pol,VPol}, sym::Symbol) =
+    sym === :x ? s.ρ*cos(s.ϕ) :
+    sym === :y ? s.ρ*sin(s.ϕ) :
+    sym === :z ? 0 :
+    sym === :ψ ? 0 :
+    getfield(s, sym)
+getproperty(s::Union{Cyl,VCyl}, sym::Symbol) =
+    sym === :x ? s.ρ*cos(s.ϕ) :
+    sym === :y ? s.ρ*sin(s.ϕ) :
+    sym === :ψ ? 0 :
+    getfield(s, sym)
+getproperty(s::Union{Sph,VSph}, sym::Symbol) =
+    sym === :x ? s.ρ*cos(s.ϕ)*sin(s.ψ) :
+    sym === :y ? s.ρ*sin(s.ϕ)*sin(s.ψ) :
+    sym === :z ? s.ρ*cos(s.ψ) :
+    getfield(s, sym)
+
+#=
+gen_addition(C, c, Vc, vc) =
+  :((+)($c :: $C, $vc :: $Vc) =
+      let $vc = in_cs($vc, $c.cs)
+          $C($([:($c.$p + $vc.$p) for p in params]...), $c.cs)
+      end),
+=#
+(+)(p::X, v::VX) =
+    p.cs === v.cs ? x(p.x + v.x, p.cs) : p + in_cs(v, p.cs)
+(+)(p::Union{X,XY}, v::Union{VX,VXY,VPol,VPold}) =
+    p.cs === v.cs ? xy(p.x + v.x, p.y + v.y, p.cs) : p + in_cs(v, p.cs)
+(+)(p::Union{X,XY,XYZ}, v::Union{VX,VXY,VPol,VPold,VXYZ,VCyl,VSph}) =
+    p.cs === v.cs ? xyz(p.x + v.x, p.y + v.y, p.z + v.z, p.cs) : p + in_cs(v, p.cs)
+(+)(p::Pol, v::Union{VX,VXY,VPol,VPold}) =
+    pol(xy(p) + v)
+(+)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) =
+    cyl(xyz(p) + v)
+(+)(p::Sph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) =
+    sph(xyz(p) + v)
+(-)(p::X, v::VX) =
+    p.cs === v.cs ? x(p.x - v.x, p.cs) : p + in_cs(v, p.cs)
+(-)(p::Union{X,XY}, v::Union{VX,VXY,VPol,VPold}) =
+    p.cs === v.cs ? xy(p.x - v.x, p.y - v.y, p.cs) : p + in_cs(v, p.cs)
+(-)(p::Union{X,XY,XYZ}, v::Union{VX,VXY,VPol,VPold,VXYZ,VCyl,VSph}) =
+    p.cs === v.cs ? xyz(p.x - v.x, p.y - v.y, p.z - v.z, p.cs) : p + in_cs(v, p.cs)
+(-)(p::Pol, v::Union{VX,VXY,VPol,VPold}) =
+    pol(xy(p) - v)
+(-)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) =
+    cyl(xyz(p) - v)
+(-)(p::Sph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) =
+    sph(xyz(p) - v)
+(-)(p::X, q::X) =
+    p.cs === q.cs ? vx(p.x - q.x, p.cs) : p - in_cs(q, p.cs)
+(-)(p::Union{X,XY}, q::Union{X,XY,Pol,Pold}) =
+    p.cs === q.cs ? vxy(p.x - q.x, p.y - q.y, p.cs) : p - in_cs(q, p.cs)
+(-)(p::Union{X,XY,XYZ}, q::Union{X,XY,XYZ,Pol,Pold,XYZ,Cyl,Sph}) =
+    p.cs === q.cs ? vxyz(p.x - q.x, p.y - q.y, p.z - q.z, p.cs) : p - in_cs(q, p.cs)
+(-)(p::Pol, v::Union{X,XY,Pol,Pold}) =
+    vpol(xy(p) - v)
+(-)(p::Cyl, v::Union{X,XY,XYZ,Pol,Pold,Cyl,Sph}) =
+    vcyl(xyz(p) - v)
+(-)(p::Sph, v::Union{X,XY,XYZ,Pol,Pold,Cyl,Sph}) =
+    vsph(xyz(p) - v)
+
+
+#
+(-)(v::VX) = vx(-v.x, v.cs)
+(-)(v::VXY) = vxy(-v.x, -v.y, v.cs)
+(-)(v::VXYZ) = vxyz(-v.x, -v.y, -v.z, v.cs)
+(-)(v::VPol) = vpol(v.ρ, v.ϕ+π)
+(-)(v::VCyl) = vcyl(v.ρ, v.ϕ+π, -v.z)
+(-)(v::VSph) = vsph(v.ρ, v.ϕ+π, -v.ψ)
+
+
+(*)(v::VX, r::Real) =
+    vx(v.x*r, v.cs)
+(*)(v::VXY, r::Real) =
+    vxy(v.x*r, v.y*r, v.cs)
+(*)(v::VXYZ, r::Real) =
+    vxyz(v.x*r, v.y*r, v.z*r, v.cs)
+(*)(v::VPol, r::Real) =
+    vpol(v.ρ*r, v.ϕ, v.cs)
+(*)(v::VCyl, r::Real) =
+    vcyl(v.ρ*r, v.ϕ, v.z, v.cs)
+(*)(v::VSph, r::Real) =
+    vsph(v.ρ*r, v.ϕ, v.ψ, v.cs)
+
+xy(v::Union{X,Pol,Pold}) = xy(v.x, v.y, v.cs)
+pol(v::Union{X,XY,Pold}) = pol(v.ρ, v.ϕ, v.cs)
+xyz(v::Union{X,XY,Pol,Pold,Cyl,Sph}) = xyz(v.x, v.y, v.z, v.cs)
+cyl(v::Union{X,XY,XYZ,Pol,Pold,Sph}) = cyl(v.ρ, v.ϕ, v.z, v.cs)
+sph(v::Union{X,XY,XYZ,Pol,Pold,Cyl}) = sph(v.ρ, v.ϕ, v.ψ, v.cs)
+
+vxy(v::Union{VX,VPol,VPold}) = vxy(v.x, v.y, v.cs)
+vpol(v::Union{VX,VXY,VPold}) = vpol(v.ρ, v.ϕ, v.cs)
+vcyl(v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) = vcyl(v.ρ, v.ϕ, v.z, v.cs)
+vsph(v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) = vsph(v.ρ, v.ϕ, v.ψ, v.cs)
+#
+(+)(p::VX, v::VX) =
+    p.cs === v.cs ? vx(p.x + v.x, p.cs) : p + in_cs(v, p.cs)
+(+)(p::Union{VX,VXY}, v::Union{VX,VXY,VPol,VPold}) =
+    p.cs === v.cs ? vxy(p.x + v.x, p.y + v.y, p.cs) : p + in_cs(v, p.cs)
+(+)(p::Union{VX,VXY,VXYZ}, v::Union{VX,VXY,VPol,VPold,VXYZ,VCyl,VSph}) =
+    p.cs === v.cs ? vxyz(p.x + v.x, p.y + v.y, p.z + v.z, p.cs) : p + in_cs(v, p.cs)
+(+)(p::VPol, v::Union{VX,VXY,VPol,VPold}) =
+    vpol(vxy(p) + v)
+(+)(p::VCyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) =
+    vcyl(vxyz(p) + v)
+(+)(p::VSph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) =
+    vsph(vxyz(p) + v)
+
+(-)(p::VX, v::VX) =
+    p.cs === v.cs ? vx(p.x - v.x, p.cs) : p + in_cs(v, p.cs)
+(-)(p::Union{VX,VXY}, v::Union{VX,VXY,VPol,VPold}) =
+    p.cs === v.cs ? vxy(p.x - v.x, p.y - v.y, p.cs) : p + in_cs(v, p.cs)
+(-)(p::Union{VX,VXY,VXYZ}, v::Union{VX,VXY,VXYZ,VPol,VPold,VXYZ,VCyl,VSph}) =
+    p.cs === v.cs ? vxyz(p.x - v.x, p.y - v.y, p.z - v.z, p.cs) : p + in_cs(v, p.cs)
+(-)(p::VPol, v::Union{VX,VXY,VPol,VPold}) =
+    vpol(vxy(p) - v)
+(-)(p::VCyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
+    vcyl(vxyz(p) - v)
+(-)(p::VSph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
+    vsph(vxyz(p) - v)
+
+(/)(p::VX, r::Real) =
+    vx(p.x/r, p.cs)
+(/)(p::VXY, r::Real) =
+    vxy(p.x/r, p.y/r, p.cs)
+(/)(p::VXYZ, r::Real) =
+    vxyz(p.x/r, p.y/r, p.z/r, p.cs)
+(/)(p::VPol, r::Real) =
+    vpol(p.ρ/r, p.ϕ, p.cs)
+(/)(p::VCyl, r::Real) =
+    vcyl(p.ρ/r, p.ϕ, p.z, p.cs)
+(/)(p::VSph, r::Real) =
+    vsph(p.ρ/r, p.ϕ, p.ψ, p.cs)
+
+    #=
+(-)(p::X, v::VX) = p.cs === v.cs ? X(p.x - v.x, p.cs) : p + in_cs(c, p.cs)
+(-)(p::XY, v::VXY) = p.cs === v.cs ? XY(p.x - v.x, p.y - v.y, p.cs) : p + in_cs(c, p.cs)
+
+(-)(p::X, v::VXY) = p.cs === v.cs ? XY(p.x - v.x, p.y - v.y, p.cs) : p + in_cs(c, p.cs)
+
+(+)(a::XYZ, b::VXYZ) = xyz(a.raw + in_cs(b, a.cs).raw, a.cs)
+(+)(a::VXYZ, b::XYZ) = xyz(a.raw + in_cs(b, a.cs).raw, a.cs)
+(+)(a::VXYZ, b::VXYZ) = vxyz(a.raw + in_cs(b, a.cs).raw, a.cs)
+(-)(a::XYZ, b::VXYZ) = xyz(a.raw - in_cs(b, a.cs).raw, a.cs)
+(-)(a::VXYZ, b::VXYZ) = vxyz(a.raw - in_cs(b, a.cs).raw, a.cs)
+(-)(a::XYZ, b::XYZ) = vxyz(a.raw - in_cs(b, a.cs).raw, a.cs)
+(-)(a::VXYZ) = vxyz(-a.raw, a.cs)
+(*)(a::VXYZ, b::Real) = vxyz(a.raw * b, a.cs)
+(*)(a::Real, b::VXYZ) = vxyz(a * b.raw, b.cs)
+(/)(a::VXYZ, b::Real) = vxyz(a.raw / b, a.cs)
+=#
+
+# TO BE PROCESSED (and possibly removed)
+add_pol(p::Loc, ρ::Real, ϕ::Real) =
+  p + vcyl(ρ, ϕ, 0, p.cs)
+xyz(s::Vec4f,cs::CS) =
+  XYZ(s[1], s[2], s[3], cs, s)
+#
+vxyz(s::Vec4f,cs::CS) =
+  VXYZ(s[1], s[2], s[3], cs, s)
+add_cyl(p::Loc, ρ::Real, ϕ::Real, z::Real) =
+  p + vcyl(ρ, ϕ, z, p.cs)
+add_vcyl(v::Vec, ρ::Real, ϕ::Real, z::Real) =
+  v + vcyl(ρ, ϕ, z, v.cs)
+add_vpol(v::Vec, ρ::Real, ϕ::Real) =
+  add_vcyl(v, ρ, ϕ, 0)
+add_vsph(v::Vec, ρ::Real, ϕ::Real, ψ::Real) =
+  v + vsph(ρ, ϕ, ψ, v.cs)
+add_sph(p::Loc, ρ::Real, ϕ::Real, ψ::Real) =
+  p + vsph(ρ, ϕ, ψ, p.cs)
+
+# TODO add other fields, e.g.,
+# Base.getproperty(p::XYZ, f::Symbol) = f === :rho ? pol_rho(p) : ...
+
+zero(::Type{<:Loc}) = u0()
+
+# Basic conversions
+# From tuples of Loc
+convert(::Type{Locs}, ps::NTuple{N,Loc}) where {N} = collect(XYZ, ps)
+
+# From arrays of Any. This looks like a failure in Julia type inference, particularly when
+# an empty array is involved, e.g., line(vcat([xy(10,20), xy(30,40)], []))
+convert(::Type{Locs}, ps::Vector{<:Any}) = collect(Loc, ps)
+
+show(io::IO, loc::XYZ) =
+  print(io, "xyz($(loc.x),$(loc.y),$(loc.z)$(loc.cs == world_cs ? "" : ", ..."))")
+show(io::IO, vec::VXYZ) =
+  print(io, "vxyz($(vec.x),$(vec.y),$(vec.z)$(vec.cs == world_cs ? "" : ", ..."))")
+
+#import Base.getfield, Base.Field
+#getfield(p::XYZ, ::Field{:cyl_rho}) = hypot(p.x, p.y)
+
+scaled_cs(p::XYZ, x::Real, y::Real, z::Real) = xyz(p.x, p.y, p.z, scaled_cs(p.cs, x, y, z))
+center_scaled_cs(p::XYZ, x::Real, y::Real, z::Real) = xyz(p.x/x, p.y/y, p.z/z, center_scaled_cs(p.cs, x, y, z))
+
 
 const min_norm = 1e-20
 
@@ -392,16 +573,16 @@ cs_from_o_phi(o::Loc, phi::Real) =
       cs_from_o_vx_vy_vz(o, vx, vy, vz)
   end
   =#
-cs_from_o_phi(o::Loc, phi::Real) =
-  rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), phi)
+cs_from_o_phi(o::Loc, ϕ::Real) =
+  rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ)
 
 loc_from_o_vx(o::Loc, vx::Vec) = loc_from_o_vx_vy(o, vx, vpol(1, pol_phi(vx) + pi/2))
 loc_from_o_vx_vy(o::Loc, vx::Vec, vy::Vec) = u0(cs_from_o_vx_vy(o, vx, vy))
 loc_from_o_vz(o::Loc, vz::Vec) = u0(cs_from_o_vz(o, vz))
-loc_from_o_phi(o::Loc, phi::Real) = u0(cs_from_o_phi(o, phi))
-loc_from_o_rot_x(o::Loc, phi::Real) = u0(rotated_x_cs(translated_cs(o.cs, o.x, o.y, o.z), phi))
-loc_from_o_rot_y(o::Loc, phi::Real) = u0(rotated_y_cs(translated_cs(o.cs, o.x, o.y, o.z), phi))
-loc_from_o_rot_z(o::Loc, phi::Real) = u0(rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), phi))
+loc_from_o_phi(o::Loc, ϕ::Real) = u0(cs_from_o_phi(o, ϕ))
+loc_from_o_rot_x(o::Loc, ϕ::Real) = u0(rotated_x_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ))
+loc_from_o_rot_y(o::Loc, ϕ::Real) = u0(rotated_y_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ))
+loc_from_o_rot_z(o::Loc, ϕ::Real) = u0(rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ))
 loc_from_o_rot_zyx(o::Loc, z::Real, y::Real, x::Real) =
   u0(rotated_x_cs(rotated_y_cs(rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), z), y), x))
 
@@ -427,17 +608,6 @@ add_xz(p::Loc, x::Real, z::Real) = xyz(p.x+x, p.y, p.z+z, p.cs)
 add_yz(p::Loc, y::Real, z::Real) = xyz(p.x, p.y+y, p.z+z, p.cs)
 add_xyz(p::Loc, x::Real, y::Real, z::Real) = xyz(p.x+x, p.y+y, p.z+z, p.cs)
 
-(+)(a::XYZ, b::VXYZ) = xyz(a.raw + in_cs(b, a.cs).raw, a.cs)
-(+)(a::VXYZ, b::XYZ) = xyz(a.raw + in_cs(b, a.cs).raw, a.cs)
-(+)(a::VXYZ, b::VXYZ) = vxyz(a.raw + in_cs(b, a.cs).raw, a.cs)
-(-)(a::XYZ, b::VXYZ) = xyz(a.raw - in_cs(b, a.cs).raw, a.cs)
-(-)(a::VXYZ, b::VXYZ) = vxyz(a.raw - in_cs(b, a.cs).raw, a.cs)
-(-)(a::XYZ, b::XYZ) = vxyz(a.raw - in_cs(b, a.cs).raw, a.cs)
-(-)(a::VXYZ) = vxyz(-a.raw, a.cs)
-(*)(a::VXYZ, b::Real) = vxyz(a.raw * b, a.cs)
-(*)(a::Real, b::VXYZ) = vxyz(a * b.raw, b.cs)
-(/)(a::VXYZ, b::Real) = vxyz(a.raw / b, a.cs)
-
 norm(v::Vec) = norm(v.raw)
 length(v::Vec) = norm(v.raw)
 
@@ -446,24 +616,25 @@ min_loc(p::Loc, q::Loc) =
 max_loc(p::Loc, q::Loc) =
     xyz(max.(p.raw, in_cs(q, p.cs).raw), p.cs)
 
-distance(p::XYZ, q::XYZ) = norm((in_world(q)-in_world(p)).raw)
+distance(p::Loc, q::Loc) = norm((in_world(q)-in_world(p)).raw)
 
-u0(cs=current_cs())   = xyz(0,0,0,cs)
+u0(cs=current_cs())   = x(0,cs)
 ux(cs=current_cs())   = xyz(1,0,0,cs)
 uy(cs=current_cs())   = xyz(0,1,0,cs)
 uz(cs=current_cs())   = xyz(0,0,1,cs)
-uxy(cs=current_cs())  = xyz(1,1,0,cs)
-uyz(cs=current_cs())  = xyz(0,1,1,cs)
-uxz(cs=current_cs())  = xyz(1,0,1,cs)
+uxy(cs=current_cs())  = xy(1,1,cs)
+uyz(cs=current_cs())  = yz(1,1,cs)
+uxz(cs=current_cs())  = xz(1,1,cs)
 uxyz(cs=current_cs()) = xyz(1,1,1,cs)
 
+#=
 x(x::Real=1,cs=current_cs()) = xyz(x,0,0,cs)
 y(y::Real=1,cs=current_cs()) = xyz(0,y,0,cs)
 z(z::Real=1,cs=current_cs()) = xyz(0,0,z,cs)
 xy(x::Real=1,y::Real=1,cs=current_cs()) = xyz(x,y,0,cs)
 yz(y::Real=1,z::Real=1,cs=current_cs()) = xyz(0,y,z,cs)
 xz(x::Real=1,z::Real=1,cs=current_cs()) = xyz(x,0,z,cs)
-
+=#
 uvx(cs=current_cs())   = vxyz(1,0,0,cs)
 uvy(cs=current_cs())   = vxyz(0,1,0,cs)
 uvz(cs=current_cs())   = vxyz(0,0,1,cs)
@@ -471,13 +642,6 @@ uvxy(cs=current_cs())  = vxyz(1,1,0,cs)
 uvyz(cs=current_cs())  = vxyz(0,1,1,cs)
 uvxz(cs=current_cs())  = vxyz(1,0,1,cs)
 uvxyz(cs=current_cs()) = vxyz(1,1,1,cs)
-
-vx(x::Real=1,cs=current_cs()) = vxyz(x,0,0,cs)
-vy(y::Real=1,cs=current_cs()) = vxyz(0,y,0,cs)
-vz(z::Real=1,cs=current_cs()) = vxyz(0,0,z,cs)
-vxy(x::Real=1,y::Real=1,cs=current_cs()) = vxyz(x,y,0,cs)
-vyz(y::Real=1,z::Real=1,cs=current_cs()) = vxyz(0,y,z,cs)
-vxz(x::Real=1,z::Real=1,cs=current_cs()) = vxyz(x,0,z,cs)
 
 position_and_height(p, q) = loc_from_o_vz(p, q - p), distance(p, q)
 
@@ -692,15 +856,15 @@ angle_between(v1, v2) =
 ################################################################################
 # To embed Khepri, it becomes useful to convert entities into 'raw' data
 
-raw_point(v::Union{XYZ, VXYZ}) =
+raw_point(v::Union{Loc, Vec}) =
   let o = in_world(v)
     (float(o.x), float(o.y), float(o.z))
   end
 
-raw_plane(v::XYZ) =
+raw_plane(v::Loc) =
   let o = in_world(v),
-      vx = in_world(vx(1, c.cs))
-      vy = in_world(vy(1, c.cs))
+      vx = in_world(vx(1, v.cs))
+      vy = in_world(vy(1, v.cs))
     (float(o.x), float(o.y), float(o.z),
      float(vx.x), float(vx.y), float(vx.z),
      float(vy.x), float(vy.y), float(vy.z))
@@ -710,4 +874,5 @@ raw_plane(v::XYZ) =
 export acw_vertices
 acw_vertices(vs) =
   angle_between(vertices_normal(vs), vz()) < pi/4 ?
-    vs : reverse(vs)
+    vs :
+    reverse(vs)
