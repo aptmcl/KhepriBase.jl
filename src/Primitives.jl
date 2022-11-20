@@ -1,20 +1,4 @@
 #=
-const julia_type_for_c_type = Dict(
-  :byte => :Int8,
-  :double => :Float64,
-  :float => :Float64,
-  :int => :Int,
-  :bool => :Bool,
-  :Point3d => :XYZ,
-  :Point2d => :XYZ,
-  :Vector3d => :VXYZ,
-  :string => :ASCIIString,
-  :ObjectId => :Int32,
-  :Entity => :Int32,
-  :BIMLevel => :Int32,
-  :FloorFamily => :Int32,
-    ) #Either Int32 or Int64, depending on the architecture
-
 julia_type(ctype, is_array) = is_array ? :(Vector{$(julia_type(ctype, false))}) : julia_type_for_c_type[ctype]
 =#
 export show_rpc, step_rpc
@@ -408,7 +392,7 @@ decode(ns::DoubleIsFloat64, t::Val{:double}, c::IO) =
 const StringIsCSString = Union{Val{:CS},Val{:CPP},Val{:PY}}
 encode(::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO, v) = begin
   str = string(v)
-  size = length(str)
+  size = sizeof(str) # length is not applicable to unicode strings
   array = UInt8[]
   while true
     byte = size & 0x7f
@@ -469,6 +453,39 @@ encode(::Val{:CS}, ::Val{:Guid}, c::IO, v) =
 decode(ns::Val{:CS}, ::Val{:Guid}, c::IO) =
   let guid = read(c, UInt128)
     iszero(guid) ? backend_error(ns, c) : guid
+  end
+
+const object_code = Dict(Bool=>0, UInt8=>1, Int32=>2, Int64=>3, Float32=>4, Float64=>5, String=>6)
+
+encode(ns::Val{:CS}, ::Val{:object}, c::IO, v) =
+  let code = object_code[typeof(v)]
+    encode(ns, Val(:byte), c, code)
+    if code == 0      
+      encode(ns, Val(:bool), c, v)
+    elseif code == 1
+      encode(ns, Val(:byte), c, v)
+    elseif code == 2
+      encode(ns, Val(:int), c, v)
+    elseif code == 3
+      encode(ns, Val(:long), c, v)
+    elseif code == 4
+      encode(ns, Val(:float), c, v)
+    elseif code == 5
+      encode(ns, Val(:double), c, v)
+    elseif code == 6
+      encode(ns, Val(:string), c, v)
+    else
+      error("Unknown object code", code)
+    end
+  end
+
+encode(ns::Val{:CS}, ::Val{:Options}, c::IO, dict) =
+  begin
+    encode(ns, Val(:int), c, length(dict))
+    for (k, v) in dict
+      encode(ns, Val(:string), c, k)
+      encode(ns, Val(:object), c, v)
+    end
   end
 
 # It is frequently necessary to encode/decode an abstract type that is
@@ -552,7 +569,7 @@ decode(ns::SupportsTuples, ::Val{:RGBA}, c::IO) =
 encode(ns::SupportsTuples, ::Val{:Color}, c::IO, v) =
   let v = convert(RGBA{ColorTypes.N0f8}, v)
     encode(ns, (Val(:byte),Val(:byte),Val(:byte),Val(:byte)), c,
-           (reinterpret(v.alpha), reinterpret(v.r), reinterpret(v.g), reinterpret(v.b)))
+           (reinterpret(Uint8, v.alpha), reinterpret(Uint8, v.r), reinterpret(Uint8, v.g), reinterpret(Uint8, v.b)))
   end
 decode(ns::SupportsTuples, ::Val{:Color}, c::IO) =
   let a = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
