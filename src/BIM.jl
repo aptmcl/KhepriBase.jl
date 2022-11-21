@@ -480,9 +480,9 @@ realize(b::B, w::Wall) where B<:Backend =
   realize(has_boolean_ops(B), b, w)
 
 realize(::HasBooleanOps{true}, b::Backend, w::Wall) =
-  with_material_as_layer(b, w.family) do
+  #with_material_as_layer(b, w.family) do
     realize_wall_openings(b, w, realize_wall_no_openings(b, w), [w.doors..., w.windows...])
-  end
+  #end
 
 realize_wall_no_openings(b::Backend, w::Wall) =
   let w_base_height = w.bottom_level.height,
