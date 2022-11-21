@@ -394,6 +394,9 @@ export b_extrusion, b_sweep, b_loft
 
 # Extruding a profile
 b_extrusion(b::Backend, path, v, cb, mat) =
+  b_extrusion(b, path, v, cb, mat, mat, mat)
+
+b_extrusion(b::Backend, path::Path, v, cb, mat) =
   is_open_path(path) ?
   	let bs = path_vertices_on(path, cb),
 	  	ts = translate(bs, v)
@@ -432,6 +435,11 @@ b_extrusion(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
         v,
         bmat, tmat, smat)
   end
+
+b_extrusion(b::Backend, profile::Shape1D, v, cb, mat) =
+	b_extrusion(b, convert(Path, profile), v, cb, mat)
+b_extrusion(b::Backend, profile::Shape2D, v, cb, mat) =
+	b_extrusion(b, convert(Region, profile), v, cb, mat)
 
 b_loft(b::Backend, profiles, closed, smooth, mat) =
   let ptss = path_vertices.(profiles),
@@ -545,20 +553,22 @@ on the scale we are using so I'll include a size parameter and I'll
 consider the inicial spacing as 5% of the size and the extension to
 be extra 10% in excess of the size.
 =#
-export b_dimension, b_ext_line, b_dim_line, b_text, b_text_size
+export b_dimension, b_ext_line, b_dim_line, b_text, b_text_size, b_label
 
-b_dimension(b::Backend, p, q, str, size, mat) =
+b_dimension(b::Backend, p, q, str, size, offset, mat) =
   let qp = in_world(q - p),
-	  phi = pol_phi(qp),
-	  outside = pi/2 <= phi <= 3pi/2,
-	  v = vpol(outside ? size : 2*size, phi-pi/2),
-	  uv = unitized(v),
-	  (si, se) = (0.1*size, 0.2*size),
-	  (vi, ve) = (uv*si, uv*se),
-	  (tp, tq, tv) = outside ? (q, p, vpol(1, phi + pi)) : (p, q, vpol(1, phi))
-	[b_ext_line(b, p + vi, p + v + ve, mat),
-     b_ext_line(b, q + vi, q + v + ve, mat),
-     b_dim_line(b, tp + v, tq + v, tv, str, size, outside, mat)]
+	    phi = pol_phi(qp),
+	    outside = pi/2 <= phi <= 3pi/2,
+	    v = vpol(outside ? size : 2*size, phi-pi/2),
+	    uv = unitized(v),
+	    (si, se) = (offset*size, 2*offset*size),
+	    (vi, ve) = (uv*si, uv*se),
+	    (tp, tq, tv) = outside ? (q, p, vpol(1, phi + pi)) : (p, q, vpol(1, phi))
+	  offset == 0 ?
+	    b_dim_line(b, tp, tq, tv, str, size, outside, mat) :
+      [b_ext_line(b, p + vi, p + v + ve, mat),
+       b_ext_line(b, q + vi, q + v + ve, mat),
+       b_dim_line(b, tp + v, tq + v, tv, str, size, outside, mat)]
   end
 b_ext_line(b::Backend, p, q, mat) =
   b_line(b, [p, q], mat)
@@ -568,6 +578,12 @@ b_dim_line(b::Backend, p, q, tv, str, size, outside, mat) =
     [b_line(b, [p, q], mat),
      b_text(b, str, add_y(loc_from_o_vx(tp, tv), size*0.1-miny), size, mat)]
   end
+
+export b_arc_dimension
+
+b_arc_dimension(b::Backend, c, r, α, Δα, rstr, dstr, size, offset, mat) =
+  error("To be finished")
+
 
 # To ensure a portable font, we will 'draw' the letters
 const letter_glyph = Dict(
@@ -698,6 +714,13 @@ b_text_size(b::Backend, str, size, mat) =
 	(minx, maxx, miny, maxy).*size
   end
 
+# Illustrations
+
+@bdef(b_labels(p, strs, mat))
+@bdef(b_radii_illustration(c, rs, rs_txts, mat))
+@bdef(b_vectors_illustration(p, a, rs, rs_txts, mat))
+@bdef(b_angles_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mat))
+@bdef(b_arcs_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mat))
 ##################################################################
 # Materials
 #=
@@ -1245,3 +1268,8 @@ backend_wall_with_materials(b::Backend, w_path, w_height, l_thickness, r_thickne
 @bdef(b_select_solids(prompt))
 @bdef(b_select_shape(prompt))
 @bdef(b_select_shapes(prompt))
+
+# Illustrations
+
+@bdef(b_radius_illustration(c, r, c_text, r_text))
+@bdef(b_arc_illustration(c, r, s, a, r_text, s_text, a_text))
