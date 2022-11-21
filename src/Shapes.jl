@@ -111,7 +111,8 @@ collect_ref(b::Backend{K,T}, r::UnionRef{K,T}) where {K,T} =
   mapreduce(collect_ref(b), vcat, r.values, init=T[])
 collect_ref(b::Backend{K,T}, r::SubtractionRef{K,T}) where {K,T} =
   vcat(collect_ref(b, r.value), mapreduce(collect_ref(b), vcat, r.values, init=T[]))
-
+collect_ref(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} =
+  r.values
 # Boolean algebra laws
 # currying
 unite_ref(b::Backend{K,T}) where {K,T} = (r0::GenericRef{K,T}, r1::GenericRef{K,T}) -> unite_ref(b, r0, r1)
@@ -177,8 +178,6 @@ DynRef(b::Backend{K,T}, v) where {K,T} = DynRef{K,T}(b, ensure_ref(b, v), 1, 0)
 const DynRefs = IdDict{Backend, Any}
 const dyn_refs = DynRefs
 
-abstract type Proxy end
-
 backend(s::Proxy) = first(first(s.ref))
 
 realized_in(s::Proxy, b::Backend) = s.ref[b].created == s.ref[b].deleted + 1
@@ -224,11 +223,8 @@ force_realize(s::Proxy) =
 ensure_ref(b::Backend{K,T}, v::Proxy) where {K,T} =
   ref(b, v)
 
-abstract type Shape <: Proxy end
 show(io::IO, s::Shape) =
   print(io, "$(typeof(s))(...)")
-
-Shapes = Vector{<:Shape}
 
 map_ref(f::Function, b::Backend, s::Shape) = map_ref(b, f, ref(b, s))
 collect_ref(b::Backend, s::Shape) = collect_ref(b, ref(b, s))
@@ -567,27 +563,10 @@ const default_curve_material = Parameter{Material}(material_curve)
 const default_surface_material = Parameter{Material}(material_surface)
 const default_material = Parameter{Material}(material_basic)
 
-abstract type Shape0D <: Shape end
-abstract type Shape1D <: Shape end
-abstract type Shape2D <: Shape end
-abstract type Shape3D <: Shape end
-
-is_curve(s::Shape) = false
-is_surface(s::Shape) = false
-is_solid(s::Shape) = false
-
-is_curve(s::Shape1D) = true
-is_surface(s::Shape2D) = true
-is_solid(s::Shape3D) = true
-
 # To handle the direct use of shapes as paths:
 b_stroke(b::Backend, path::Shape, mat) =
   and_mark_deleted(b, ref(b, path).value, path)
 
-# HACK: Fix element type
-Shapes0D = Vector{<:Any}
-Shapes1D = Vector{<:Any}
-Shapes2D = Vector{<:Any}
 
 # This might be usable, so
 export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
@@ -646,10 +625,124 @@ rectangle(p::Loc, q::Loc) =
     rectangle(p, v.x, v.y)
   end
 
-#
+#=
+Drawings might be annotated with labels, dimensions, and other stuff
+=#
+
+const annotations = Shape[]
+
+export delete_all_annotations
+delete_all_annotations() =
+  begin
+    for shape in annotations
+      try
+        delete_shape(shape)
+      catch e
+      end
+    end
+    empty!(annotations)
+  end
+add_annotation!(ann) =
+  begin
+    push!(annotations, ann)
+    ann
+  end
+
+all_annotations() =
+  annotations
+
+prev_annotation_that(p) =
+  let idx = findfirst(p, annotations)
+    isnothing(idx) ?
+      nothing :
+      let ann = annotations[idx]
+        try # might have been previously deleted, e.g., by delete_all_shapes()
+          delete_shape(ann)
+        catch e
+          @warn("Was already deleted!")
+        finally
+          deleteat!(annotations, idx)
+        end
+        ann
+      end
+  end
+
 #@defshape dimension(p0::Loc, p1::Loc, p::Loc, scale::Real, style::Symbol)
 #@defshape dimension(p0::Loc, p1::Loc, sep::Real, scale::Real, style::Symbol)
-@defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::AbstractString=string(distance(from, to)), size::Real=1)
+@defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::AbstractString=string(distance(from, to)), size::Real=1, offset::Real=0.1)
+@defshape(Shape1D, arc_dimension, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi, radius_text::AbstractString=string(radius), amplitude_text::AbstractString=string(amplitude), size::Real=1, offset::Real=0.1)
+
+@defshape(Shape0D, labels, p::Loc=u0(), strs::Vector{String}=[])
+
+# We also need to transform symbolic expressions into some form of text
+@defcb textify(expr)
+b_textify(b::Backend, expr) = string(expr)
+
+export label
+label(p, str) =
+  let ann = prev_annotation_that(ann->is_labels(ann) && isequal(p, ann.p))
+    add_annotation!(labels(p, isnothing(ann) ? [str] : str in ann.strs ? ann.strs : [ann.strs..., str]))
+  end
+
+@defshape(Shape1D, vectors_illustration, start::Loc=u0(), angle::Real=0, radii::Vector{Real}=[1],
+  radii_texts::Vector{AbstractString}=[string(radii[1])])
+export vector_illustration
+vector_illustration(p, a, r, str) =
+  let ann = prev_annotation_that(ann->is_vectors_illustration(ann) && isequal(p, ann.start) && isequal(a, ann.angle))
+    add_annotation!(
+      isnothing(ann) ?
+        vectors_illustration(p, a, [r], [str]) :
+        vectors_illustration(p, a, [ann.radii..., r], [ann.radii_texts..., str]))
+  end
+
+@defshape(Shape1D, radii_illustration, center::Loc=u0(), radii::Vector{Real}=[1],
+  radii_texts::Vector{AbstractString}=[string(radii[1])])
+export radius_illustration
+radius_illustration(c, r, str) =
+  let ann = prev_annotation_that(ann->is_radii_illustration(ann) && isequal(c, ann.center))
+    add_annotation!(
+      isnothing(ann) ?
+        radii_illustration(c, [r], [str]) :
+        radii_illustration(c, [sh.radii..., r], [sh.radii_texts..., str]))
+  end
+
+@defshape(Shape1D, angles_illustration, center::Loc=u0(), radii::Vector{Real}=[1], start_angles::Vector{Real}=[0], amplitudes::Vector{Real}=[pi],
+  radii_texts::Vector{AbstractString}=[string(radius)],
+  start_angles_texts::Vector{AbstractString}=[string(start_angle)],
+  amplitudes_texts::Vector{AbstractString}=[string(amplitude)])
+export angle_illustration
+angle_illustration(c, r, s, a, r_txt, s_txt, a_txt) =
+  let ann = prev_annotation_that(ann -> is_angles_illustration(ann) && isequal(c, ann.center))
+    add_annotation!(
+      isnothing(ann) ?
+        angles_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt]) :
+        angles_illustration(c, [ann.radii..., r], [ann.start_angles..., s], [ann.amplitudes..., a],
+                               [ann.radii_texts..., r_txt], [ann.start_angles_texts..., s_txt], [ann.amplitudes_texts..., a_txt]))
+  end
+
+# This is similar to an angles illustration but not entirely equal
+@defshape(Shape1D, arcs_illustration, center::Loc=u0(), radii::Vector{Real}=[1], start_angles::Vector{Real}=[0], amplitudes::Vector{Real}=[pi],
+  radii_texts::Vector{AbstractString}=[string(radius)],
+  start_angles_texts::Vector{AbstractString}=[string(start_angle)],
+  amplitudes_texts::Vector{AbstractString}=[string(amplitude)])
+export arc_illustration
+arc_illustration(c, r, s, a, r_txt, s_txt, a_txt) =
+  let ann = prev_annotation_that(ann -> is_arcs_illustration(ann) && isequal(c, ann.center))
+    add_annotation!(
+      isnothing(ann) ?
+        arcs_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt]) :
+        arcs_illustration(c, [ann.radii..., r], [ann.start_angles..., s], [ann.amplitudes..., a],
+                             [ann.radii_texts..., r_txt], [ann.start_angles_texts..., s_txt], [ann.amplitudes_texts..., a_txt]))
+  end
+
+#=@defshape(Shape1D, line_illustration, vertices::Locs=[u0(), ux()],
+  vertices_texts::Vector{AbstractString}=map(string, vertices))
+@defshape(Shape1D, regular_polygon_illustration, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true,
+  center_text::AbstractString=string(center),
+  radius_text::AbstractString=string(radius),
+  angle_text::AbstractString=string(angle))
+=#
+
 
 # Surfaces
 
@@ -707,7 +800,6 @@ shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
 shape_path(s::SurfaceRectangle) = rectangular_path(s.corner, s.dx, s.dy)
 
 @defshape(Shape0D, text, str::String="", corner::Loc=u0(), height::Real=1)
-
 export text_centered
 text_centered(str::String="", center::Loc=u0(), height::Real=1) =
   text(str, add_xy(center, -length(str)*height*0.85/2, -height/2), height)
@@ -951,7 +1043,7 @@ convert(::Type{Path}, s::Polygon) =
 convert(::Type{Region}, s::SurfaceCircle) =
   and_delete_shape(region(circular_path(s.center, s.radius)), s)
 convert(::Type{Region}, s::SurfacePolygon) =
-  and_delete_shape(region(polygonal_path(s.vertices), s))
+  and_delete_shape(region(closed_polygonal_path(s.vertices)), s)
 #####################################################################
 ## Paths can be used to generate surfaces and solids
 

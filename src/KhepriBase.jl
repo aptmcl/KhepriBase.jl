@@ -72,6 +72,7 @@ import Base:
 import LinearAlgebra:
     cross, dot, norm
 
+include("Types.jl")
 include("Parameters.jl")
 include("Utils.jl")
 include("Coords.jl")
@@ -140,14 +141,13 @@ export and_mark_deleted,
        slice_ref
 
 # Ports for socket-based backends are defined here to avoid conflicts
-export autocad_port, revit_port, rhino_port, unity_port, unreal_port, blender_port, freecad_port
+export autocad_port, revit_port, rhino_port, unity_port, unreal_port, blender_port, freecad_port, a3dsmax_port
 const autocad_port = 11000
 const revit_port = 11001
 const unity_port = 11002
 const blender_port = 11003
 const freecad_port = 11004
+const a3dsmax_port = 11005
 const unreal_port = 11010
 const rhino_port = 12000
-
-
 end

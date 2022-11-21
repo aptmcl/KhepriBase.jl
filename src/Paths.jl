@@ -66,7 +66,7 @@ export empty_path,
 path_tolerance = Parameter(1e-10)
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < path_tolerance()
 
-abstract type Path end
+
 
 struct EmptyPath <: Path
 end
@@ -86,8 +86,6 @@ lastindex(p::Path) = path_length(p)
 path_start(p::Path) = location_at_length(p, 0)
 path_end(p::Path) = location_at_length(p, path_length(p))
 
-abstract type OpenPath <: Path end
-abstract type ClosedPath <: Path end
 
 is_closed_path(path::Path) = false
 is_closed_path(path::ClosedPath) = true
@@ -755,11 +753,6 @@ end
 # Should we just use tuples instead of arrays?
 path_set(paths...) =
   PathSet([paths...])
-
-# Regions are areas delimited by paths. They are assumed to be planar and might contain holes.
-struct Region
-  paths::Vector{<:ClosedPath}
-end
 
 region(outer, inners...) =
   Region([convert(ClosedPath, outer), convert.(ClosedPath, inners)...])
