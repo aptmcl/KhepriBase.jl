@@ -458,7 +458,7 @@ decode(ns::Val{:CS}, ::Val{:Guid}, c::IO) =
 const object_code = Dict(Bool=>0, UInt8=>1, Int32=>2, Int64=>3, Float32=>4, Float64=>5, String=>6)
 
 encode(ns::Val{:CS}, ::Val{:object}, c::IO, v) =
-  let code = object_code[typeof(v)]
+  let code = v isa RGB ? 7 : v isa RGBA ? 8 : object_code[typeof(v)]
     encode(ns, Val(:byte), c, code)
     if code == 0      
       encode(ns, Val(:bool), c, v)
@@ -474,6 +474,10 @@ encode(ns::Val{:CS}, ::Val{:object}, c::IO, v) =
       encode(ns, Val(:double), c, v)
     elseif code == 6
       encode(ns, Val(:string), c, v)
+    elseif code == 7
+      encode(ns, Val(:Color), c, v)
+    elseif code == 8
+      encode(ns, Val(:Color), c, v)
     else
       error("Unknown object code", code)
     end
@@ -569,7 +573,7 @@ decode(ns::SupportsTuples, ::Val{:RGBA}, c::IO) =
 encode(ns::SupportsTuples, ::Val{:Color}, c::IO, v) =
   let v = convert(RGBA{ColorTypes.N0f8}, v)
     encode(ns, (Val(:byte),Val(:byte),Val(:byte),Val(:byte)), c,
-           (reinterpret(Uint8, v.alpha), reinterpret(Uint8, v.r), reinterpret(Uint8, v.g), reinterpret(Uint8, v.b)))
+           (reinterpret(UInt8, v.alpha), reinterpret(UInt8, v.r), reinterpret(UInt8, v.g), reinterpret(UInt8, v.b)))
   end
 decode(ns::SupportsTuples, ::Val{:Color}, c::IO) =
   let a = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
@@ -579,6 +583,7 @@ decode(ns::SupportsTuples, ::Val{:Color}, c::IO) =
     RGBA(r, g, b, a)
   end
 
+#
 const one_year_milliseconds = 366*24*60*60*1000
 
 encode(ns::Val{:CS}, ::Val{:DateTime}, c::IO, v) =

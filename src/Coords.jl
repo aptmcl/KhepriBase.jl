@@ -663,9 +663,14 @@ intermediate_loc(p::Loc, q::Loc, f::Real=0.5) =
 # Metaprogramming
 
 meta_program(x::Any) = x # literals might be self evaluating
+meta_program(x::Int) = x
 meta_program(x::Real) = round(x,sigdigits=8)
 meta_program(x::Bool) = x
-meta_program(x::Vector) = Expr(:vect, map(meta_program, x)...)
+meta_program(x::DataType) = Symbol(x)
+meta_program(x::Vector{T}) where T = 
+  isempty(x) ?
+    Expr(:ref, meta_program(T)) :
+    Expr(:vect, map(meta_program, x)...)
 meta_program(p::Loc) =
     if cz(p) == 0
         Expr(:call, :xy, meta_program(cx(p)), meta_program(cy(p)))
