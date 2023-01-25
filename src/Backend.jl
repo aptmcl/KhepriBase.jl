@@ -1273,3 +1273,92 @@ backend_wall_with_materials(b::Backend, w_path, w_height, l_thickness, r_thickne
 
 @bdef(b_radius_illustration(c, r, c_text, r_text))
 @bdef(b_arc_illustration(c, r, s, a, r_text, s_text, a_text))
+
+#=
+The backend might be in the same process as the frontend, or
+it might be in a different process.
+=#
+export TargetType, LocalTarget, RemoteTarget
+abstract type TargetType end
+struct LocalTarget <: TargetType end
+struct RemoteTarget <: TargetType end
+
+# By default, we use a local target
+target_type(::Type{<:Backend}) = LocalTarget()
+target(b::T) where T = target(target_type(T), b)
+
+target(::LocalTarget, b) = b.target
+target(::RemoteTarget, b) = b.connection()
+
+
+#=
+Backends might need to immediately realize a shape while supporting further modifications
+e.g., using boolean operations. Others, however, cannot do that and can only realize
+shapes by request, presumably, when they have complete information about them.
+A middle term might be a backend that supports both modes.
+=#
+export RealizationType, EagerRealization, LazyRealization
+abstract type RealizationType end
+struct EagerRealization <: RealizationType end
+struct LazyRealization <: RealizationType end
+
+# By default, we use eager realization
+realization_type(::Type{<:Backend}) = EagerRealization()
+maybe_realize(b::T, s) where T = maybe_realize(realization_type(T), b, s)
+
+#=
+Backends might not provide camera information. In that case
+we need to provide it in the frontend.
+=#
+export ViewType, FrontendView, BackendView, view_type
+abstract type ViewType end
+struct FrontendView <: ViewType end
+struct BackendView <: ViewType end
+
+# By default, we use the backend view
+view_type(::Type{<:Backend}) = BackendView()
+
+b_set_view(b::T, camera, target, lens, aperture) where T = b_set_view(view_type(T), b, camera, target, lens, aperture)
+
+b_set_view_top(b::T) where T = b_set_view_top(view_type(T), b)
+
+b_get_view(b::T) where T = b_get_view(view_type(T), b)
+
+###############################################################
+# For the frontend, we assume there is a property to store the 
+# view details. A simple approach is to use a mutable struct
+
+mutable struct View
+  camera::Loc
+  target::Loc
+  lens::Real
+  aperture::Real
+  is_top_view::Bool
+end
+
+default_view() = View(xyz(10,10,10), xyz(0,0,0), 35, 22, false)
+top_view() = View(xyz(10,10,10), xyz(0,0,0), 0, 0, true)
+
+export View, default_view, top_view, b_get_view, b_set_view, b_set_view_top
+
+
+b_set_view(::FrontendView, b, camera, target, lens, aperture) =
+  begin
+    b.view.camera = camera
+    b.view.target = target
+    b.view.lens = lens
+	  b.view.aperture = aperture
+	  b.view.is_top_view = norm(cross(target - camera, vz(1, world_cs))) < 1e-9  # aligned with Z?
+  end
+
+b_set_view_top(::FrontendView, b) =
+  begin
+    b.view.camera = z(1000)
+    b.view.target = z(0)
+    b.view.lens = 1000
+	  b.view.is_top_view = true
+  end
+
+# For legacy reasons, we only return camera, target, and lens.
+b_get_view(::FrontendView, b) =
+  b.view.camera, b.view.target, b.view.lens

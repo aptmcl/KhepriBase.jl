@@ -62,12 +62,11 @@ export Shape,
 #References can be (single or multiple) native references
 abstract type GenericRef{K,T} end
 
-struct EmptyRef{K,T} <: GenericRef{K,T} end
-struct UniversalRef{K,T} <: GenericRef{K,T} end
-
+# Typically, we have a reference to the represented object
 struct NativeRef{K,T} <: GenericRef{K,T}
   value::T
 end
+# Sometimes, the represented object require multiple references
 struct NativeRefs{K,T} <: GenericRef{K,T}
   values::Vector{T}
 end
@@ -78,7 +77,11 @@ ensure_ref(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
     NativeRef{K,T}(rs[1]) :
     NativeRefs{K,T}(rs)
 
-#Unions and subtractions are needed because actual backends frequently fail those operations
+# Boolean operations need zero elements
+struct EmptyRef{K,T} <: GenericRef{K,T} end
+struct UniversalRef{K,T} <: GenericRef{K,T} end
+
+# Unions and subtractions are needed because actual backends frequently fail those operations
 struct UnionRef{K,T} <: GenericRef{K,T}
   values::Tuple{Vararg{GenericRef{K,T}}}
 end
@@ -249,40 +252,44 @@ after_init(s::Shape) =
   end
 
 #=
-Backends might need to immediately realize a shape while supporting further modifications
-e.g., using boolean operations. Others, however, cannot do that and can only realize
-shapes by request, presumably, when they have complete information about them.
-A middle term might be a backend that supports both modes.
-=#
-delay_realize(b::Backend, s::Shape) =
-  nothing
-
-delaying_realize = Parameter(false)
-with_transaction(fn) =
-  maybe_realize(with(fn, delaying_realize, true))
-
-maybe_realize(s::Shape) =
-  delaying_realize() ?
-    for b in current_backends()
-      delay_realize(b, s)
-    end :
-    for b in current_backends()
-      maybe_realize(b, s)
-    end
-
-#=
 Even if a backend is eager, it might be necessary to temporarily delay the
 realization of shapes, particularly, when the construction is incremental.
+In that case, we collect all created shapes and then realize them at the end.
 =#
 
-maybe_realize(b::Backend, s::Shape) =
+delaying_realize = Parameter(false)
+delayed_realizations = Parameter([])
+with_transaction(fn) = 
+  with(delayed_realizations, []) do
+    with(delaying_realize, true) do
+      fn()
+    end
+    for s in delayed_realizations()
+      maybe_realize(s)
+    end
+  end
+
+maybe_realize(s) =
+  let backends = current_backends()
+    delaying_realize() ?
+      push!(delayed_realizations(), s) :
+      for b in backends
+        maybe_realize(b, s)
+      end
+  end
+
+maybe_realize(::EagerRealization, b, s) =
   if ! realized(b, s)
     force_realize(b, s)
   end
 
+maybe_realize(t::LazyRealization, b, s) =
+  save_shape!(b, s)
+
+
 abstract type LazyBackend{K,T} <: Backend{K,T} end
-maybe_realize(b::LazyBackend, s::Shape) = delay_realize(b, s)
-delay_realize(b::LazyBackend, s::Shape) = save_shape!(b, s)
+realization_type(::Type{<:LazyBackend}) = LazyRealization()
+
 
 # By default, save_shape! assumes there is a field in the backend to store shapes
 export save_shape!
@@ -703,7 +710,7 @@ radius_illustration(c, r, str) =
     add_annotation!(
       isnothing(ann) ?
         radii_illustration(c, [r], [str]) :
-        radii_illustration(c, [sh.radii..., r], [sh.radii_texts..., str]))
+        radii_illustration(c, [ann.radii..., r], [ann.radii_texts..., str]))
   end
 
 @defshape(Shape1D, angles_illustration, center::Loc=u0(), radii::Vector{Real}=[1], start_angles::Vector{Real}=[0], amplitudes::Vector{Real}=[pi],

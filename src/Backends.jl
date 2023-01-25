@@ -9,11 +9,11 @@ abstract type RemoteBackend{K,T} <: Backend{K,T} end
 connection(b::RemoteBackend) =
   begin
     if ismissing(b.connection)
-	  before_connecting(b)
+	    before_connecting(b)
       b.connection = start_connection(b)
-	  after_connecting(b)
+	    after_connecting(b)
     end
-	b.connection
+	  b.connection
   end
 
 export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting
@@ -57,7 +57,7 @@ start_connection(b::SocketBackend) =
         return connect(b.port)
       catch e
         if i == attempts
-		  failed_connecting(b)
+		      failed_connecting(b)
         else
           retry_connecting(b)
         end
@@ -97,46 +97,12 @@ export b_layer, b_current_layer,
        b_all_shapes_in_layer, b_delete_all_shapes_in_layer
 
 # Default implementation assumes that backends have properties for current_layer and layers (a dict)
-b_layer(b::Backend, name, active, color) =
-  BasicLayer(name, active, color)
+b_layer(b::Backend, name, active, color) = BasicLayer(name, active, color)
 b_current_layer(b::Backend) = b.current_layer
 b_current_layer(b::Backend, layer) = b.current_layer = layer
 b_all_shapes_in_layer(b::Backend, layer) = b.layers[layer]
 b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_in_layer(b, layer))
 
-###############################################################
-# We assume there is a property to store the view details
-# A simple approach is to use a mutable struct
-mutable struct View
-  camera::Loc
-  target::Loc
-  lens::Real
-  aperture::Real
-  is_top_view::Bool
-end
-default_view() = View(xyz(10,10,10), xyz(0,0,0), 35, 22, false)
-top_view() = View(xyz(10,10,10), xyz(0,0,0), 0, 0, true)
-
-export View, default_view, top_view, b_get_view, b_set_view, b_set_view_top
-
-b_set_view(b::Backend, camera, target, lens, aperture) =
-  begin
-    b.view.camera = camera
-    b.view.target = target
-    b.view.lens = lens
-	b.view.aperture = aperture
-	b.view.is_top_view = norm(cross(target - camera, vz(1, world_cs))) < 1e-9  # aligned with Z?
-  end
-b_set_view_top(b::Backend) =
-  begin
-    b.view.camera = z(1000)
-    b.view.target = z(0)
-    b.view.lens = 1000
-	b.view.is_top_view = true
-  end
-# For legacy reasons, we only return camera, target, and lens.
-b_get_view(b::Backend) =
-  b.view.camera, b.view.target, b.view.lens
 
 ################################################################
 # Not all backends support all stuff. Some of it might need to be supported
@@ -152,6 +118,7 @@ end
 struct ClayEnvironment <: RenderEnvironment
 end
 
+export GeographicLocation
 struct GeographicLocation
   latitude::Real
   longitude::Real
@@ -179,6 +146,8 @@ abstract type LocalBackend{K,T} <: LazyBackend{K,T} end
   extra::E=E()
 end
 
+view_type(::Type{<:LocalBackend}) = FrontendView()
+
 connection(b::IOBufferBackend) = b.buffer
 
 save_shape!(b::IOBufferBackend, s::Shape) =
@@ -187,7 +156,7 @@ save_shape!(b::IOBufferBackend, s::Shape) =
     if !isnothing(b.current_layer)
       push!(get!(b.layers, b.current_layer, Shape[]), s)
     end
-	b.cached = false
+	  b.cached = false
     s
   end
 
