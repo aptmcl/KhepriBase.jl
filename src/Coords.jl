@@ -391,6 +391,19 @@ gen_addition(C, c, Vc, vc) =
     vcyl(v.ρ*r, v.ϕ, v.z, v.cs)
 (*)(v::VSph, r::Real) =
     vsph(v.ρ*r, v.ϕ, v.ψ, v.cs)
+#
+(*)(r::Real, v::VX) =
+    vx(v.x*r, v.cs)
+(*)(r::Real, v::VXY) =
+    vxy(v.x*r, v.y*r, v.cs)
+(*)(r::Real, v::VXYZ) =
+    vxyz(v.x*r, v.y*r, v.z*r, v.cs)
+(*)(r::Real, v::VPol) =
+    vpol(v.ρ*r, v.ϕ, v.cs)
+(*)(r::Real, v::VCyl) =
+    vcyl(v.ρ*r, v.ϕ, v.z, v.cs)
+(*)(r::Real, v::VSph) =
+    vsph(v.ρ*r, v.ϕ, v.ψ, v.cs)
 
 xy(v::Union{X,Pol,Pold}) = xy(v.x, v.y, v.cs)
 pol(v::Union{X,XY,Pold}) = pol(v.ρ, v.ϕ, v.cs)
