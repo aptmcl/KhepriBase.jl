@@ -474,7 +474,7 @@ Some backends, however, can colorize the shapes that have that layer, or can mak
 those shapes appear and disappear by activating or deactivating the layer.
 =#
 
-@defproxy(layer, Proxy, name::String="Layer", active::Bool=true, color::RGB=rgb(1,1,1))
+@defproxy(layer, Proxy, name::String="Layer", active::Bool=true, color::RGBA=rgba(1,1,1,1))
 create_layer(args...) =
   let s = layer(args...)
     force_realize(s)
@@ -522,7 +522,10 @@ with_material_as_layer(f::Function, b::Backend, m::Material) =
     f()
 
 realize(b::Backend, m::Material) =
-  b_get_material(b, m.data(b))
+  b_get_material(b, m.layer, m.data(b))
+# By default, the layer is ignored in the creation of materials, as only a few backends depend on that.
+b_get_material(b::Backend, layer, spec) =
+  b_get_material(b, spec)
 
 export merge_materials, merge_backend_material
 merge_materials(materials...) =
