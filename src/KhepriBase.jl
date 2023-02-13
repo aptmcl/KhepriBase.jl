@@ -92,7 +92,7 @@ export khepribase_interface_file
 khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
 
 # From ColorTypes
-export RGB, RGBA, rgb, rgba
+export RGB, RGBA, rgb, rgba, red, green, blue, alpha
 
 
 export and_mark_deleted,
