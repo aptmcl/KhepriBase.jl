@@ -666,14 +666,19 @@ prev_annotation_that(p) =
     isnothing(idx) ?
       nothing :
       let ann = annotations[idx]
-        try # might have been previously deleted, e.g., by delete_all_shapes()
-          delete_shape(ann)
-        catch e
-          @warn("Was already deleted!")
-        finally
-          deleteat!(annotations, idx)
+        # Don't reuse annotations that have different materials
+        if true #ann.material.layer.color == default_material().layer.color
+          try # might have been previously deleted, e.g., by delete_all_shapes()
+            delete_shape(ann)
+          catch e
+            @warn("Was already deleted!")
+          finally
+            deleteat!(annotations, idx)
+          end
+          ann
+        else
+          nothing
         end
-        ann
       end
   end
 
@@ -682,67 +687,104 @@ prev_annotation_that(p) =
 @defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::AbstractString=string(distance(from, to)), size::Real=1, offset::Real=0.1)
 @defshape(Shape1D, arc_dimension, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi, radius_text::AbstractString=string(radius), amplitude_text::AbstractString=string(amplitude), size::Real=1, offset::Real=0.1)
 
-@defshape(Shape0D, labels, p::Loc=u0(), strs::Vector{String}=[])
+@defshape(Shape0D, labels, p::Loc=u0(), strs::Vector{String}=[], mats::Vector{Material}=[])
 
 # We also need to transform symbolic expressions into some form of text
 @defcb textify(expr)
 b_textify(b::Backend, expr) = string(expr)
 
+export default_annotation_material
+const default_annotation_material = Parameter{Material}(material(layer("annotation", true, rgba(0, 0, 0.5, 1.0))))
+
+existing_material(mat, mats) =
+  any(m -> m.layer.color == mat.layer.color, mats)
+
 export label
-label(p, str) =
+label(p, str, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann->is_labels(ann) && isequal(p, ann.p))
-    add_annotation!(labels(p, isnothing(ann) ? [str] : str in ann.strs ? ann.strs : [ann.strs..., str]))
+    add_annotation!(
+      isnothing(ann) ?
+        labels(p, [str], [mat]) :
+        str in ann.strs && existing_material(mat, ann.mats) ?
+          labels(p, ann.strs, ann.mats) : 
+          labels(p, [ann.strs..., str], [ann.mats..., mat]))
   end
 
-@defshape(Shape1D, vectors_illustration, start::Loc=u0(), angle::Real=0, radii::Vector{Real}=[1],
-  radii_texts::Vector{AbstractString}=[string(radii[1])])
+@defshape(Shape1D, vectors_illustration, start::Loc=u0(), angle::Real=0, 
+  radii::Vector{Real}=[],
+  radii_texts::Vector{AbstractString}=[],
+  mats::Vector{Material}=[])
 export vector_illustration
-vector_illustration(p, a, r, str) =
+vector_illustration(p, a, r, str, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann->is_vectors_illustration(ann) && isequal(p, ann.start) && isequal(a, ann.angle))
     add_annotation!(
       isnothing(ann) ?
-        vectors_illustration(p, a, [r], [str]) :
-        vectors_illustration(p, a, [ann.radii..., r], [ann.radii_texts..., str]))
+        vectors_illustration(p, a, [r], [str], [mat]) :
+        str in ann.radii_texts && existing_material(mat, ann.mats) ?
+          vectors_illustration(p, a, ann.radii, ann.radii_texts, ann.mats) :
+          vectors_illustration(p, a, [ann.radii..., r], [ann.radii_texts..., str], [ann.mats..., mat]))
   end
 
-@defshape(Shape1D, radii_illustration, center::Loc=u0(), radii::Vector{Real}=[1],
-  radii_texts::Vector{AbstractString}=[string(radii[1])])
+@defshape(Shape1D, radii_illustration, center::Loc=u0(), 
+  radii::Vector{Real}=[],
+  radii_texts::Vector{AbstractString}=[], 
+  mats::Vector{Material}=[])
 export radius_illustration
-radius_illustration(c, r, str) =
+radius_illustration(c, r, str, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann->is_radii_illustration(ann) && isequal(c, ann.center))
     add_annotation!(
       isnothing(ann) ?
-        radii_illustration(c, [r], [str]) :
-        radii_illustration(c, [ann.radii..., r], [ann.radii_texts..., str]))
+        radii_illustration(c, [r], [str], [mat]) :
+        str in ann.radii_texts && existing_material(mat, ann.mats) ?
+          radii_illustration(c, ann.radii, ann.radii_texts, ann.mats) :
+          radii_illustration(c, [ann.radii..., r], [ann.radii_texts..., str], [ann.mats..., mat]))
   end
 
-@defshape(Shape1D, angles_illustration, center::Loc=u0(), radii::Vector{Real}=[1], start_angles::Vector{Real}=[0], amplitudes::Vector{Real}=[pi],
-  radii_texts::Vector{AbstractString}=[string(radius)],
-  start_angles_texts::Vector{AbstractString}=[string(start_angle)],
-  amplitudes_texts::Vector{AbstractString}=[string(amplitude)])
+@defshape(Shape1D, angles_illustration, center::Loc=u0(), 
+  radii::Vector{Real}=[], 
+  start_angles::Vector{Real}=[], 
+  amplitudes::Vector{Real}=[],
+  radii_texts::Vector{AbstractString}=[],
+  start_angles_texts::Vector{AbstractString}=[],
+  amplitudes_texts::Vector{AbstractString}=[], 
+  mats::Vector{Material}=[])
 export angle_illustration
-angle_illustration(c, r, s, a, r_txt, s_txt, a_txt) =
+angle_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann -> is_angles_illustration(ann) && isequal(c, ann.center))
     add_annotation!(
       isnothing(ann) ?
-        angles_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt]) :
-        angles_illustration(c, [ann.radii..., r], [ann.start_angles..., s], [ann.amplitudes..., a],
-                               [ann.radii_texts..., r_txt], [ann.start_angles_texts..., s_txt], [ann.amplitudes_texts..., a_txt]))
+        angles_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt], [mat]) :
+        angles_illustration(c, [ann.radii..., r], 
+                               [ann.start_angles..., s],
+                               [ann.amplitudes..., a],
+                               [ann.radii_texts..., r_txt], 
+                               [ann.start_angles_texts..., s_txt], 
+                               [ann.amplitudes_texts..., a_txt],
+                               [ann.mats..., mat]))
   end
 
 # This is similar to an angles illustration but not entirely equal
-@defshape(Shape1D, arcs_illustration, center::Loc=u0(), radii::Vector{Real}=[1], start_angles::Vector{Real}=[0], amplitudes::Vector{Real}=[pi],
-  radii_texts::Vector{AbstractString}=[string(radius)],
-  start_angles_texts::Vector{AbstractString}=[string(start_angle)],
-  amplitudes_texts::Vector{AbstractString}=[string(amplitude)])
+@defshape(Shape1D, arcs_illustration, center::Loc=u0(),
+  radii::Vector{Real}=[],
+  start_angles::Vector{Real}=[],
+  amplitudes::Vector{Real}=[],
+  radii_texts::Vector{AbstractString}=[],
+  start_angles_texts::Vector{AbstractString}=[],
+  amplitudes_texts::Vector{AbstractString}=[],
+  mats::Vector{Material}=[])
 export arc_illustration
-arc_illustration(c, r, s, a, r_txt, s_txt, a_txt) =
+arc_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann -> is_arcs_illustration(ann) && isequal(c, ann.center))
     add_annotation!(
       isnothing(ann) ?
-        arcs_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt]) :
-        arcs_illustration(c, [ann.radii..., r], [ann.start_angles..., s], [ann.amplitudes..., a],
-                             [ann.radii_texts..., r_txt], [ann.start_angles_texts..., s_txt], [ann.amplitudes_texts..., a_txt]))
+        arcs_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt], [mat]) :
+        arcs_illustration(c, [ann.radii..., r],
+                             [ann.start_angles..., s],
+                             [ann.amplitudes..., a],
+                             [ann.radii_texts..., r_txt], 
+                             [ann.start_angles_texts..., s_txt], 
+                             [ann.amplitudes_texts..., a_txt], 
+                             [ann.mats..., mat]))
   end
 
 #=@defshape(Shape1D, line_illustration, vertices::Locs=[u0(), ux()],
@@ -808,6 +850,8 @@ shape_path(s::Spline) = open_spline_path(s.points, s.v0, s.v1)
 shape_path(s::ClosedSpline) = closed_spline_path(s.points)
 shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
 shape_path(s::SurfaceRectangle) = rectangular_path(s.corner, s.dx, s.dy)
+shape_path(s::Line) = open_polygonal_path(s.vertices)
+shape_path(s::ClosedLine) = closed_polygonal_path(s.vertices)
 
 @defshape(Shape0D, text, str::String="", corner::Loc=u0(), height::Real=1)
 export text_centered
