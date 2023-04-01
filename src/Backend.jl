@@ -785,7 +785,7 @@ b_delete_ref(b::Backend{K,T}, r::T) where {K,T} =
 
 b_highlight_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
   for r in rs
- 	b_highlight_ref(b, r)
+ 	  b_highlight_ref(b, r)
   end
 
 b_highlight_ref(b::Backend{K,T}, r::T) where {K,T} =
