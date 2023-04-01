@@ -185,7 +185,7 @@ used_materials(b::IOBufferBackend) =
 	materials
   end
 
-KhepriBase.b_delete_all_shapes(b::IOBufferBackend) =
+KhepriBase.b_delete_all_refs(b::IOBufferBackend) =
   begin
     empty!(b.shapes)
     for ss in values(b.layers)
