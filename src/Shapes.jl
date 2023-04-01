@@ -323,10 +323,43 @@ excluded_modules = Parameter([Base, Base.CoreLogging, KhepriBase])
 shape_to_file_locations = IdDict()
 file_location_to_shapes = Dict()
 
-export traceability, trace_depth, excluded_modules, clear_trace!, shape_source, source_shapes
+export traceability, trace_depth, 
+       excluded_modules, clear_trace!, 
+       shape_source, source_shapes, 
+       shape_to_file_locations, file_location_to_shapes, 
+       highlight_source_shapes
 
 shape_source(s) = get(shape_to_file_locations, s, [])
-source_shapes(file, line) = get(file_location_to_shapes, (file, line), [])
+source_shapes(file::Symbol, line) = get(file_location_to_shapes, (file, line), Shape[])
+source_shapes(file::String, line) = source_shapes(Symbol(file), line)
+highlight_source_shapes(file, line) =
+  let shapes = source_shapes(file, line)
+    unhighlight_all_shapes()
+    highlight_shapes(shapes)
+  end
+# This is a poor's man approach to JSON
+struct JSON
+  sources
+end
+show(io::IO, json::JSON) =
+  begin
+    println(io, "[")
+    for (i, src) in enumerate(json.sources)
+      if i > 1
+        print(io, ",")
+      end
+      print(io, "[", repr(string(src[1])), ",", src[2], "]")
+    end
+    print(io, "]")
+  end
+select_shape_sources_string() = begin
+  unhighlight_all_shapes()
+  let sh = select_shape()
+    highlight_shape(sh)
+    # A poor man's approach at JSON
+    JSON(shape_source(sh))
+  end
+end
 
 clear_trace!() =
   begin
@@ -361,7 +394,7 @@ trace!(s) =
     end
     s
   end
-
+  
 maybe_trace(s) = traceability() && trace!(s)
 
 ######################################################
@@ -376,11 +409,16 @@ macro defshapeop(name_params)
 end
 
 export all_shapes, delete_all_shapes
-@defcbs delete_all_shapes()
-b_delete_all_shapes(b::Backend) = b_delete_all_refs(b)
+delete_all_shapes() = begin
+  empty!(KhepriBase.shape_to_file_locations)
+  empty!(KhepriBase.file_location_to_shapes)
+  delete_all_annotations()
+  delete_all_refs()
+end
+
 @defcb all_shapes()
 b_all_shapes(b::Backend) =
-  Shape[b_shape_from_ref(b, r) for r in b_all_refs(b)]
+  Shape[maybe_existing_shape_from_ref(b, r) for r in b_all_refs(b)]
 @bdef(b_shape_from_ref(r))
 
 
@@ -1394,8 +1432,20 @@ select_one_with_prompt(prompt::String, b::Backend, f::Function) =
 select_many_with_prompt(prompt::String, b::Backend, f::Function) =
   begin
     @info "$(prompt) on the $(b) backend."
-    map(id -> b_shape_from_ref(b, id), f(connection(b), prompt))
+    map(id -> maybe_existing_shape_from_ref(b, id), f(connection(b), prompt))
   end
+
+maybe_existing_shape_from_ref(b::Backend, r) = begin
+  # If we were collecting shapes, we could check the collection
+  # if traceability was on, we can search for the exact shape
+  for (s, fl) in KhepriBase.shape_to_file_locations
+    if ref(b, s).value == r # Found it!
+      return s
+    end
+  end
+  b_shape_from_ref(b, r)
+end
+
 
 export save_view
 save_view(name::String="View") =
