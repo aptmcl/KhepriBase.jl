@@ -791,9 +791,6 @@ b_highlight_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
 b_highlight_ref(b::Backend{K,T}, r::T) where {K,T} =
   missing_specialization(b, :b_highlight_ref, r)
 
-b_unhighlight_all_refs(b::Backend) =
-  b_unhighlight_refs(b, b_all_refs(b))
-
 b_unhighlight_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
   for r in rs
    	b_unhighlight_ref(b, r)
@@ -801,6 +798,9 @@ b_unhighlight_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
 
 b_unhighlight_ref(b::Backend{K,T}, r::T) where {K,T} =
   missing_specialization(b, :b_unhighlight_ref, r)
+
+b_unhighlight_all_refs(b::Backend) =
+  b_unhighlight_refs(b, b_all_refs(b))
 
 # BIM
 export b_slab, b_roof, b_beam, b_column, b_free_column, b_wall

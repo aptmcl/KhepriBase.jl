@@ -1325,31 +1325,23 @@ end
 @defshapeop unregister_shape_for_changes(s::Shape)
 @defshapeop waiting_for_changes()
 @defcb changed_shape(shapes::Shapes)
-
+@defcbs highlight_shapes(ss::Shapes)
+@defcbs unhighlight_shapes(ss::Shapes)
 @defcbs highlight_shape(s::Shape)
-b_highlight_shape(b::Backend, s::Shape) =
-  if realized(b, s)
-    b_highlight_refs(b, collect_ref(b, ref(b, s)))
-  end
-
-export highlight_shapes
-highlight_shapes(ss::Shapes=Shape[], bs=current_backends()) =
-  for s in ss
-    highlight_shape(s, bs)
-  end
-
-#
 @defcbs unhighlight_shape(s::Shape)
-b_unhighlight_shape(b::Backend, s::Shape) =
-  if realized(b, s)
-    b_unhighlight_refs(b, collect_ref(b, ref(b, s)))
+b_highlight_shapes(b::Backend, ss::Shapes) =
+  let refs = vcat([collect_ref(b, s) for s in ss if realized(b, s)]...)
+    b_highlight_refs(b, refs)
   end
+b_unhighlight_shapes(b::Backend, ss::Shapes) =
+  let refs = vcat([collect_ref(b, s) for s in ss if realized(b, s)]...)
+    b_unhighlight_refs(b, refs)
+  end
+b_highlight_shape(b::Backend, s::Shape) =
+  b_highlight_shapes(b, [s])
 
-export unhighlight_shapes
-unhighlight_shapes(ss::Shapes=Shape[], bs=current_backends()) =
-  for s in ss
-    unhighlight_shape(s, bs)
-  end
+b_unhighlight_shape(b::Backend, s::Shape) =
+  b_unhighlight_shapes(b, [s])
 
 export unhighlight_all_shapes
 const unhighlight_all_shapes = unhighlight_all_refs
