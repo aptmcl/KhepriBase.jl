@@ -1329,12 +1329,12 @@ end
 @defcbs unhighlight_shapes(ss::Shapes)
 @defcbs highlight_shape(s::Shape)
 @defcbs unhighlight_shape(s::Shape)
-b_highlight_shapes(b::Backend, ss::Shapes) =
-  let refs = vcat([collect_ref(b, s) for s in ss if realized(b, s)]...)
+b_highlight_shapes(b::Backend{K, T}, ss::Shapes) where {K, T} =
+  let refs = reduce(vcat, [collect_ref(b, s) for s in ss if realized(b, s)], init=T[])
     b_highlight_refs(b, refs)
   end
-b_unhighlight_shapes(b::Backend, ss::Shapes) =
-  let refs = vcat([collect_ref(b, s) for s in ss if realized(b, s)]...)
+b_unhighlight_shapes(b::Backend{K, T}, ss::Shapes) where {K, T} =
+  let refs = reduce(vcat, [collect_ref(b, s) for s in ss if realized(b, s)], init=T[])
     b_unhighlight_refs(b, refs)
   end
 b_highlight_shape(b::Backend, s::Shape) =
