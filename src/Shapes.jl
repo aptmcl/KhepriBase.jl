@@ -739,7 +739,7 @@ existing_material(mat, mats) =
 
 export label
 label(p, str, mat=default_annotation_material()) =
-  let ann = prev_annotation_that(ann->is_labels(ann) && isequal(p, ann.p))
+  let ann = prev_annotation_that(ann->is_labels(ann) && isapprox(p, ann.p, atol=1e-5))
     add_annotation!(
       isnothing(ann) ?
         labels(p, [str], [mat]) :
