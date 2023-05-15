@@ -127,8 +127,8 @@ struct GeographicLocation
 end
 
 ###############################################################################
-#Another backend option is to save all shapes locally and then generate, e.g., a
-#file-based description.
+# Another backend option is to save all shapes locally and then generate, e.g., a
+# file-based description.
 
 abstract type LocalBackend{K,T} <: LazyBackend{K,T} end
 @kwdef mutable struct IOBufferBackend{K,T,E} <: LocalBackend{K,T}
