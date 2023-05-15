@@ -396,13 +396,13 @@ export b_extrusion, b_sweep, b_loft
 b_extrusion(b::Backend, path, v, cb, mat) =
   b_extrusion(b, path, v, cb, mat, mat, mat)
 
-b_extrusion(b::Backend, path::Path, v, cb, mat) =
+b_extrusion(b::Backend, path::Path, v, cb, bmat, tmat, smat) =
   is_open_path(path) ?
   	let bs = path_vertices_on(path, cb),
 	  	ts = translate(bs, v)
-  	  b_quad_strip(b, bs, ts, is_smooth_path(path), mat)
+  	  b_quad_strip(b, bs, ts, is_smooth_path(path), smat)
     end :
-    b_extrusion(b, path, v, cb, mat, mat, mat)
+    b_extrusion(b, path, v, cb, bmat, tmat, smat)
 
 b_extrusion(b::Backend, path, v, cb, bmat, tmat, smat) =
   b_generic_prism(
@@ -436,10 +436,10 @@ b_extrusion(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
         bmat, tmat, smat)
   end
 
-b_extrusion(b::Backend, profile::Shape1D, v, cb, mat) =
-	b_extrusion(b, convert(Path, profile), v, cb, mat)
-b_extrusion(b::Backend, profile::Shape2D, v, cb, mat) =
-	b_extrusion(b, convert(Region, profile), v, cb, mat)
+b_extrusion(b::Backend, profile::Shape1D, v, cb, bmat, tmat, smat) =
+	b_extrusion(b, convert(Path, profile), v, cb, bmat, tmat, smat)
+b_extrusion(b::Backend, profile::Shape2D, v, cb, bmat, tmat, smat) =
+	b_extrusion(b, convert(Region, profile), v, cb, bmat, tmat, smat)
 
 b_loft(b::Backend, profiles, closed, smooth, mat) =
   let ptss = path_vertices.(profiles),
@@ -885,8 +885,8 @@ b_beam(b::Backend, c, h, angle, family) =
   let c = loc_from_o_phi(c, angle),
 	    mat = material_ref(b, family.material)
   	with_material_as_layer(b, family.material) do
-      b_extrusion(b, family_profile(b, family), vz(h, c.cs), c,	mat)
-	end
+      b_extrusion(b, family_profile(b, family), vz(h, c.cs), c,	mat, mat, mat)
+	  end
   end
 
 b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
