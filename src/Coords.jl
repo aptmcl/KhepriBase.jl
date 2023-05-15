@@ -199,7 +199,6 @@ translating_current_cs(f, _dx::Real=0, _dy::Real=0, _dz::Real=0; dx::Real=_dx, d
         f()
     end
 
-
 macro coord_structs(T, cs...)
   let gen_struct(T, ST, cs) =
         quote
@@ -209,13 +208,28 @@ macro coord_structs(T, cs...)
                     raw::Vec4f
             end
         end,
+      gen_show(T, cs) =
+        quote
+          Base.show(io::IO, loc :: $T) = begin
+            print(io, $(lowercase(string(T))), "(")
+            $([i == 1 ? :(print(io, loc.$c)) : :(print(io, ", ", loc.$c))
+               for (i, c) in enumerate(cs)]...) #$(loc.cs == world_cs ? "" : ", ..."))")
+            if loc.cs == world_cs
+              print(io, ")")
+            else
+              print(io, ", ...)")
+            end
+          end
+        end,
       VT = Symbol("V", T),                   # VX, VXY, ...
       LocT = Symbol("Loc", length(cs), "D"), # Loc1D, Loc2D, ...
       VecT = Symbol("Vec", length(cs), "D")  # Vec1D, Vec2D, ...
     esc(
       quote
         $(gen_struct(T, LocT, cs))
+        $(gen_show(T, cs))
         $(gen_struct(VT, VecT, cs))
+        $(gen_show(VT, cs))
       end)
   end
 end
@@ -233,15 +247,15 @@ macro coord_constructs(sig, cons, exprs...)
       params = sig.args[2:end],
       C = cons.args[1],
       args = cons.args[2:end],
-      gen_construct(C, c, v) =
-        :($c($([:($p :: Real) for p in params]...), cs::CS=current_cs()) =
+      gen_construct(C, c, i, v) =
+        :($c($([Expr(:kw, :($p::Real), i) for p in params]...), cs::CS=current_cs()) =
             $C($(args...), cs, Vec4f($(exprs...), $v))),
       vc = Symbol("v", c), # vx, vy, ...
       VC = Symbol("V", C) # VX, VXY, ...
     esc(
       quote
-        $(gen_construct(C, c, 1.0))
-        $(gen_construct(VC, vc, 0.0))
+        $(gen_construct(C, c, 0, 1.0))
+        $(gen_construct(VC, vc, 1, 0.0))
       end)
   end
 end
@@ -504,14 +518,6 @@ convert(::Type{Locs}, ps::NTuple{N,Loc}) where {N} = collect(XYZ, ps)
 # From arrays of Any. This looks like a failure in Julia type inference, particularly when
 # an empty array is involved, e.g., line(vcat([xy(10,20), xy(30,40)], []))
 convert(::Type{Locs}, ps::Vector{<:Any}) = collect(Loc, ps)
-
-show(io::IO, loc::XYZ) =
-  print(io, "xyz($(loc.x),$(loc.y),$(loc.z)$(loc.cs == world_cs ? "" : ", ..."))")
-show(io::IO, vec::VXYZ) =
-  print(io, "vxyz($(vec.x),$(vec.y),$(vec.z)$(vec.cs == world_cs ? "" : ", ..."))")
-
-#import Base.getfield, Base.Field
-#getfield(p::XYZ, ::Field{:cyl_rho}) = hypot(p.x, p.y)
 
 scaled_cs(p::XYZ, x::Real, y::Real, z::Real) = xyz(p.x, p.y, p.z, scaled_cs(p.cs, x, y, z))
 center_scaled_cs(p::XYZ, x::Real, y::Real, z::Real) = xyz(p.x/x, p.y/y, p.z/z, center_scaled_cs(p.cs, x, y, z))
