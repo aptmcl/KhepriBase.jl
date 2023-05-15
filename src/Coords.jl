@@ -863,6 +863,12 @@ Base.isequal(p::Loc, q::Loc) =
     isequal(wp.x, wq.x) && isequal(wp.y, wq.y) && isequal(wp.z, wq.z)
   end
 
+Base.isapprox(p::Loc, q::Loc; kwargs...) =
+  let wp = in_world(p),
+      wq = in_world(q)
+      isapprox(wp.x, wq.x; kwargs...) && isapprox(wp.y, wq.y; kwargs...) && isapprox(wp.z, wq.z; kwargs...)
+  end
+
 # angle between
 
 angle_between(v1, v2) =
