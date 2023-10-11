@@ -988,6 +988,9 @@ const truss_node_support = TrussNodeSupport
     inner_radius::Real=0,
     material::Material=material_metal)
 
+used_materials(f::TrussNodeFamily) = [f.material]
+used_materials(f::TrussBarFamily) = [f.material]
+
 truss_bar_family_cross_section_area(f::TrussBarFamily) =
   error("This should be computed by the backend family") #truss_bar_family_cross_section_area(back)
 
