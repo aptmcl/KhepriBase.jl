@@ -147,3 +147,10 @@ render_view(name::String="View", backend::Backend=top_backend()) =
     b_render_view(backend, prepare_for_saving_file(path))
     path
   end
+
+export render_clay_view
+render_clay_view(name::String="View", backend::Backend=top_backend()) =
+  let path = b_render_pathname(backend, name)
+    b_render_clay_view(backend, prepare_for_saving_file(path))
+    path
+  end

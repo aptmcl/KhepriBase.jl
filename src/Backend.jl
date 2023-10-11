@@ -1166,6 +1166,7 @@ b_realistic_sky(b::Backend, date, latitude, longitude, elevation, meridian, turb
   b_realistic_sky(b::Backend, sun_pos(date, meridian, latitude, longitude)..., turbidity, sun)
 
 @bdef b_render_view(path)
+@bdef b_render_clay_view(path)
 
 @bdef b_revolve_curve(profile, p, n, start_angle, amplitude, mat)
 @bdef b_revolve_point(profile, p, n, start_angle, amplitude, mat)
