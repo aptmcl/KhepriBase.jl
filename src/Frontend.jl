@@ -137,20 +137,36 @@ current_layer(layer, backends::Backends=current_backends()) =
 @defcbs set_normal_sky()
 @defcbs set_overcast_sky()
 
-export b_render_pathname
-b_render_pathname(b::Backend, name::String) =
-  render_pathname(name)
+#=
+Renders
+There are three major types of renders:
+ - Realistic (probably, with realistic colors)
+ - White (similar to clay models)
+ - Black (similar to clay models with a black background)
 
-export render_view
+ For this to operate properly, rendering must be divided into a series of steps:
+ 1. Decide the kind of render
+ 2. Initial setup previous to the render (e.g. choose default materials)
+ 3. Generate the geometry
+ 4. Final setup previous to the render (e.g., create sky or a ground plane)
+ 5. Render
+ 6. Save the generated image (e.g., in PNG, JPG, PDF)
+=#
+export render_kind, render_setup, render_view, render_clay_view
+
+const render_kind = Parameter(:realistic) # or :white or :black
+
+render_kind_dir_from_render_kind(kind) =
+  kind == :realistic ? "Render" :
+  kind == :black ? "RenderBlack" : 
+  kind == :white ? "RenderWhite" :
+  error("Unknown kind $kind")
+
+render_setup(kind::Symbol=:realistic, backend::Backend=top_backend()) = begin
+  render_kind_dir(render_kind_dir_from_render_kind(kind))
+  render_kind(kind)
+  b_render_initial_setup(backend, kind)
+end
+
 render_view(name::String="View", backend::Backend=top_backend()) =
-  let path = b_render_pathname(backend, name)
-    b_render_view(backend, prepare_for_saving_file(path))
-    path
-  end
-
-export render_clay_view
-render_clay_view(name::String="View", backend::Backend=top_backend()) =
-  let path = b_render_pathname(backend, name)
-    b_render_clay_view(backend, prepare_for_saving_file(path))
-    path
-  end
+  b_render_view(backend, name)
