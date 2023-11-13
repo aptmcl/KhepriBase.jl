@@ -358,6 +358,8 @@ gen_addition(C, c, Vc, vc) =
     cyl(xyz(p) + v)
 (+)(p::Sph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) =
     sph(xyz(p) + v)
+(+)(v::Vec, p::Loc) = p + v
+
 (-)(p::X, v::VX) =
     p.cs === v.cs ? x(p.x - v.x, p.cs) : p + in_cs(v, p.cs)
 (-)(p::Union{X,XY}, v::Union{VX,VXY,VPol,VPold}) =
