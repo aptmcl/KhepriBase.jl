@@ -209,6 +209,13 @@ let lang = :CS,
    (local_name, remote_name, params, ret) = parse_signature(Val(lang), str)
  (Symbol(local_name), remote_function_meta_program(lang, str, local_name, remote_name, params, ret))
 end
+
+let lang = :CS,
+    str = "public ElementId[] Test()",
+    (local_name, remote_name, params, ret) = parse_signature(Val(lang), str)
+  (Symbol(local_name), remote_function_meta_program(lang, str, local_name, remote_name, params, ret))
+ end
+
 =#
 
 lang_rpc(lang, sigs) =
