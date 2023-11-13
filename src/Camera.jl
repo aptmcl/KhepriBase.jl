@@ -12,7 +12,7 @@ export render_dir,
        set_render_dir,
        render_size,
        prepare_for_saving_file,
-       render_pathname,
+       render_default_pathname,
        render_view,
        rendering_with,
        to_render,
@@ -31,7 +31,7 @@ const render_color_dir = Parameter(".")
 # containing files with different extensions
 const render_ext = Parameter(".png")
 
-render_pathname(name::String) =
+render_default_pathname(name::String) =
     normpath(
       joinpath(
         render_dir(),
@@ -54,21 +54,21 @@ render_size(width::Integer, heigth::Integer) =
   (render_width(width), render_height(heigth))
 
 prepare_for_saving_file(path::String) =
-    let p = normpath(path)
-        mkpath(dirname(p))
-        try
-          rm(p, force=true)
-          p
-        catch e
-          if isa(e, Base.IOError)
-            let (base, ext) = splitext(path)
-              if ext == ".pdf"
-                prepare_for_saving_file(base*"_"*ext)
-              end
-            end
+  let p = normpath(path)
+      mkpath(dirname(p))
+    try
+      rm(p, force=true)
+      p
+    catch e
+      if isa(e, Base.IOError)
+        let (base, ext) = splitext(path)
+          if ext == ".pdf"
+            prepare_for_saving_file(base*"_"*ext)
           end
         end
+      end
     end
+  end
 
 export film_active,
        film_filename,
@@ -87,7 +87,7 @@ const saving_film_frames = Parameter(true)
 
 film_pathname() =
   with(render_kind_dir, "Film") do
-    render_pathname(frame_filename(film_filename(), film_frame()))
+    render_default_pathname(frame_filename(film_filename(), film_frame()))
   end
 
 start_film(name::String) =
@@ -110,7 +110,7 @@ create_mp4_from_frames(name=film_filename()) =
   with(render_kind_dir, "Film") do
     with(film_filename, name) do
       with(render_ext, "-film.mp4") do
-        let film_path = prepare_for_saving_file(render_pathname(name))
+        let film_path = prepare_for_saving_file(render_default_pathname(name))
           with(render_ext, "-frame*.png") do
             let frames_path = render_pathname(name)
               println(frames_path)
@@ -175,7 +175,7 @@ save_film_frame(obj::Any=true; backend=top_backend()) =
   begin
     if saving_film_frames()
       with(render_kind_dir, "Film") do
-        b_render_view(backend, prepare_for_saving_file(render_pathname(frame_filename(film_filename(), film_frame()))))
+        b_render_view(backend, frame_filename(film_filename(), film_frame()))
         film_frame(film_frame() + 1)
       end
     end
