@@ -33,7 +33,7 @@ maybe_replace(level::Level) = get!(levels_cache, level.height, level)
 
 convert(::Type{Level}, h::Real) = level(h)
 
-current_levels() = values(level_cache)
+current_levels() = values(levels_cache)
 default_level = OptionParameter{Level}(level())
 default_level_to_level_height = Parameter{Real}(3)
 upper_level(lvl=default_level(), height=default_level_to_level_height()) = level(lvl.height + height)
@@ -530,7 +530,7 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
       matright = w.family.right_material,
       matleft = w.family.left_material,
       matside = w.family.side_material,
-      refs = []
+      refs = new_refs(b)
     for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
       let currlength = prevlength + path_length(w_seg_path),
           c_r_w_path = closed_path_for_height(r_w_path, w_height),
@@ -773,7 +773,7 @@ realize(b::Backend, s::CurtainWall) =
       height = top - bottom,
       x_panels = ceil(Int, path_length/s.family.max_panel_dx),
       y_panels = ceil(Int, height/s.family.max_panel_dy),
-      refs = []
+      refs = new_refs(b)
     push!(refs, b_curtain_wall(b, s, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, :panel))
     push!(refs, b_curtain_wall(b, s, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
     push!(refs, b_curtain_wall(b, s, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
@@ -948,11 +948,11 @@ realize(b::Backend, s::TableAndChairs) =
   end
 
 # Lights
-# A pointlight has a fixed, inverse-square attenuation. Intensity is in Candela, range is irrelevant for physically correct lighting
-@defproxy(pointlight, BIMShape, loc::Loc=z(3), color::RGB=rgb(1,1,1), intensity::Real=1500.0, range::Real=10, level::Level=default_level())
+# A pointlight has a fixed, inverse-square attenuation. Intensity is in Candela
+@defproxy(pointlight, BIMShape, loc::Loc=z(3), color::RGB=rgb(1,1,1), intensity::Real=1500.0, level::Level=default_level())
 
 realize(b::Backend, s::Pointlight) =
-  b_pointlight(b, add_z(s.loc, s.level.height), s.color, s.intensity, s.range)
+  b_pointlight(b, add_z(s.loc, s.level.height), s.color, s.intensity)
 
 @defproxy(spotlight, BIMShape, loc::Loc=z(3), dir::Vec=vz(-1), hotspot::Real=pi/4, falloff::Real=pi/3)
 
@@ -964,7 +964,41 @@ realize(b::Backend, s::Spotlight) =
 realize(b::Backend, s::Ieslight) =
   b_ieslight(b, s.file, s.loc, s.dir, s.alpha, s.beta, s.gamma)
 
+# Water closed
+@deffamily(water_closed_family, Family,
+  )
 
+@defproxy(water_closed, BIMShape, cb::Loc=u0(), host::BIMShape=slab(), family::WaterClosedFamily=default_water_closed_family())
+water_closed(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::WaterClosedFamily=default_water_closed_family(); 
+             angle::Real=Angle, host::BIMShape=Host, family::WaterClosedFamily=Family) =
+  water_closed(loc_from_o_phi(cb, angle), host, family)
+
+realize(b::Backend, s::WaterClosed) =
+  b_water_closed(b, s.cb, s.host, s.family)
+
+# Sink
+@deffamily(sink_family, Family,
+  )
+
+@defproxy(sink, BIMShape, cb::Loc=u0(), host::BIMShape=slab(), family::SinkFamily=default_sink_closed_family())
+sink(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::SinkFamily=default_sink_family(); 
+             angle::Real=Angle, host::BIMShape=Host, family::SinkFamily=Family) =
+  sink(loc_from_o_phi(cb, angle), host, family)
+
+realize(b::Backend, s::Sink) =
+  b_sink(b, s.cb, s.host, s.family)
+
+# Closet
+@deffamily(closet_family, Family,
+  )
+
+@defproxy(closet, BIMShape, cb::Loc=u0(), host::BIMShape=slab(), family::ClosetFamily=default_closet_family())
+closet(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::ClosetFamily=default_closet_family(); 
+       angle::Real=Angle, host::BIMShape=Host, family::ClosetFamily=Family) =
+  closet(loc_from_o_phi(cb, angle), host, family)
+
+realize(b::Backend, s::Closet) =
+  b_closet(b, s.cb, s.host, s.family)
 #################################
 # Node support
 Base.@kwdef struct TrussNodeSupport
