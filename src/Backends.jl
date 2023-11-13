@@ -219,16 +219,13 @@ KhepriBase.b_all_shapes_in_layer(b::IOBufferBackend, layer) = b.layers[layer]
 
 KhepriBase.b_realistic_sky(b::IOBufferBackend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
   begin
-	b.date = date
+	  b.date = date
     b.place = GeographicLocation(latitude, longitude, elevation, meridian)
-	b.render_env = RealisticSkyEnvironment(turbidity, sun)
+	  b.render_env = RealisticSkyEnvironment(turbidity, sun)
   end
 
 b_set_ground(b::IOBufferBackend, level, mat) =
   begin
-	b.ground_level=level
-	b.ground_material=mat
+	  b.ground_level=level
+	  b.ground_material=mat
   end
-
-b_clay_model(b::IOBufferBackend) =
-  b.render_env = ClayEnvironment()
