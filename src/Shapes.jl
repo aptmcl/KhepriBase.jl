@@ -1,18 +1,12 @@
 export GenericRef,
-       EmptyRef,
-       UniversalRef,
        NativeRef,
-       UnionRef,
-       SubtractionRef,
+       NativeRefs,
        DynRef,
        DynRefs,
        void_ref,
        ensure_ref,
        map_ref,
-       collect_ref,
-       unite_ref,
-       intersect_ref,
-       subtract_ref
+       collect_ref
 export Shape,
        Shapes,
        Backend,
@@ -72,98 +66,31 @@ struct NativeRefs{K,T} <: GenericRef{K,T}
 end
 
 ensure_ref(b::Backend{K,T}, r::T) where {K,T} = NativeRef{K,T}(r)
-ensure_ref(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
+ensure_ref(b::Backend{K,T}, rs::Vector{T1}) where {K,T,T1<:T} =
   length(rs) == 1 ?
     NativeRef{K,T}(rs[1]) :
     NativeRefs{K,T}(rs)
+ensure_ref(b::Backend{K,T}, rs::Vector{Vector{T1}}) where {K,T,T1<:T} =
+  ensure_ref(b, reduce(vcat, rs))
 
-# Boolean operations need zero elements
-struct EmptyRef{K,T} <: GenericRef{K,T} end
-struct UniversalRef{K,T} <: GenericRef{K,T} end
-
-# Unions and subtractions are needed because actual backends frequently fail those operations
-struct UnionRef{K,T} <: GenericRef{K,T}
-  values::Tuple{Vararg{GenericRef{K,T}}}
+ensure_ref(b::Backend{K,T}, r::Vector{Any}) where {K,T} = begin
+  warn("Unexpected reference $r")
+  ensure_ref(b, T[r...])
 end
-struct SubtractionRef{K,T} <: GenericRef{K,T}
-  value::GenericRef{K,T}
-  values::Tuple{Vararg{GenericRef{K,T}}}
-end
-
-ensure_ref(b::Backend{K,T}, v::GenericRef{K,T}) where {K,T} = v
-ensure_ref(b::Backend{K,T}, v::Vector{<:S}) where {K,T,S} =
-  length(v) == 1 ?
-    ensure_ref(b, v[1]) :
-    UnionRef{K,T}(Tuple((ensure_ref(b, vi) for vi in v)))
+ensure_ref(b::Backend, r::Any) = error("Unexpected reference $r")
 
 # currying
 map_ref(b::Backend{K,T}, f::Function) where {K,T} = r -> map_ref(b, f, r)
 
-map_ref(b::Backend{K,T}, f::Function, r::NativeRef{K,T}) where {K,T} = ensure_ref(b, f(r.value))
-map_ref(b::Backend{K,T}, f::Function, r::UnionRef{K,T}) where {K,T} = UnionRef{K,T}(map(map_ref(b, f), r.values))
-map_ref(b::Backend{K,T}, f::Function, r::SubtractionRef{K,T}) where {K,T} = SubtractionRef{K,T}(map_ref(b, f, r.value), map(map_ref(b, f), r.values))
-map_ref(b::Backend{K,T}, f::Function, r::NativeRefs{K,T}) where {K,T} = ensure_ref(b, map(r -> map_ref(b, f, NativeRef{K,T}(r)), r.values))
-
+map_ref(b::Backend{K,T}, f::Function, r::NativeRef{K,T}) where {K,T} = f(r.value)
+map_ref(b::Backend{K,T}, f::Function, r::NativeRefs{K,T}) where {K,T} = map(f, r.values)
 
 # currying
-collect_ref(b::Backend{K,T}) where {K,T} = r -> collect_ref(b, r)
+collect_ref(b::Backend{K,T}) where {K,T} = 
+  (r::GenericRef{K,T}) -> collect_ref(b, r)
 
-collect_ref(b::Backend{K,T}, r::EmptyRef{K,T}) where {K,T} = T[]
 collect_ref(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = T[r.value]
-collect_ref(b::Backend{K,T}, r::UnionRef{K,T}) where {K,T} =
-  mapreduce(collect_ref(b), vcat, r.values, init=T[])
-collect_ref(b::Backend{K,T}, r::SubtractionRef{K,T}) where {K,T} =
-  vcat(collect_ref(b, r.value), mapreduce(collect_ref(b), vcat, r.values, init=T[]))
-collect_ref(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} =
-  r.values
-# Boolean algebra laws
-# currying
-unite_ref(b::Backend{K,T}) where {K,T} = (r0::GenericRef{K,T}, r1::GenericRef{K,T}) -> unite_ref(b, r0, r1)
-
-unite_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::UniversalRef{K,T}) where {K,T} = r1
-unite_ref(b::Backend{K,T}, r0::UniversalRef{K,T}, r1::GenericRef{K,T}) where {K,T} = r0
-
-#To avoid ambiguity
-unite_ref(b::Backend{K,T}, r0::UnionRef{K,T}, r1::UnionRef{K,T}) where {K,T} =
-  unite_ref(b, unite_refs(b, r0), unite_refs(b, r1))
-unite_ref(b::Backend{K,T}, r0::EmptyRef{K,T}, r1::EmptyRef{K,T}) where {K,T} = r0
-unite_ref(b::Backend{K,T}, r0::UnionRef{K,T}, r1::EmptyRef{K,T}) where {K,T} = r0
-unite_ref(b::Backend{K,T}, r0::EmptyRef{K,T}, r1::UnionRef{K,T}) where {K,T} = r1
-unite_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::EmptyRef{K,T}) where {K,T} = r0
-unite_ref(b::Backend{K,T}, r0::EmptyRef{K,T}, r1::GenericRef{K,T}) where {K,T} = r1
-
-unite_refs(b::Backend{K,T}, r::UnionRef{K,T}) where {K,T} =
-  foldr((r0,r1)->unite_ref(b,r0,r1), r.values, init=EmptyRef{K,T}())
-unite_ref(b::Backend{K,T}, r0::UnionRef{K,T}, r1::GenericRef{K,T}) where {K,T} =
-  unite_ref(b, unite_refs(b, r0), r1)
-unite_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::UnionRef{K,T}) where {K,T} =
-  unite_ref(b, r0, unite_refs(b, r1))
-
-# currying
-intersect_ref(b::Backend{K,T}) where {K,T} = (r0::GenericRef{K,T}, r1::GenericRef{K,T}) -> intersect_ref(b, r0, r1)
-
-intersect_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::UniversalRef{K,T}) where {K,T} = r0
-intersect_ref(b::Backend{K,T}, r0::UniversalRef{K,T}, r1::GenericRef{K,T}) where {K,T} = r1
-intersect_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::EmptyRef{K,T}) where {K,T} = r1
-intersect_ref(b::Backend{K,T}, r0::EmptyRef{K,T}, r1::GenericRef{K,T}) where {K,T} = r0
-intersect_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::UnionRef{K,T}) where {K,T} =
-  intersect_ref(b, r0, unite_refs(b, r1))
-intersect_ref(b::Backend{K,T}, r0::UnionRef{K,T}, r1::GenericRef{K,T}) where {K,T} =
-  intersect_ref(b, unite_refs(b, r0), r1)
-
-#To avoid ambiguity
-# currying
-subtract_ref(b::Backend{K,T}) where {K,T} = (r0::GenericRef{K,T}, r1::GenericRef{K,T}) -> subtract_ref(b, r0, r1)
-
-subtract_ref(b::Backend{K,T}, r0::UnionRef{K,T}, r1::UnionRef{K,T}) where {K,T} =
-  subtract_ref(b, unite_refs(b, r0), unite_refs(b, r1))
-subtract_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::UniversalRef{K,T}) where {K,T} = EmptyRef{K,T}()
-subtract_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::EmptyRef{K,T}) where {K,T} = r0
-subtract_ref(b::Backend{K,T}, r0::EmptyRef{K,T}, r1::GenericRef{K,T}) where {K,T} = r0
-subtract_ref(b::Backend{K,T}, r0::GenericRef{K,T}, r1::UnionRef{K,T}) where {K,T} =
-  subtract_ref(b, r0, unite_refs(b, r1))
-subtract_ref(b::Backend{K,T}, r0::UnionRef{K,T}, r1::GenericRef{K,T}) where {K,T} =
-  subtract_ref(b, unite_refs(b, r0), r1)
+collect_ref(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
 
 # References need to be created, deleted, and recreated, depending on the way the backend works
 # For example, each time a shape is consumed, it becomes deleted and might need to be recreated
@@ -619,12 +546,6 @@ b_stroke(b::Backend, path::Shape, mat) =
 # This might be usable, so
 export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
 
-@defproxy(empty_shape, Shape0D)
-@defproxy(universal_shape, Shape3D)
-realize(b::Backend, s::EmptyShape) = void_ref(b)
-realize(b::Backend, s::UniversalShape) = void_ref(b)
-
-
 macro defshape(supertype, name_typename, fields...)
   # Merge this with defproxy
   (name, typename) = name_typename isa Symbol ?
@@ -739,7 +660,7 @@ existing_material(mat, mats) =
 
 export label
 label(p, str, mat=default_annotation_material()) =
-  let ann = prev_annotation_that(ann->is_labels(ann) && isapprox(p, ann.p, atol=1e-5))
+  let ann = prev_annotation_that(ann->is_labels(ann) && isapprox(p, ann.p, atol=1e-3))
     add_annotation!(
       isnothing(ann) ?
         labels(p, [str], [mat]) :
@@ -1010,10 +931,6 @@ revolve(profile::Shape=point(x(1)), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle:
     revolve_curve(profile, p, n, start_angle, amplitude)
   elseif is_surface(profile)
     revolve_surface(profile, p, n, start_angle, amplitude)
-  elseif is_union_shape(profile)
-    union(map(s->revolve(s, p, n, start_angle, amplitude), profile.shapes))
-  elseif is_empty_shape(profile)
-    profile
   else
     error("Profile is neither a point nor a curve nor a surface")
   end
@@ -1120,6 +1037,31 @@ bounding_rectangle(ss::Shapes) =
 
 
 #####################################################################
+## Boolean operations
+export union, intersection, subtraction, empty_shape, universal_shape
+
+struct empty_shape <: Shape end
+struct universal_shape <: Shape end
+
+@defshape(Shape3D, subtracted, source::Shape3D=sphere(), mask::Shape3D=box())
+subtraction(shape::Shape, s::empty_shape) = shape
+subtraction(shape::Shape, mask::Shape) = subtracted(shape, mask)
+subtraction(shape::Shape, shapes...) = foldl(subtraction, shapes, init=shape)
+subtraction(shapes::Shapes) = subtraction(shapes...)
+
+@defshape(Shape3D, intersected, source::Shape3D=sphere(), mask::Shape3D=box())
+intersection(shape::Shape, s::universal_shape) = shape
+intersection(shape::Shape, mask::Shape) = intersected(shape, mask)
+intersection(shape::Shape, shapes...) = foldl(intersection, shapes, init=shape)
+intersection(shapes::Shapes) = intersection(shapes...)
+
+@defshape(Shape3D, united, source::Shape3D=sphere(), mask::Shape3D=box())
+union(shape::Shape, s::empty_shape) = shape
+union(shape::Shape, mask::Shape) = united(shape, mask)
+union(shape::Shape, shapes...) = foldl(union, shapes, init=shape)
+union(shapes::Shapes) = union(shapes...)
+
+@defshape(Shape3D, slice, shape::Shape3D=sphere(), p::Loc=u0(), n::Vec=vz(1))
 
 #####################################################################
 ## Conversions
@@ -1136,6 +1078,7 @@ convert(::Type{Region}, s::SurfaceCircle) =
   and_delete_shape(region(circular_path(s.center, s.radius)), s)
 convert(::Type{Region}, s::SurfacePolygon) =
   and_delete_shape(region(closed_polygonal_path(s.vertices)), s)
+
 #####################################################################
 ## Paths can be used to generate surfaces and solids
 
@@ -1157,48 +1100,6 @@ frame_at(s::Shape2D, u::Real, v::Real) = backend_frame_at(backend(s), s, u, v)
 #Some specific cases can be handled in an uniform way without the backend
 frame_at(s::SurfaceRectangle, u::Real, v::Real) = add_xy(s.corner, u, v)
 frame_at(s::SurfaceCircle, u::Real, v::Real) = add_pol(s.center, u, v)
-
-export union, intersection, subtraction
-#=
-We do some pre-filtering to deal with the presence of empty shapes or to simplify one-arg cases.
-=#
-
-@defproxy(union_shape, Shape3D, shapes::Shapes=Shape[])
-union(shapes::Shapes) =
-  let non_empty_shapes = filter(s -> !is_empty_shape(s), shapes),
-      count_non_empty_shapes = length(non_empty_shapes)
-    count_non_empty_shapes == 0 ? empty_shape() :
-    count_non_empty_shapes == 1 ? non_empty_shapes[1] :
-    union_shape(non_empty_shapes)
-  end
-
-union(shape::Shape, shapes...) = union([shape, shapes...])
-
-@defproxy(intersection_shape, Shape3D, shapes::Shapes=Shape[])
-intersection(shapes::Shapes) = intersection_shape(shapes)
-intersection(shape::Shape, shapes...) =
-  is_empty_shape(shape) || any(is_empty_shape, shapes) ? empty_shape() :
-  shapes == [] ? shape : intersection_shape([shape, shapes...])
-
-@defproxy(subtraction_shape2D, Shape2D, shape::Shape=surface_circle(), shapes::Shapes=Shape[])
-@defproxy(subtraction_shape3D, Shape3D, shape::Shape=surface_sphere(), shapes::Shapes=Shape[])
-subtraction(shape::Shape2D, shapes...) =
-  is_empty_shape(shape) ? empty_shape() :
-    let non_empty_shapes = filter(s -> !is_empty_shape(s), shapes),
-        count_non_empty_shapes = length(non_empty_shapes)
-      count_non_empty_shapes == 0 ? shape : subtraction_shape2D(shape, [non_empty_shapes...])
-    end
-subtraction(shape::Shape3D, shapes...) =
-  is_empty_shape(shape) ? empty_shape() :
-    let non_empty_shapes = filter(s -> !is_empty_shape(s), shapes),
-        count_non_empty_shapes = length(non_empty_shapes)
-      count_non_empty_shapes == 0 ? shape : subtraction_shape3D(shape, [non_empty_shapes...])
-    end
-
-@defproxy(slice, Shape3D, shape::Shape=sphere(), p::Loc=u0(), n::Vec=vz(1))
-
-@defproxy(mirror, Shape3D, shape::Shape=sphere(), p::Loc=u0(), n::Vec=vz(1))
-@defproxy(union_mirror, Shape3D, shape::Shape=sphere(), p::Loc=u0(), n::Vec=vz(1))
 
 @defshape(Shape2D, surface_grid, points::Matrix{<:Loc}=zeros(Loc,(2,2)),
           closed_u::Bool=false, closed_v::Bool=false,
@@ -1288,14 +1189,7 @@ and_mark_deleted(b::Backend, r::Any, shape) =
     r
   end
 
-# Common implementations for realize function
-
-realize(b::Backend, s::UnionShape) =
-  unite_refs(b, UnionRef(tuple(map(s->ref(b, s), s.shapes)...)))
-
-realize(b::Backend, s::Union{SubtractionShape2D,SubtractionShape3D}) =
-    subtract_ref(b, ref(b, s.shape), unite_refs(b, UnionRef(tuple(map(s->ref(b, s), s.shapes)...))))
-
+    #=
 function startSketchup(port)
   ENV["ROSETTAPORT"] = port
   args = "C:\\Users\\aml\\Dropbox\\AML\\Projects\\rosetta\\sketchup\\rosetta.rb"
@@ -1306,7 +1200,7 @@ function startSketchup(port)
   connection = listener.accept()
   readline(connection) == "connected" ? connection : error("Could not connect!")
 end
-
+=#
 # CAD
 
 @defcb select_position(prompt::String="Select a position")
@@ -1478,21 +1372,20 @@ centroid(s::Cylinder) = add_z(s.cb, s.h/2)
 export show_cs
 
 show_cs(p, scale=1) =
-    let rcyl = scale/10,
-        rcon = scale/5,
-        lcyl = scale,
-        lcon = scale/5,
-        px = add_x(p, 3*lcyl),
-        py = add_y(p, 2*lcyl),
-        pz = add_z(p, 1*lcyl)
-      union(args...) = args[end] # Unity is having problems with unions
-        union(cylinder(p, rcyl, px),
-              cone(px, rcon, add_x(px, lcon)),
-              cylinder(p, rcyl, py),
-              cone(py, rcon, add_y(py, lcon)),
-              cylinder(p, rcyl, pz),
-              cone(pz, rcon, add_z(pz, lcon)))
-    end
+  let rcyl = scale/10,
+      rcon = scale/5,
+      lcyl = scale,
+      lcon = scale/5,
+      px = add_x(p, 3*lcyl),
+      py = add_y(p, 2*lcyl),
+      pz = add_z(p, 1*lcyl)
+    [cylinder(p, rcyl, px),
+     cone(px, rcon, add_x(px, lcon)),
+     cylinder(p, rcyl, py),
+     cone(py, rcon, add_y(py, lcon)),
+     cylinder(p, rcyl, pz),
+     cone(pz, rcon, add_z(pz, lcon))]
+  end
 
 #
 nonzero_offset(l::Line, d::Real) =
