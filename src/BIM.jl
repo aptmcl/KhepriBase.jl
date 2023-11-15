@@ -965,16 +965,16 @@ realize(b::Backend, s::Ieslight) =
   b_ieslight(b, s.file, s.loc, s.dir, s.alpha, s.beta, s.gamma)
 
 # Water closed
-@deffamily(water_closed_family, Family,
+@deffamily(toilet_family, Family,
   )
 
-@defproxy(water_closed, BIMShape, cb::Loc=u0(), host::BIMShape=slab(), family::WaterClosedFamily=default_water_closed_family())
-water_closed(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::WaterClosedFamily=default_water_closed_family(); 
-             angle::Real=Angle, host::BIMShape=Host, family::WaterClosedFamily=Family) =
-  water_closed(loc_from_o_phi(cb, angle), host, family)
+@defproxy(toilet, BIMShape, cb::Loc=u0(), host::BIMShape=slab(), family::ToiletFamily=default_toilet_family())
+toilet(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::ToiletFamily=default_toilet_family(); 
+             angle::Real=Angle, host::BIMShape=Host, family::ToiletFamily=Family) =
+  toilet(loc_from_o_phi(cb, angle), host, family)
 
-realize(b::Backend, s::WaterClosed) =
-  b_water_closed(b, s.cb, s.host, s.family)
+realize(b::Backend, s::Toilet) =
+  b_toilet(b, s.cb, s.host, s.family)
 
 # Sink
 @deffamily(sink_family, Family,
