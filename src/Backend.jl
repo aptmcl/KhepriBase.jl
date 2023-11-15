@@ -42,6 +42,9 @@ macro bdef(call)
 end
 
 @bdef(void_ref())
+
+export new_refs
+new_refs(b::Backend{K,T}) where {K,T} = T[]
 ############################################################
 # Zeroth tier: curves. Not all backends support these.
 
@@ -351,7 +354,7 @@ b_cone_frustum(b::Backend, cb, rb, h, rt, bmat, tmat, smat) =
   	b,
   	regular_polygon_vertices(32, cb, rb, 0, true),
   	regular_polygon_vertices(32, add_z(cb, h), rt, 0, true),
-	true,
+	  true,
   	bmat, tmat, smat)
 
 b_torus(b::Backend, c, ra, rb, mat) =
@@ -360,7 +363,7 @@ b_torus(b::Backend, c, ra, rb, mat) =
 	[add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
 	 for ψ in division(0, 2π, 32, false), ϕ in division(0, 2π, 64, false)],
     true, true,
-  	false, false,
+  	true, true,
   	mat)
 ##################################################################
 # Paths and Regions
@@ -402,7 +405,7 @@ b_extrusion(b::Backend, path::Path, v, cb, bmat, tmat, smat) =
 	  	ts = translate(bs, v)
   	  b_quad_strip(b, bs, ts, is_smooth_path(path), smat)
     end :
-    b_extrusion(b, path, v, cb, bmat, tmat, smat)
+    b_extrusion(b, path.vertices, v, cb, bmat, tmat, smat)
 
 b_extrusion(b::Backend, path, v, cb, bmat, tmat, smat) =
   b_generic_prism(
@@ -470,6 +473,54 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
       is_smooth_path(path),
 	    mat)
   end
+
+# Booleans
+
+export b_subtracted, b_intersected, b_united, b_slice, b_unite_refs, b_slice_ref
+
+@bdef b_subtract_ref(sref, mref)
+@bdef b_intersect_ref(sref, mref)
+@bdef b_unite_ref(srefs)
+
+b_unite_refs(b::Backend, rs) =
+  foldl((s, r)->b_unite_ref(b, s, r), rs)
+
+b_subtracted(b::Backend, source, mask, mat) =
+  and_mark_deleted(b,
+    map_ref(b, source) do s
+      and_mark_deleted(b,
+        map_ref(b, mask) do r
+          b_subtract_ref(b, s, r)
+        end,
+        [mask])
+      end,
+    [source])
+
+b_intersected(b::Backend, source, mask, mat) =
+  and_mark_deleted(b,
+    map_ref(b, source) do s
+      and_mark_deleted(b,
+        map_ref(b, mask) do r
+          b_intersect_ref(b, s, r)
+        end,
+        [mask])
+      end,
+    [source])
+
+b_united(b::Backend, source, mask, mat) =
+  and_mark_deleted(b,
+    b_unite_refs(b, vcat(collect_ref(b, source), collect_ref(b, mask))),
+    [source, mask])
+
+b_slice(b::Backend, shape, p, v, mat) =
+  and_mark_deleted(b,
+    map_ref(b, shape) do s
+      b_slice_ref(b, s, p, v)
+    end,
+    [shape])
+
+b_slice_ref(b::Backend, r, p, v) =
+  b_subtract_ref(b, r, b_regular_prism(b, 4, loc_from_o_vz(p, v), 1e5, 0, 1e5, true, void_ref(b)))
 
 # Stroke and fill operations over paths
 # This is specially useful for debuging
@@ -907,7 +958,7 @@ b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
         w_height = w_height*wall_z_fighting_factor,
   	    (lmat, rmat, smat) = (family.left_material, family.right_material, family.side_material),
         prevlength = 0,
-        refs = []
+        refs = new_refs(b)
       for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
         let currlength = prevlength + path_length(w_seg_path),
             c_r_w_path = closed_path_for_height(r_w_path, w_height),
@@ -919,18 +970,28 @@ b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
           prevlength = currlength
         end
       end
-      [refs...]
+      refs
     end
 
 #AML TO BE CONTINUED!!!
 #b_wall(b::Backend, w_path, w_openings, l_thickness, r_thickness, family) =
 
+export b_toilet, b_sink, b_closet
+b_toilet(b::Backend, c, host, family) =
+  b_box(b, c - vxy(20, 20, c.cs), 40, 40, 40, nothing)
+
+b_sink(b::Backend, c, host, family) =
+  b_box(b, c - vxy(40, 40, c.cs), 80, 80, 80, nothing)
+
+b_closet(b::Backend, c, host, family) =
+  b_box(b, c - vxy(100, 40, c.cs), 200, 80, 200, nothing)
 
 # Lights
 
-@bdef b_ieslight(file::String, loc::Loc, dir::Vec, alpha::Real, beta::Real, gamma::Real)
-@bdef b_pointlight(loc::Loc, color::RGB, intensity::Real, range::Real)
-@bdef b_spotlight(loc::Loc, dir::Vec, hotspot::Real, falloff::Real)
+@bdef b_ieslight(file, loc, dir, alpha, beta, gamma)
+@bdef b_pointlight(loc, energy, color)
+@bdef b_spotlight(loc, dir, hotspot, falloff)
+@bdef b_arealight(loc, dir, size, energy, color)
 
 # Trusses
 export b_truss_node, b_truss_node_support, b_truss_bar
@@ -1152,6 +1213,7 @@ backend_fill_curves(b, ids) = throw(UndefinedBackendException())
 backend_fill(b::Backend, path::ClosedPathSequence) =
   backend_fill_curves(b, map(path->backend_stroke(b, path), path.paths))
 
+
 @bdef ground(level::Loc, color::RGB)
 
 @bdef name()
@@ -1165,8 +1227,27 @@ b_set_ground(b::Backend, level, mat) =
 b_realistic_sky(b::Backend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
   b_realistic_sky(b::Backend, sun_pos(date, meridian, latitude, longitude)..., turbidity, sun)
 
-@bdef b_render_view(path)
-@bdef b_render_clay_view(path)
+# Rendering
+
+export b_render_pathname, b_render_inital_setup, b_render_final_setup, b_setup_render, b_render_view
+
+b_setup_render(b::Backend, kind) = kind
+
+b_render_view(b::Backend, name) =
+  let path = b_render_pathname(b, name)
+    b_render_final_setup(b, render_kind())
+    b_render_and_save_view(b, prepare_for_saving_file(path))
+    path
+  end
+
+b_render_pathname(::Backend, name::String) = render_default_pathname(name)  
+b_render_initial_setup(::Backend, kind) = kind
+b_render_final_setup(::Backend, kind) = kind
+
+@bdef b_render_and_save_view(path)
+
+#######
+
 
 @bdef b_revolve_curve(profile, p, n, start_angle, amplitude, mat)
 @bdef b_revolve_point(profile, p, n, start_angle, amplitude, mat)
@@ -1180,7 +1261,7 @@ backend_stroke(b::Backend, path::Union{OpenPathSequence,ClosedPathSequence}) =
   backend_stroke_unite(b, map(path->backend_stroke(b, path), path.paths))
 backend_stroke(b::Backend, path::PathOps) =
   begin
-      start, curr, refs = path.start, path.start, []
+      start, curr, refs = path.start, path.start, new_refs(b)
       for op in path.ops
           start, curr, refs = backend_stroke_op(b, op, start, curr, refs)
       end
@@ -1244,7 +1325,7 @@ backend_wall_with_materials(b::Backend, w_path, w_height, l_thickness, r_thickne
       l_w_paths = subpaths(offset(w_path, l_thickness)),
       w_height = w_height*wall_z_fighting_factor,
       prevlength = 0,
-      refs = []
+      refs = new_refs(b)
     for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
       let currlength = prevlength + path_length(w_seg_path),
           c_r_w_path = closed_path_for_height(r_w_path, w_height),
@@ -1253,7 +1334,7 @@ backend_wall_with_materials(b::Backend, w_path, w_height, l_thickness, r_thickne
         prevlength = currlength
       end
     end
-    [refs...]
+    refs
   end
 
 # Select things from a backend
