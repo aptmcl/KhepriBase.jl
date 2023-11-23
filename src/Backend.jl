@@ -1234,10 +1234,39 @@ export b_render_pathname, b_render_inital_setup, b_render_final_setup, b_setup_r
 b_setup_render(b::Backend, kind) = kind
 
 b_render_view(b::Backend, name) =
-  let path = b_render_pathname(b, name)
+  let path = prepare_for_saving_file(b_render_pathname(b, name))
     b_render_final_setup(b, render_kind())
-    b_render_and_save_view(b, prepare_for_saving_file(path))
+    b_render_and_save_view(b, path)
     path
+  end
+
+#=
+prepare_for_saving_file(path::String) =
+  let p = normpath(path)
+    mkpath(dirname(p))
+    rm(p, force=true)
+    isfile(p) ? # rm failed because file is locked
+      let (base, ext) = splitext(path)
+        prepare_for_saving_file(base*"_"*ext)
+      end :
+      p
+  end
+=#
+prepare_for_saving_file(path::String) =
+  let p = normpath(path)
+    mkpath(dirname(p))
+    try
+      rm(p, force=true)
+      p
+    catch e
+      if isa(e, Base.IOError)
+        let (base, ext) = splitext(path)
+          if ext == ".pdf"
+            prepare_for_saving_file(base*"_"*ext)
+          end
+        end
+      end
+    end
   end
 
 b_render_pathname(::Backend, name::String) = render_default_pathname(name)  

@@ -53,23 +53,6 @@ render_size() =
 render_size(width::Integer, heigth::Integer) =
   (render_width(width), render_height(heigth))
 
-prepare_for_saving_file(path::String) =
-  let p = normpath(path)
-      mkpath(dirname(p))
-    try
-      rm(p, force=true)
-      p
-    catch e
-      if isa(e, Base.IOError)
-        let (base, ext) = splitext(path)
-          if ext == ".pdf"
-            prepare_for_saving_file(base*"_"*ext)
-          end
-        end
-      end
-    end
-  end
-
 export film_active,
        film_filename,
        film_frame,
