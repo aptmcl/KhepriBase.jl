@@ -664,7 +664,7 @@ label(p, str, mat=default_annotation_material()) =
     add_annotation!(
       isnothing(ann) ?
         labels(p, [str], [mat]) :
-        str in ann.strs && existing_material(mat, ann.mats) ?
+        (str, mat.layer.color) in zip(ann.strs, [mat.layer.color for mat in ann.mats]) ?
           labels(p, ann.strs, ann.mats) : 
           labels(p, [ann.strs..., str], [ann.mats..., mat]))
   end
@@ -679,7 +679,7 @@ vector_illustration(p, a, r, str, mat=default_annotation_material()) =
     add_annotation!(
       isnothing(ann) ?
         vectors_illustration(p, a, [r], [str], [mat]) :
-        str in ann.radii_texts && existing_material(mat, ann.mats) ?
+        (str, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
           vectors_illustration(p, a, ann.radii, ann.radii_texts, ann.mats) :
           vectors_illustration(p, a, [ann.radii..., r], [ann.radii_texts..., str], [ann.mats..., mat]))
   end
@@ -694,7 +694,7 @@ radius_illustration(c, r, str, mat=default_annotation_material()) =
     add_annotation!(
       isnothing(ann) ?
         radii_illustration(c, [r], [str], [mat]) :
-        str in ann.radii_texts && existing_material(mat, ann.mats) ?
+        (str, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
           radii_illustration(c, ann.radii, ann.radii_texts, ann.mats) :
           radii_illustration(c, [ann.radii..., r], [ann.radii_texts..., str], [ann.mats..., mat]))
   end
