@@ -952,7 +952,7 @@ realize(b::Backend, s::TableAndChairs) =
 @defproxy(pointlight, BIMShape, loc::Loc=z(3), color::RGB=rgb(1,1,1), intensity::Real=1500.0, level::Level=default_level())
 
 realize(b::Backend, s::Pointlight) =
-  b_pointlight(b, add_z(s.loc, s.level.height), s.color, s.intensity)
+  b_pointlight(b, add_z(s.loc, s.level.height), s.intensity, s.color)
 
 @defproxy(spotlight, BIMShape, loc::Loc=z(3), dir::Vec=vz(-1), hotspot::Real=pi/4, falloff::Real=pi/3)
 
@@ -967,9 +967,10 @@ realize(b::Backend, s::Ieslight) =
 # Water closed
 @deffamily(toilet_family, Family,
   )
+missing_slab() = error("Missing slab host!")
 
-@defproxy(toilet, BIMShape, cb::Loc=u0(), host::BIMShape=slab(), family::ToiletFamily=default_toilet_family())
-toilet(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::ToiletFamily=default_toilet_family(); 
+@defproxy(toilet, BIMShape, cb::Loc=u0(), host::BIMShape=missing_slab(), family::ToiletFamily=default_toilet_family())
+toilet(cb::Loc, Angle::Real=0, Host::BIMShape=missing_slab(), Family::ToiletFamily=default_toilet_family(); 
              angle::Real=Angle, host::BIMShape=Host, family::ToiletFamily=Family) =
   toilet(loc_from_o_phi(cb, angle), host, family)
 
@@ -980,8 +981,8 @@ realize(b::Backend, s::Toilet) =
 @deffamily(sink_family, Family,
   )
 
-@defproxy(sink, BIMShape, cb::Loc=u0(), host::BIMShape=slab(), family::SinkFamily=default_sink_closed_family())
-sink(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::SinkFamily=default_sink_family(); 
+@defproxy(sink, BIMShape, cb::Loc=u0(), host::BIMShape=missing_slab(), family::SinkFamily=default_sink_closed_family())
+sink(cb::Loc, Angle::Real=0, Host::BIMShape=missing_slab(), Family::SinkFamily=default_sink_family(); 
              angle::Real=Angle, host::BIMShape=Host, family::SinkFamily=Family) =
   sink(loc_from_o_phi(cb, angle), host, family)
 
