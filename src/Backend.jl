@@ -128,7 +128,7 @@ b_quad_strip_closed(b::Backend, ps, qs, smooth, mat) =
 
 b_strip(b::Backend, path1, path2, mat) =
   let v1s = path_vertices(path1),
-	  v2s = path_vertices(path2)
+	    v2s = path_vertices(path2)
     length(v1s) != length(v2s) ?
   	  error("Paths with different resolution ($(length(v1s)) vs $(length(v2s)))") :
       is_closed_path(path1) && is_closed_path(path2) ?
@@ -187,9 +187,9 @@ b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, interpo
 	  end
 	  closed_u ?
       vcat([b_quad_strip_closed(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
-	      closed_v ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : []) :
+	      closed_v ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : new_refs(b)) :
 	    vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
-	       closed_v ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : [])
+	       closed_v ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : new_refs(b))
   end
 
 b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
@@ -377,6 +377,11 @@ b_surface(b::Backend, region::Region, mat) =
     [reverse(path_vertices(path)) for path in inner_paths(region)],
     mat)
 
+b_surface(b::Backend, frontier::Shapes, mat) =
+  let path = foldr(join_paths, [convert(OpenPolygonalPath, shape_path(e)) for e in frontier])
+    and_delete_shapes(b_surface_polygon(b, path_vertices(path), mat), frontier)
+  end
+  
 # In theory, this should be implemented using a loft
 b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
   let blength = path_length(bpath),
@@ -399,13 +404,14 @@ export b_extrusion, b_sweep, b_loft
 b_extrusion(b::Backend, path, v, cb, mat) =
   b_extrusion(b, path, v, cb, mat, mat, mat)
 
-b_extrusion(b::Backend, path::Path, v, cb, bmat, tmat, smat) =
-  is_open_path(path) ?
-  	let bs = path_vertices_on(path, cb),
+b_extrusion(b::Backend, path::OpenPolygonalPath, v, cb, bmat, tmat, smat) =
+ 	let bs = path_vertices_on(path, cb),
 	  	ts = translate(bs, v)
   	  b_quad_strip(b, bs, ts, is_smooth_path(path), smat)
-    end :
-    b_extrusion(b, path.vertices, v, cb, bmat, tmat, smat)
+  end
+
+b_extrusion(b::Backend, path::ClosedPolygonalPath, v, cb, bmat, tmat, smat) =
+  b_extrusion(b, convert(OpenPolygonalPath, path), v, cb, bmat, tmat, smat)
 
 b_extrusion(b::Backend, path, v, cb, bmat, tmat, smat) =
   b_generic_prism(
@@ -428,7 +434,11 @@ b_extrusion(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
   let outer = outer_path(profile),
       inners = inner_paths(profile)
     isempty(inners) ?
-      b_extrusion(b, outer, v, cb,
+      b_generic_prism(
+        b,
+        path_vertices_on(outer, cb),
+        is_smooth_path(outer),
+        v,
         bmat, tmat, smat) :
       b_generic_prism_with_holes(b,
         path_vertices_on(outer, cb),
@@ -451,19 +461,40 @@ b_loft(b::Backend, profiles, closed, smooth, mat) =
 	b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
   end
 
+b_sweep(b::Backend, path::Shape1D, profile::Shape1D, rotation, scaling, mat) =
+  b_sweep(b, convert(Path, path), convert(Path, profile), rotation, scaling, mat)
+
+b_sweep(b::Backend, path::Shape1D, profile::Shape2D, rotation, scaling, mat) =
+  b_sweep(b, convert(Path, path), convert(Region, profile), rotation, scaling, mat)
+
+b_sweep(b::Backend, path, profile::Region, rotation, scaling, mat) =
+  let outer = outer_path(profile),
+      inners = inner_paths(profile),
+      frames = path_interpolated_frames(path),
+      frames = rotation == 0 ?
+        frames : 
+        [loc_from_o_phi(frame, phi) for (frame, phi) in zip(frames, map_division(identity, 0, rotation, length(frames)-1))],
+      profiles = map_division(s->scale(profile, s, u0()), 1, scaling, length(frames)-1)
+    vcat(b_sweep(b, path, outer, rotation, scaling, mat),
+         [b_sweep(b, path, inner, rotation, scaling, mat) for inner in inners]...,
+         b_surface(b, path_on(profiles[1], frames[1]), mat),
+         b_surface(b, path_on(profiles[end], frames[end]), mat))
+  end
+
 b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
-#  let vertices = in_world.(path_vertices(profile)),
-#      frames = map_division(identity, path, 100),
-#	  points = [xyz(cx(p), cy(p), cz(p), frame.cs) for p in vertices, frame in frames]
-  let frames = rotation_minimizing_frames(path_frames(path)),
-	  profiles = map_division(s->scale(profile, s) #=2.1+sin(s)), 0, 32pi,=#, 1, scaling, length(frames)),# #map_division(identity, path, 100), #
-	  verticess = map(path_vertices, profiles),
-	  verticess = is_smooth_path(profile) ?
-	  	let n = mapreduce(length, max, verticess)-1
-		    map(path->map_division(identity, path, n), profiles)
-	    end :
-	    verticess
-	  points = hcat(map(path_vertices_on, verticess, frames)...)
+  let frames = rotation == 0 ?
+                rotation_minimizing_frames(path_frames(path)) :
+                let subframes = path_interpolated_frames(path, path_domain(path), collinearity_tolerance(), ceil(Int, log(rotation)*2))
+                  map(loc_from_o_phi, subframes, map_division(identity, 0, rotation, length(subframes)-1))
+                end,
+      profiles = map_division(s->scale(profile, s, u0()), 1, scaling, length(frames)-1),
+      verticess = map(path_vertices, profiles),
+	    verticess = is_smooth_path(profile) ?
+	  	  let n = mapreduce(length, max, verticess)-1
+		      map(path->map_division(identity, path, n), profiles)
+	      end :
+	      verticess,
+   	  points = hcat(map(path_vertices_on, verticess, frames)...)
     b_surface_grid(
       b,
       points,
@@ -480,7 +511,7 @@ export b_subtracted, b_intersected, b_united, b_slice, b_unite_refs, b_slice_ref
 
 @bdef b_subtract_ref(sref, mref)
 @bdef b_intersect_ref(sref, mref)
-@bdef b_unite_ref(srefs)
+@bdef b_unite_ref(sref, mref)
 
 b_unite_refs(b::Backend, rs) =
   foldl((s, r)->b_unite_ref(b, s, r), rs)
@@ -738,7 +769,7 @@ const letter_glyph = Dict(
 b_text(b::Backend, str, p, size, mat) =
   let dx = 0,
 	  inter_letter_spacing_factor = 1/3,
-	  refs = []
+	  refs = new_refs(b)
     for c in str
   	  let glyph = letter_glyph[c]
   	    for vs in glyph.vss
@@ -747,7 +778,7 @@ b_text(b::Backend, str, p, size, mat) =
   	    dx += (glyph.bb[2][1]-glyph.bb[1][1] + inter_letter_spacing_factor)*size
   	  end
     end
-	refs
+	  refs
   end
 
 b_text_size(b::Backend, str, size, mat) =
