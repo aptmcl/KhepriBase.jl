@@ -261,7 +261,7 @@ list(gen::Base.Generator) =
 head(x::Cons{T}) where {T} = x.head::T
 tail(x::Cons{T}) where {T} = x.tail
 Base.first(x::Cons) = x.head
-Base.Iterators.drop(x::Cons, n) = n == 0 ? x : drop(x.tail, n-1)
+Base.Iterators.drop(x::Cons, n::Integer) = n == 0 ? x : drop(x.tail, n-1)
 Base.iterate(l::List, ::Nil) = nothing
 Base.iterate(l::List, state::Cons = l) = state.head, state.tail
 
