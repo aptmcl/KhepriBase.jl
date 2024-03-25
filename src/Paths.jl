@@ -61,7 +61,9 @@ export empty_path,
        region,
        outer_path,
        inner_paths,
-       path_tolerance
+       path_tolerance,
+       is_closed_path,
+       coincident_path_location
 
 path_tolerance = Parameter(1e-10)
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < path_tolerance()
@@ -110,7 +112,7 @@ path_interpolated_frames(path::Path, (t0, t1)=path_domain(path), epsilon=colline
       pm = location_at(path, tm)
     min_recursion < 0 &&
     collinear_points(p0, pm, p1, epsilon) &&
-    let tr = (t0 + t1)/(1.99+rand()*0.02),
+    let tr = t0 + (t1 - t0)/(1.99+rand()*0.02),
         pr = location_at(path, tr) # To avoid coincidences
       collinear_points(p0, pr, p1, epsilon)
     end ?
@@ -329,19 +331,27 @@ in_cs(path::ClosedSplinePath, cs::CS) = ClosedSplinePath(in_cs(path.vertices, cs
 in_cs(ps::Locs, cs::CS) = map(p->in_cs(p, cs), ps)
 
 scale(path::CircularPath, s::Real, p::Loc=u0()) =
-  let v = path.center - p
-    circular_path(p + v*s, path.radius*s)
-  end
+  s == 1 ?
+    path :
+    let v = path.center - p
+      circular_path(p + v*s, path.radius*s)
+    end
 scale(path::RectangularPath, s::Real, p::Loc=u0()) =
-  let v = path.corner - p
-    rectangular_path(p + v*s, path.dx*s, path.dy*s)
-  end
+  s == 1 ?
+    path :
+    let v = path.corner - p
+      rectangular_path(p + v*s, path.dx*s, path.dy*s)
+    end
 scale(path::OpenPolygonalPath, s::Real, p::Loc=u0()) =
-  open_polygonal_path([q + (q-p)*s for q in path.vertices])
+  s == 1 ?
+    path :
+    open_polygonal_path([p + (q-p)*s for q in path.vertices])
 scale(path::ClosedPolygonalPath, s::Real, p::Loc=u0()) =
-  closed_polygonal_path([q + (q-p)*s for q in path.vertices])
+  s == 1 ?
+    path :
+    closed_polygonal_path([p + (q-p)*s for q in path.vertices])
 
-rotate(path::Path, Δα, rot_p = path_start(path)) =
+rotate(path::Path, Δα, rot_p=u0()) =
   Δα == 0 ?
     path :
     let rotate_vertex(p) = let v = p - rot_p
@@ -771,6 +781,9 @@ convert(::Type{Region}, path::ClosedPath) =
 # Operations on path containers
 translate(path::T, v::Vec) where T<:Union{PathSequence,PathSet,Region} =
   T(translate.(path.paths, v))
+scale(path::T, s::Real, p::Loc=u0()) where T<:Union{PathSequence,PathSet,Region} =
+  T(scale.(path.paths, s, p))
+
 in_cs(path::T, cs::CS) where T<:Union{PathSequence,PathSet,Region} =
   T(map(p->in_cs(p, cs), path.paths))
 planar_path_normal(path::T) where T<:Union{PathSequence,PathSet,Region} =
@@ -844,10 +857,12 @@ convert(::Type{OpenPolygonalPath}, path::OpenSplinePath) =
 
 
 curve_interpolator(pts::Locs, closed::Bool) =
-  ParametricSpline(
-    [pt.raw[i] for i in 1:3, pt in in_world.(closed ? [pts..., pts[1]] : pts)],
-    k=min(length(pts)-1, 3),
-    periodic=closed)
+  let pts = length(pts) > 2 ? pts : [pts[1], intermediate_loc(pts...), pts[2]]
+    ParametricSpline(
+      [pt.raw[i] for i in 1:3, pt in in_world.(closed ? [pts..., pts[1]] : pts)],
+      k=min(length(pts)-1, 3),
+      periodic=closed)
+  end
 curve_control_points(interpolator) =
   let cps = get_coeffs(interpolator)
     [xyz(cps[1,j], cps[2,j], cps[3,j], world_cs)
@@ -874,6 +889,10 @@ convert(::Type{OpenPolygonalPath}, path::OpenPathSequence) =
     append!(vertices, convert(OpenPolygonalPath, paths[end]).vertices)
     open_polygonal_path(vertices)
   end
+
+
+convert(::Type{ClosedPath}, paths::Vector{<:Path}) =
+  ClosedPathSequence(ensure_connected_paths(paths))
 
 # It is possible to convert a PathSet to a singleton path
 # by considering the first path as the outer path and all the
@@ -924,7 +943,7 @@ path_frames(path::OpenPolygonalPath) =
       ptn1 = pts[end-1],
       ptn = pts[end]
     length(pts) < 3 ?
-      loc_from_o_vz(pt1, pt1-pt2) :
+      [loc_from_o_vz(pt1, pt1-pt2), loc_from_o_vz(ptn, pt1-pt2)] :
       let normal(pprev, p, pnext) = (unitized(pnext-p) - unitized(p-pprev))
         [loc_from_o_vx_vz(pt1, normal(pt1, pt2, pts[3]), pt2-pt1),
          [loc_from_o_vx_vz(p, normal(pprev, p, pnext), ((p-pprev) + (pnext-p))/2)
@@ -1005,12 +1024,28 @@ plus_profile(Width::Real=0.1, Height::Real=Width; width::Real=Width, height::Rea
             x(w2), xy(w2, t2), xy(t2, t2), xy(t2, h2), y(h2)])))
     end
 
+loc_on(p::Loc, frame) =
+  add_xyz(frame, raw_point(p)...)
+locs_on(ps::Locs, frame) =
+  [loc_on(p, frame) for p in ps]
+
 export path_vertices_on
 path_vertices_on(path::Path, p) =
-  path_vertices_on(path_vertices(path), p)
+  locs_on(path_vertices(path), p)
 path_vertices_on(vs::Locs, p) =
-  [add_xyz(p, raw_point(v)...) for v in vs]
+  locs_on(vs, p)
 
+export path_on
+path_on(path::CircularPath, p) =
+  circular_path(loc_on(path.center, p), path.radius)
+path_on(path::RectangularPath, p) =
+  rectangular_path(loc_on(path.corner, p), path.dx, path.dy)
+path_on(path::OpenPolygonalPath, p) =
+  open_polygonal_path(locs_on(path_vertices(path), p))
+path_on(path::ClosedPolygonalPath, p) =
+  closed_polygonal_path(locs_on(path_vertices(path), p))
+path_on(path::Region, p) =
+  region([path_on(path, p) for path in path.paths])
 
 ## Utility operations
 Base.reverse(path::CircularPath) =
