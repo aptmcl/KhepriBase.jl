@@ -74,7 +74,7 @@ ensure_ref(b::Backend{K,T}, rs::Vector{Vector{T1}}) where {K,T,T1<:T} =
   ensure_ref(b, reduce(vcat, rs))
 
 ensure_ref(b::Backend{K,T}, r::Vector{Any}) where {K,T} = begin
-  warn("Unexpected reference $r")
+  @warn("Unexpected reference $r")
   ensure_ref(b, T[r...])
 end
 ensure_ref(b::Backend, r::Any) = error("Unexpected reference $r")
@@ -805,7 +805,10 @@ path_vertices(s::Shape1D) = path_vertices(shape_path(s))
 path_frames(s::Shape1D) = path_frames(shape_path(s))
 shape_path(s::Circle) = circular_path(s.center, s.radius)
 shape_path(s::SurfaceCircle) = circular_path(s.center, s.radius)
-shape_path(s::Spline) = open_spline_path(s.points, s.v0, s.v1)
+shape_path(s::Spline) =
+  length(s.points) > 2 ? 
+    open_spline_path(s.points, s.v0, s.v1) :
+    open_polygonal_path(s.points)
 shape_path(s::ClosedSpline) = closed_spline_path(s.points)
 shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
 shape_path(s::SurfaceRectangle) = rectangular_path(s.corner, s.dx, s.dy)
@@ -1072,12 +1075,18 @@ convert(::Type{Path}, s::Line) =
   and_delete_shape(convert(OpenPath, s.vertices), s)
 convert(::Type{Path}, s::Circle) =
   and_delete_shape(circular_path(s.center, s.radius), s)
-convert(::Type{Path}, s::Polygon) =
-  and_delete_shape(polygonal_path(s.vertices), s)
+convert(::Type{Path}, s::Spline) =
+  and_delete_shape(spline_path(s.points), s)
 convert(::Type{Region}, s::SurfaceCircle) =
   and_delete_shape(region(circular_path(s.center, s.radius)), s)
+convert(::Type{Region}, s::SurfaceRectangle) =
+  and_delete_shape(region(rectangular_path(s.corner, s.dx, s.dy)), s)
 convert(::Type{Region}, s::SurfacePolygon) =
   and_delete_shape(region(closed_polygonal_path(s.vertices)), s)
+convert(::Type{Region}, s::SurfaceRegularPolygon) =
+  and_delete_shape(region(closed_polygonal_path(regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))), s)
+convert(::Type{Region}, s::Surface) =
+  and_delete_shape(region([convert(Path, e) for e in s.frontier]), s)
 
 #####################################################################
 ## Paths can be used to generate surfaces and solids
