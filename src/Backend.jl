@@ -484,7 +484,9 @@ b_sweep(b::Backend, path, profile::Region, rotation, scaling, mat) =
 b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
   let frames = rotation == 0 ?
                 rotation_minimizing_frames(path_frames(path)) :
-                let subframes = path_interpolated_frames(path, path_domain(path), collinearity_tolerance(), ceil(Int, log(rotation)*2))
+                let subframes = path_interpolated_frames(path, path_domain(path), 
+                                                         collinearity_tolerance(),
+                                                         ceil(Int, log(abs(rotation))*4))
                   map(loc_from_o_phi, subframes, map_division(identity, 0, rotation, length(subframes)-1))
                 end,
       profiles = map_division(s->scale(profile, s, u0()), 1, scaling, length(frames)-1),
