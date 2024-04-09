@@ -98,6 +98,11 @@ b_arc(b::Backend, c, r, α, Δα, mat) =
     nothing, nothing, # THIS NEEDS TO BE FIXED
     mat)
 
+b_ellipse(b::Backend, c, rx, ry, mat) =
+  b_closed_spline(b,
+    [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
+     for ϕ in division(0, 2pi, 64, false)], mat)
+  
 b_rectangle(b::Backend, c, dx, dy, mat) =
   b_polygon(b, [c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy)], mat)
 
@@ -398,21 +403,19 @@ b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
 	end
 
 # Extrusions, lofts, sweeps, etc
-export b_extrusion, b_sweep, b_loft
+export b_extruded_curve, b_extruded_surface, b_sweep, b_loft
 
 # Extruding a profile
-b_extrusion(b::Backend, path, v, cb, mat) =
-  b_extrusion(b, path, v, cb, mat, mat, mat)
-
-b_extrusion(b::Backend, path::OpenPolygonalPath, v, cb, bmat, tmat, smat) =
+b_extruded_curve(b::Backend, path::OpenPolygonalPath, v, cb, mat) =
  	let bs = path_vertices_on(path, cb),
 	  	ts = translate(bs, v)
-  	  b_quad_strip(b, bs, ts, is_smooth_path(path), smat)
+  	  b_quad_strip(b, bs, ts, is_smooth_path(path), mat)
   end
 
-b_extrusion(b::Backend, path::ClosedPolygonalPath, v, cb, bmat, tmat, smat) =
-  b_extrusion(b, convert(OpenPolygonalPath, path), v, cb, bmat, tmat, smat)
+b_extruded_curve(b::Backend, path::ClosedPolygonalPath, v, cb, mat) =
+  b_extruded_curve(b, convert(OpenPolygonalPath, path), v, cb, mat)
 
+#=
 b_extrusion(b::Backend, path, v, cb, bmat, tmat, smat) =
   b_generic_prism(
     b,
@@ -420,20 +423,33 @@ b_extrusion(b::Backend, path, v, cb, bmat, tmat, smat) =
     is_smooth_path(path),
     v,
     bmat, tmat, smat)
+=#
 
-b_extrusion(b::Backend, profile::CircularPath, v, cb, bmat, tmat, smat) =
+b_extruded_curve(b::Backend, profile::CircularPath, v, cb, mat) =
   v.cs === cb.cs && iszero(v.x) && iszero(v.y) ?
-  	b_cylinder(b, add_xy(cb, profile.center.x, profile.center.y), profile.radius, v.z, bmat, tmat, smat) :
+  	b_cylinder(b, add_xy(cb, profile.center.x, profile.center.y), profile.radius, v.z, nothing, nothing, mat) :
 	b_generic_prism(b,
 	  path_vertices_on(profile, cb),
 	  is_smooth_path(profile),
 	  v,
-	  bmat, tmat, smat)
+	  nothing, nothing, mat)
 
-b_extrusion(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
+b_extruded_surface(b::Backend, profile, v, cb, mat) =
+  b_extruded_surface(b, profile, v, cb, mat, mat, mat)
+
+b_extruded_surface(b::Backend, path::Path, v, cb, mat) =
+  b_extruded_surface(b, region(path), v, cb, mat)
+  
+b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
   let outer = outer_path(profile),
       inners = inner_paths(profile)
-    isempty(inners) ?
+    vcat(b_extruded_curve(b, outer, v, cb, smat),
+         [b_extruded_curve(b, inner, v, cb, smat) for inner in inners]...,
+         b_surface(b, profile, bmat),
+         b_surface(b, translate(profile, v), tmat))
+    end
+    #=
+      isempty(inners) ?
       b_generic_prism(
         b,
         path_vertices_on(outer, cb),
@@ -448,11 +464,12 @@ b_extrusion(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
         v,
         bmat, tmat, smat)
   end
+=#
 
-b_extrusion(b::Backend, profile::Shape1D, v, cb, bmat, tmat, smat) =
-	b_extrusion(b, convert(Path, profile), v, cb, bmat, tmat, smat)
-b_extrusion(b::Backend, profile::Shape2D, v, cb, bmat, tmat, smat) =
-	b_extrusion(b, convert(Region, profile), v, cb, bmat, tmat, smat)
+b_extruded_curve(b::Backend, profile::Shape1D, v, cb, mat) =
+  b_extruded_curve(b, convert(Path, profile), v, cb, mat)
+b_extruded_surface(b::Backend, profile::Shape2D, v, cb, mat) =
+  b_extruded_surface(b, convert(Region, profile), v, cb, mat)
 
 b_loft(b::Backend, profiles, closed, smooth, mat) =
   let ptss = path_vertices.(profiles),
@@ -461,10 +478,10 @@ b_loft(b::Backend, profiles, closed, smooth, mat) =
 	b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
   end
 
-b_sweep(b::Backend, path::Shape1D, profile::Shape1D, rotation, scaling, mat) =
+b_swept_curve(b::Backend, path::Shape1D, profile::Shape1D, rotation, scaling, mat) =
   b_sweep(b, convert(Path, path), convert(Path, profile), rotation, scaling, mat)
 
-b_sweep(b::Backend, path::Shape1D, profile::Shape2D, rotation, scaling, mat) =
+b_swept_surface(b::Backend, path::Shape1D, profile::Shape2D, rotation, scaling, mat) =
   b_sweep(b, convert(Path, path), convert(Region, profile), rotation, scaling, mat)
 
 b_sweep(b::Backend, path, profile::Region, rotation, scaling, mat) =
@@ -496,7 +513,7 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
 		      map(path->map_division(identity, path, n), profiles)
 	      end :
 	      verticess,
-   	  points = hcat(map(path_vertices_on, verticess, frames)...)
+   	  points = hcat(map(on_cs, verticess, frames)...)
     b_surface_grid(
       b,
       points,
@@ -507,9 +524,51 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
 	    mat)
   end
 
+b_revolved_point(b::Backend, profile, p, n, start_angle, amplitude, mat) =
+  let q = profile.position,
+      pp = perpendicular_point(p, n, q)
+    b_arc(b, loc_from_o_vz(pp, n), distance(pp, q), start_angle, amplitude, mat)
+  end
+
+b_revolved_curve(b::Backend, profile, p, n, start_angle, amplitude, mat) = 
+  let profile = translate(convert(Path, profile), u0()-p),
+      pp = loc_from_o_vz(p, n),
+      vertices = path_frames(profile),
+      frames = map_division(ϕ -> loc_from_o_phi(pp, start_angle + ϕ), 0, amplitude, ceil(Int, amplitude*10), amplitude < 2pi),
+      points = hcat(map(frame->on_cs(vertices, frame), frames)...)
+    b_surface_grid(
+        b,
+        points,
+        is_closed_path(profile),
+        amplitude >= 2pi,
+        is_smooth_path(profile),
+        true,
+        mat)
+  end
+
+b_revolved_surface(b::Backend, profile, p, n, start_angle, amplitude, mat) =
+  let profile = convert(Region, profile),
+      outer = outer_path(profile),
+      inners = inner_paths(profile)
+    vcat(b_revolved_curve(b, outer, p, n, start_angle, amplitude, mat),
+         [b_revolved_curve(b, inner, p, n, start_angle, amplitude, mat) for inner in inners]...,
+         (amplitude < 2pi ?
+          let pp = loc_from_o_vz(p, n),
+              profile = translate(profile, u0()-p),
+              frames = map_division(ϕ -> loc_from_o_phi(pp, start_angle + ϕ), 0, amplitude, 1)
+           [b_surface(b, path_on(profile, frames[1]), mat),
+            b_surface(b, path_on(profile, frames[end]), mat)]
+          end :
+          new_refs(b)))
+  end
+
+
 # Booleans
 
-export b_subtracted, b_intersected, b_united, b_slice, b_unite_refs, b_slice_ref
+export b_subtracted, b_intersected, b_united,
+       b_subtracted_surfaces, b_intersected_surfaces, b_united_surfaces, 
+       b_subtracted_solids, b_intersected_solids, b_united_solids,
+       b_slice, b_unite_refs, b_slice_ref
 
 @bdef b_subtract_ref(sref, mref)
 @bdef b_intersect_ref(sref, mref)
@@ -517,6 +576,12 @@ export b_subtracted, b_intersected, b_united, b_slice, b_unite_refs, b_slice_ref
 
 b_unite_refs(b::Backend, rs) =
   foldl((s, r)->b_unite_ref(b, s, r), rs)
+
+b_subtracted_surfaces(b::Backend, source, mask, mat) =
+  b_subtracted(b, source, mask, mat)
+
+b_subtracted_solids(b::Backend, source, mask, mat) =
+  b_subtracted(b, source, mask, mat)
 
 b_subtracted(b::Backend, source, mask, mat) =
   and_mark_deleted(b,
@@ -529,6 +594,12 @@ b_subtracted(b::Backend, source, mask, mat) =
       end,
     [source])
 
+b_intersected_surfaces(b::Backend, source, mask, mat) =
+  b_intersected(b, source, mask, mat)
+  
+b_intersected_solids(b::Backend, source, mask, mat) =
+  b_intersected(b, source, mask, mat)
+  
 b_intersected(b::Backend, source, mask, mat) =
   and_mark_deleted(b,
     map_ref(b, source) do s
@@ -540,6 +611,12 @@ b_intersected(b::Backend, source, mask, mat) =
       end,
     [source])
 
+b_united_surfaces(b::Backend, source, mask, mat) =
+  b_united(b, source, mask, mat)
+    
+b_united_solids(b::Backend, source, mask, mat) =
+  b_united(b, source, mask, mat)
+  
 b_united(b::Backend, source, mask, mat) =
   and_mark_deleted(b,
     b_unite_refs(b, vcat(collect_ref(b, source), collect_ref(b, mask))),
@@ -941,7 +1018,7 @@ b_slab(b::Backend, profile, level, family) =
       bmat = material_ref(b, family.bottom_material),
       smat = material_ref(b, family.side_material),
       v = vz(slab_family_thickness(b, family))
-    b_extrusion(b, profile, v, z(level_height(b, level) + slab_family_elevation(b, family)), bmat, tmat, smat)
+    b_extruded_surface(b, profile, v, z(level_height(b, level) + slab_family_elevation(b, family)), bmat, tmat, smat)
    end
 
 b_roof(b::Backend, region, level, family) =
@@ -962,14 +1039,14 @@ b_panel(b::Backend, profile, family) =
       smat = material_ref(b, family.side_material),
       th = family.thickness,
       v = planar_path_normal(profile)
-    b_extrusion(b, profile, v*th, u0(v.cs)+v*(th/-2), lmat, rmat, smat)
+    b_extruded_surface(b, profile, v*th, u0(v.cs)+v*(th/-2), lmat, rmat, smat)
   end
 
 b_beam(b::Backend, c, h, angle, family) =
   let c = loc_from_o_phi(c, angle),
 	    mat = material_ref(b, family.material)
   	with_material_as_layer(b, family.material) do
-      b_extrusion(b, family_profile(b, family), vz(h, c.cs), c,	mat, mat, mat)
+      b_extruded_surface(b, family_profile(b, family), vz(h, c.cs), c,	mat, mat, mat)
 	  end
   end
 
@@ -1309,11 +1386,6 @@ b_render_final_setup(::Backend, kind) = kind
 @bdef b_render_and_save_view(path)
 
 #######
-
-
-@bdef b_revolve_curve(profile, p, n, start_angle, amplitude, mat)
-@bdef b_revolve_point(profile, p, n, start_angle, amplitude, mat)
-@bdef b_revolve_surface(profile, p, n, start_angle, amplitude, mat)
 
 b_right_cuboid(b::Backend, cb, width, height, h, mat) =
   b_box(b, add_xy(cb, -width/2, -height/2), width, height, h, mat)
