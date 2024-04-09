@@ -218,17 +218,19 @@ struct OpenSplinePath <: OpenPath
     v0::Union{Bool,Vec}
     v1::Union{Bool,Vec}
     interpolator
+    OpenSplinePath(vs, v0, v1) = new(vs, v0, v1, curve_interpolator(vs, false))
 end
 open_spline_path(vertices=[u0(), x(), xy(), y()], v0=false, v1=false) =
-  OpenSplinePath(vertices, v0, v1, curve_interpolator(vertices, false))
+  OpenSplinePath(vertices, v0, v1)
 
 struct ClosedSplinePath <: ClosedPath
     vertices::Locs
     interpolator
+    ClosedSplinePath(vs) = new(vs, curve_interpolator(vs, true))
 end
 closed_spline_path(vertices=[u0(), x(), xy(), y()]) =
   let vertices = ensure_no_repeated_locations(vertices)
-    ClosedSplinePath(vertices, curve_interpolator(vertices, true))
+    ClosedSplinePath(vertices)
   end
 
 spline_path(vertices::Locs) =
@@ -316,8 +318,8 @@ translate(path::ArcPath, v::Vec) = ArcPath(path.center + v, path.radius, path.st
 translate(path::RectangularPath, v::Vec) = RectangularPath(path.corner + v, path.dx, path.dy)
 translate(path::OpenPolygonalPath, v::Vec) = OpenPolygonalPath(translate(path.vertices, v))
 translate(path::ClosedPolygonalPath, v::Vec) = ClosedPolygonalPath(translate(path.vertices, v))
-translate(path::OpenSplinePath, v::Vec) = OpenSplinePath(translate(path.vertices, v), path.v0, path.v1, path.interpolator)
-translate(path::ClosedSplinePath, v::Vec) = ClosedSplinePath(translate(path.vertices, v), path.interpolator)
+translate(path::OpenSplinePath, v::Vec) = OpenSplinePath(translate(path.vertices, v), path.v0, path.v1)
+translate(path::ClosedSplinePath, v::Vec) = ClosedSplinePath(translate(path.vertices, v))
 translate(ps::Locs, v::Vec) = map(p->p+v, ps)
 
 in_cs(path::PointPath, cs::CS) = PointPath(in_cs(path.location, cs))
@@ -351,7 +353,7 @@ scale(path::ClosedPolygonalPath, s::Real, p::Loc=u0()) =
     path :
     closed_polygonal_path([p + (q-p)*s for q in path.vertices])
 
-rotate(path::Path, Δα, rot_p=u0()) =
+rotate(path::Path, Δα, rot_p=u0(), rot_v=vz()) =
   Δα == 0 ?
     path :
     let rotate_vertex(p) = let v = p - rot_p
@@ -953,10 +955,8 @@ path_frames(path::OpenPolygonalPath) =
   end
 
 path_frames(path::ClosedPolygonalPath) =
-  let pts1 = path.vertices,
-      pts2 = drop(cycle(pts1), 1),
-      pts3 = drop(pts2, 1)
-    [loc_from_o_py_pz(p0, py, pz) for (p0, py, pz) in zip(pts2, pts1, pts3)]
+  let pts = path.vertices
+    path_frames(OpenPolygonalPath([pts..., pts[1]]))
   end
 
 subpaths(path::OpenPolygonalPath) =
@@ -1024,26 +1024,19 @@ plus_profile(Width::Real=0.1, Height::Real=Width; width::Real=Width, height::Rea
             x(w2), xy(w2, t2), xy(t2, t2), xy(t2, h2), y(h2)])))
     end
 
-loc_on(p::Loc, frame) =
-  add_xyz(frame, raw_point(p)...)
-locs_on(ps::Locs, frame) =
-  [loc_on(p, frame) for p in ps]
-
 export path_vertices_on
 path_vertices_on(path::Path, p) =
-  locs_on(path_vertices(path), p)
-path_vertices_on(vs::Locs, p) =
-  locs_on(vs, p)
+  on_cs(path_vertices(path), p)
 
 export path_on
 path_on(path::CircularPath, p) =
-  circular_path(loc_on(path.center, p), path.radius)
+  circular_path(on_cs(path.center, p), path.radius)
 path_on(path::RectangularPath, p) =
-  rectangular_path(loc_on(path.corner, p), path.dx, path.dy)
+  rectangular_path(on_cs(path.corner, p), path.dx, path.dy)
 path_on(path::OpenPolygonalPath, p) =
-  open_polygonal_path(locs_on(path_vertices(path), p))
+  open_polygonal_path(on_cs(path_vertices(path), p))
 path_on(path::ClosedPolygonalPath, p) =
-  closed_polygonal_path(locs_on(path_vertices(path), p))
+  closed_polygonal_path(on_cs(path_vertices(path), p))
 path_on(path::Region, p) =
   region([path_on(path, p) for path in path.paths])
 
