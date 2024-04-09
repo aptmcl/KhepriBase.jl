@@ -68,16 +68,16 @@ abstract type Proxy end
 Shapes are a particular type of proxy:
 =#
 
-abstract type Shape <: Proxy end
+abstract type Shape{D} <: Proxy end
 
 #=
 Shapes can be specialized according to their dimensions:
 =#
 
-abstract type Shape0D <: Shape end
-abstract type Shape1D <: Shape end
-abstract type Shape2D <: Shape end
-abstract type Shape3D <: Shape end
+const Shape0D = Shape{0}
+const Shape1D = Shape{1}
+const Shape2D = Shape{2}
+const Shape3D = Shape{3}
 
 #=
 Common predicates can be defined for these subtypes
