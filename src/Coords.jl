@@ -354,9 +354,9 @@ gen_addition(C, c, Vc, vc) =
     p.cs === v.cs ? xyz(p.x + v.x, p.y + v.y, p.z + v.z, p.cs) : p + in_cs(v, p.cs)
 (+)(p::Pol, v::Union{VX,VXY,VPol,VPold}) =
     pol(xy(p) + v)
-(+)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) =
+(+)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
     cyl(xyz(p) + v)
-(+)(p::Sph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) =
+(+)(p::Sph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
     sph(xyz(p) + v)
 (+)(v::Vec, p::Loc) = p + v
 
@@ -533,6 +533,12 @@ unitized(v::Vec) =
     vxyz(v.raw./r, v.cs)
   end
 
+#=
+There are two important operations with coordinate systems:
+ - in_cs: converts a location or vector from one coordinate system to another, preserving its absolute location or orientation.
+ - on_cs: transports a location or vector from one coordinate system to another, changing its absolute location or orientation. 
+=#
+
 in_cs(from_cs::CS, to_cs::CS) =
     to_cs === world_cs ?
         from_cs.transform :
@@ -555,6 +561,19 @@ in_cs(p::Vec, cs::CS) =
 in_cs(p, q) = in_cs(p, q.cs)
 
 in_world(p) = in_cs(p, world_cs)
+
+
+on_cs(p::Loc, cs::CS) =
+  p.cs === cs ?
+    p :
+    xyz(raw_point(p)..., cs)
+
+on_cs(ps::Locs, cs::CS) =
+  [on_cs(p, cs) for p in ps]
+
+on_cs(p, q::Loc) = on_cs(p, q.cs)
+
+
 
 export inverse_transformation
 inverse_transformation(p::Loc) = xyz(0,0,0, CS(inv(translated_cs(p.cs, p.x, p.y, p.z).transform)))
@@ -883,6 +902,11 @@ angle_between(v1, v2) =
   let v1 = in_world(v1),
       v2 = in_world(v2)
     acos(dot(v1, v2)/(norm(v1)*norm(v2)))
+  end
+
+perpendicular_point(p, n, q) =
+  let n = unitized(n)
+    p + dot((q - p), n)*n
   end
 
 ################################################################################
