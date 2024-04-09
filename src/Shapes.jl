@@ -51,7 +51,7 @@ export Shape,
        bounding_box,
        capture_shape, capture_shapes,
        captured_shape, captured_shapes,
-       revolve
+       extrusion, sweep, revolve, loft
 
 #References can be (single or multiple) native references
 abstract type GenericRef{K,T} end
@@ -377,15 +377,11 @@ macro defproxy(name_typename, parent, fields...)
   field_renames = map(Symbol ∘ string, field_names)
   field_replacements = Dict(zip(field_names, field_renames))
   struct_fields = map((name,typ) -> :($(name) :: $(typ)), field_names, field_types)
-#  opt_params = map((name,typ,init) -> :($(name) :: $(typ) = $(init)), field_renames, field_types, field_inits)
-#  key_params = map((name,typ,rename) -> :($(name) :: $(typ) = $(rename)), field_names, field_types, field_renames)
-#  mk_param(name,typ) = Expr(:kw, Expr(:(::), name, typ))
   mk_param(name,typ,init) = Expr(:kw, name, init) #Expr(:kw, Expr(:(::), name, typ), init)
   opt_params = map(mk_param, field_renames, field_types, map(init -> replace_in(init, field_replacements), field_inits))
   key_params = map(mk_param, field_names, field_types, field_renames)
   constructor_name = esc(name)
   predicate_name = esc(Symbol("is_", name_str))
-  #mk_convert(name,typ) = :(isa($(esc(name)), $(typ)) ? $(esc(name)) : throw(WrongTypeForParam($(QuoteNode(name)), $(esc(name)), $(typ))))
   mk_convert(name,typ) = :($(esc(name)))
   field_converts = map(mk_convert, field_names, field_types)
   selector_names = map(field_name -> esc(Symbol(name_str, "_", string(field_name))), field_names)
@@ -547,7 +543,6 @@ b_stroke(b::Backend, path::Shape, mat) =
 export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
 
 macro defshape(supertype, name_typename, fields...)
-  # Merge this with defproxy
   (name, typename) = name_typename isa Symbol ?
     (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
     name_typename.args
@@ -572,21 +567,19 @@ used_materials(s::Shape) = (s.material, )
 
 @defshape(Shape1D, line, vertices::Locs=[u0(), ux()])
 line(v0::Loc, v1::Loc, vs...) = line([v0, v1, vs...])
+# The next two should be merged
 @defshape(Shape1D, closed_line, vertices::Locs=[u0(), ux(), uy()])
 closed_line(v0::Loc, v1::Loc, vs...) = closed_line([v0, v1, vs...])
+@defshape(Shape1D, polygon, vertices::Locs=[u0(), ux(), uy()])
+polygon(v0, v1, vs...) = polygon([v0, v1, vs...])
 @defshape(Shape1D, spline, points::Locs=[u0(), ux(), uy()], v0::Union{Bool,Vec}=false, v1::Union{Bool,Vec}=false)
 spline(v0::Loc, v1::Loc, vs...) = spline([v0, v1, vs...])
-
-#(def-base-shape 1D-shape (spline* [pts : (Listof Loc) (list (u0) (ux) (uy))] [v0 : (U Boolean Vec) #f] [v1 : (U Boolean Vec) #f]))
-
 @defshape(Shape1D, closed_spline, points::Locs=[u0(), ux(), uy()])
 closed_spline(v0, v1, vs...) = closed_spline([v0, v1, vs...])
 @defshape(Shape1D, circle, center::Loc=u0(), radius::Real=1)
 @defshape(Shape1D, arc, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
 @defshape(Shape1D, elliptic_arc, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
 @defshape(Shape1D, ellipse, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
-@defshape(Shape1D, polygon, vertices::Locs=[u0(), ux(), uy()])
-polygon(v0, v1, vs...) = polygon([v0, v1, vs...])
 @defshape(Shape1D, regular_polygon, edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true)
 @defshape(Shape1D, rectangle, corner::Loc=u0(), dx::Real=1, dy::Real=1)
 rectangle(p::Loc, q::Loc) =
@@ -803,17 +796,37 @@ b_map_division(b::Backend, f::Function, s::Shape2D, nu::Int, nv::Int) =
 
 path_vertices(s::Shape1D) = path_vertices(shape_path(s))
 path_frames(s::Shape1D) = path_frames(shape_path(s))
+
+## shape_path takes a 1D/2D shape and computes an equivalent path
 shape_path(s::Circle) = circular_path(s.center, s.radius)
-shape_path(s::SurfaceCircle) = circular_path(s.center, s.radius)
+shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
+shape_path(s::Line) = open_polygonal_path(s.vertices)
+# The next two should be merged
+shape_path(s::ClosedLine) = closed_polygonal_path(s.vertices)
+shape_path(s::Polygon) = closed_polygonal_path(s.vertices)
 shape_path(s::Spline) =
   length(s.points) > 2 ? 
     open_spline_path(s.points, s.v0, s.v1) :
     open_polygonal_path(s.points)
 shape_path(s::ClosedSpline) = closed_spline_path(s.points)
-shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
+shape_path(s::SurfaceCircle) = circular_path(s.center, s.radius)
 shape_path(s::SurfaceRectangle) = rectangular_path(s.corner, s.dx, s.dy)
-shape_path(s::Line) = open_polygonal_path(s.vertices)
-shape_path(s::ClosedLine) = closed_polygonal_path(s.vertices)
+shape_path(s::SurfacePolygon) = closed_polygonal_path(s.vertices)
+shape_path(s::SurfaceRegularPolygon) = closed_polygonal_path(regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))
+shape_path(s::Surface) = ClosedPathSequence([shape_path(e) for e in s.frontier])
+
+## shape_region takes a 2D shape and computes an equivalent region
+shape_region(s::Shape2D) = region(shape_path(s))
+
+#####################################################################
+## Conversions
+
+convert(::Type{Path}, s::Shape1D) =
+  and_delete_shape(shape_path(s), s)
+
+convert(::Type{Region}, s::Shape2D) =
+  and_delete_shape(shape_region(s), s)
+
 
 @defshape(Shape0D, text, str::String="", corner::Loc=u0(), height::Real=1)
 export text_centered
@@ -915,25 +928,47 @@ being the marching cubes the most popular one.
 
 @defshape(Shape3D, isosurface, frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(+1,+1,+1)])
 
-@defshape(Shape3D, extrusion, profile::Union{Shape,Path,Region}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
-extrusion(profile, h::Real) =
-  extrusion(profile, vz(h))
+@defshape(Shape1D, extruded_point, profile::Union{Loc,Shape0D}=point(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape2D, extruded_curve, profile::Union{Path,Shape1D}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape3D, extruded_surface, profile::Union{Region,Shape2D}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
 
-@defshape(Shape3D, sweep, path::Union{Shape1D, Path}=circle(), profile::Union{Shape,Path,Region}=point(), rotation::Real=0, scale::Real=1)
+extrusion(profile, h::Real) = extrusion(profile, vz(h))
+extrusion(profile, v::Vec) =
+  if is_point(profile)
+    extruded_point(profile, v)
+  elseif is_curve(profile)
+    extruded_curve(profile, v)
+  elseif is_surface(profile)
+    extruded_surface(profile, v)
+  else
+    error("Profile is neither a point nor a curve nor a surface")
+  end
 
-b_sweep(b::Backend, path::Shape1D, profile::Shape, rotation, scaling, mat) =
-  b_sweep(b, shape_path(path), shape_path(profile), rotation, scaling, mat)
+@defshape(Shape1D, swept_point, path::Union{Path,Shape1D}=circular_path(), profile::Union{Loc,Shape0D}=point(), rotation::Real=0, scale::Real=1)
+@defshape(Shape2D, swept_curve, path::Union{Path,Shape1D}=circular_path(), profile::Union{Path,Shape1D}=circular_path(), rotation::Real=0, scale::Real=1)
+@defshape(Shape3D, swept_surface, path::Union{Path,Shape1D}=circular_path(), profile::Union{Region,Shape2D}=surface_circle(), rotation::Real=0, scale::Real=1)
 
-@defshape(Shape1D, revolve_point, profile::Union{Loc,Point}=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
-@defshape(Shape2D, revolve_curve, profile::Union{Shape,Path}=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
-@defshape(Shape3D, revolve_surface, profile::Union{Shape,Path,Region}=circle(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
+sweep(path, profile, rotation=0, scale=1) =
+  if is_point(profile)
+    swept_point(path, profile, rotation, scale)
+  elseif is_curve(profile)
+    swept_curve(path, profile, rotation, scale)
+  elseif is_surface(profile)
+    swept_surface(path, profile, rotation, scale)
+  else
+    error("Profile is neither a point nor a curve nor a surface")
+  end
+
+@defshape(Shape1D, revolved_point, profile::Union{Loc,Point}=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
+@defshape(Shape2D, revolved_curve, profile::Union{Shape,Path}=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
+@defshape(Shape3D, revolved_surface, profile::Union{Shape,Path,Region}=circle(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 revolve(profile::Shape=point(x(1)), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi) =
   if is_point(profile)
-    revolve_point(profile, p, n, start_angle, amplitude)
+    revolved_point(profile, p, n, start_angle, amplitude)
   elseif is_curve(profile)
-    revolve_curve(profile, p, n, start_angle, amplitude)
+    revolved_curve(profile, p, n, start_angle, amplitude)
   elseif is_surface(profile)
-    revolve_surface(profile, p, n, start_angle, amplitude)
+    revolved_surface(profile, p, n, start_angle, amplitude)
   else
     error("Profile is neither a point nor a curve nor a surface")
   end
@@ -1006,7 +1041,11 @@ b_loft_surfaces(b::Backend, profiles, rails, ruled, closed, mat) =
 @defproxy(scale, Shape3D, shape::Shape=point(), s::Real=1, p::Loc=u0())
 @defproxy(rotate, Shape3D, shape::Shape=point(), angle::Real=0, p::Loc=u0(), v::Vec=vz(1,p.cs))
 @defproxy(transform, Shape3D, shape::Shape=point(), xform::Loc=u0())
+@defproxy(mirror, Shape3D, shape::Shape=point(), p::Loc=u0(), n::Vec=vx())
 
+export union_mirror
+union_mirror(shape, p, v) =
+  union(shape, mirror(shape, p, v))
 #####################################################################
 
 # We can also translate some shapes
@@ -1019,7 +1058,7 @@ translate(s::Text, v::Vec) = text(s.str, s.c+v, s.h)
 translate(ss::Shapes, v::Vec) = translate.(ss, v)
 
 # We can compute the length of shapes as long as we can convert them
-curve_length(s::Shape) = curve_length(convert(Path, s))
+curve_length(s::Shape) = curve_length(shape_path(s))
 
 # We will also need to compute a bounding rectangle
 bounding_rectangle(s::Union{Line, Polygon}) =
@@ -1043,50 +1082,52 @@ bounding_rectangle(ss::Shapes) =
 ## Boolean operations
 export union, intersection, subtraction, empty_shape, universal_shape
 
-struct empty_shape <: Shape end
-struct universal_shape <: Shape end
+struct empty_shape <: Shape0D end
+struct universal_shape <: Shape3D end
 
-@defshape(Shape3D, subtracted, source::Shape3D=sphere(), mask::Shape3D=box())
+@defshape(Shape2D, subtracted_surfaces, source::Shape2D=surface_circle(), mask::Shape2D=surface_rectangle())
+@defshape(Shape3D, subtracted_solids, source::Shape3D=sphere(), mask::Shape3D=box())
 subtraction(shape::Shape, s::empty_shape) = shape
-subtraction(shape::Shape, mask::Shape) = subtracted(shape, mask)
+subtraction(shape::Shape{D}, mask::Shape{D}) where D = 
+  if D == 2
+    subtracted_surfaces(shape, mask)
+  elseif D == 3
+    subtracted_solids(shape, mask)
+  else
+    error("Incorrect dimension for boolean operation: $(D)")
+  end
 subtraction(shape::Shape, shapes...) = foldl(subtraction, shapes, init=shape)
 subtraction(shapes::Shapes) = subtraction(shapes...)
 
-@defshape(Shape3D, intersected, source::Shape3D=sphere(), mask::Shape3D=box())
+@defshape(Shape2D, intersected_surfaces, source::Shape2D=surface_circle(), mask::Shape2D=surface_rectangle())
+@defshape(Shape3D, intersected_solids, source::Shape3D=sphere(), mask::Shape3D=box())
 intersection(shape::Shape, s::universal_shape) = shape
-intersection(shape::Shape, mask::Shape) = intersected(shape, mask)
+intersection(shape::Shape{D}, mask::Shape{D}) where D = 
+  if D == 2
+    intersected_surfaces(shape, mask)
+  elseif D == 3
+    intersected_solids(shape, mask)
+  else
+    error("Incorrect dimension for boolean operation: $(D)")
+  end
 intersection(shape::Shape, shapes...) = foldl(intersection, shapes, init=shape)
 intersection(shapes::Shapes) = intersection(shapes...)
 
-@defshape(Shape3D, united, source::Shape3D=sphere(), mask::Shape3D=box())
+@defshape(Shape2D, united_surfaces, source::Shape2D=surface_circle(), mask::Shape2D=surface_rectangle())
+@defshape(Shape3D, united_solids, source::Shape3D=sphere(), mask::Shape3D=box())
 union(shape::Shape, s::empty_shape) = shape
-union(shape::Shape, mask::Shape) = united(shape, mask)
+union(shape::Shape{D}, mask::Shape{D}) where D =
+  if D == 2
+    united_surfaces(shape, mask)
+  elseif D == 3
+    united_solids(shape, mask)
+  else
+    error("Incorrect dimension for boolean operation: $(D)")
+  end
 union(shape::Shape, shapes...) = foldl(union, shapes, init=shape)
 union(shapes::Shapes) = union(shapes...)
 
 @defshape(Shape3D, slice, shape::Shape3D=sphere(), p::Loc=u0(), n::Vec=vz(1))
-
-#####################################################################
-## Conversions
-
-convert(::Type{Path}, s::Rectangle) =
-  and_delete_shape(rectangular_path(s.corner, s.dx, s.dy), s)
-convert(::Type{Path}, s::Line) =
-  and_delete_shape(convert(OpenPath, s.vertices), s)
-convert(::Type{Path}, s::Circle) =
-  and_delete_shape(circular_path(s.center, s.radius), s)
-convert(::Type{Path}, s::Spline) =
-  and_delete_shape(spline_path(s.points), s)
-convert(::Type{Region}, s::SurfaceCircle) =
-  and_delete_shape(region(circular_path(s.center, s.radius)), s)
-convert(::Type{Region}, s::SurfaceRectangle) =
-  and_delete_shape(region(rectangular_path(s.corner, s.dx, s.dy)), s)
-convert(::Type{Region}, s::SurfacePolygon) =
-  and_delete_shape(region(closed_polygonal_path(s.vertices)), s)
-convert(::Type{Region}, s::SurfaceRegularPolygon) =
-  and_delete_shape(region(closed_polygonal_path(regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))), s)
-convert(::Type{Region}, s::Surface) =
-  and_delete_shape(region([convert(Path, e) for e in s.frontier]), s)
 
 #####################################################################
 ## Paths can be used to generate surfaces and solids
@@ -1143,8 +1184,8 @@ map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int, backend::Backend=top
 
 # Blocks
 
-@defproxy(block, Shape, name::String="Block", shapes::Shapes = Shape[])
-@defproxy(block_instance, Shape, block::Block=required(), loc::Loc=u0(), scale::Real=1.0)
+@defproxy(block, Shape0D, name::String="Block", shapes::Shapes = Shape[])
+@defproxy(block_instance, Shape0D, block::Block=required(), loc::Loc=u0(), scale::Real=1.0)
 
 ################################################################################
 
