@@ -50,7 +50,7 @@ new_refs(b::Backend{K,T}) where {K,T} = T[]
 
 export b_point, b_line, b_closed_line, b_polygon, b_regular_polygon,
        b_nurbs_curve,
-       b_spline, b_closed_spline, b_circle, b_arc, b_rectangle
+       b_spline, b_closed_spline, b_circle, b_arc, b_ellipse, b_rectangle
 
 @bdef(b_point(p, mat))
 
