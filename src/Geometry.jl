@@ -52,6 +52,9 @@ nonzero_offset(path::CircularPath, d::Real) =
   circular_path(path.center, path.radius - d)
 nonzero_offset(path::ArcPath, d::Real) =
   arc_path(path.center, path.radius - d, path.start_angle, path.amplitude)
+nonzero_offset(path::ClosedPathSequence, d::Real) =
+  ClosedPathSequence([nonzero_offset(path, d) for path in path.paths])
+
 
 export offset
 
