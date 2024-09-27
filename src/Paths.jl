@@ -1,10 +1,8 @@
 export empty_path,
-       open_path,
-       closed_path,
+       #open_path,
+       #closed_path,
        open_path_ops,
        closed_path_ops,
-       MoveOp,
-       MoveToOp,
        LineOp,
        ArcOp,
        CloseOp,
@@ -12,6 +10,8 @@ export empty_path,
        arc_path,
        CircularPath,
        circular_path,
+       EllipticPath,
+       elliptic_path,
        RectangularPath,
        rectangular_path,
        centered_rectangular_path,
@@ -156,6 +156,21 @@ location_at(path::CircularPath, ϕ::Real) =
                    vpol(1, ϕ + π, path.center.cs),
                    vz(1, path.center.cs))
 planar_path_normal(path::CircularPath) = uvz(path.center.cs)
+
+## Elliptic path
+struct EllipticPath <: ClosedPath
+  center::Loc
+  r1::Real
+  r2::Real
+end
+elliptic_path(Center::Loc=u0(), R1::Real=1, R2::Real=1; center::Loc=Center, r1::Real=R1, r2::Real=R2) =
+  EllipticPath(center, r1, r2)
+path_domain(path::EllipticPath) = (0, 2π)
+location_at(path::EllipticPath, ϕ::Real) =
+  loc_from_o_vx_vy(add_xy(path.center, path.r1*cos(ϕ), path.r2*sin(ϕ)),
+                   vxy(cos(ϕ + π), sin(ϕ + π), path.center.cs),
+                   vz(1, path.center.cs))
+planar_path_normal(path::EllipticPath) = uvz(path.center.cs)
 
 ## Rectangular path
 struct RectangularPath <: ClosedPath
@@ -314,6 +329,7 @@ convert(::Type{ClosedSplinePath}, path::Path) =
 
 translate(path::PointPath, v::Vec) = PointPath(path.location + v)
 translate(path::CircularPath, v::Vec) = CircularPath(path.center + v, path.radius)
+translate(path::EllipticPath, v::Vec) = EllipticPath(path.center + v, path.r1, path.r2)
 translate(path::ArcPath, v::Vec) = ArcPath(path.center + v, path.radius, path.start_angle, path.amplitude)
 translate(path::RectangularPath, v::Vec) = RectangularPath(path.corner + v, path.dx, path.dy)
 translate(path::OpenPolygonalPath, v::Vec) = OpenPolygonalPath(translate(path.vertices, v))
@@ -549,7 +565,7 @@ abstract type PathOp end
 struct LineOp <: PathOp
   vec::Vec
 end
-#struct CloseOp <: PathOp end
+struct CloseOp <: PathOp end
 struct ArcOp <: PathOp
     radius::Real
     start_angle::Real
@@ -677,7 +693,12 @@ struct ClosedPathSequence <: ClosedPath
   paths::Vector{<:Path}
 end
 closed_path_sequence(paths...) =
-  ClosedPathSequence(ensure_connected_paths([paths..., polygonal_path(path_end(paths[end]), path_start(paths[1]))]))
+  let start = path_start(paths[1]),
+      finish = path_end(paths[end])
+    start ≈ finish ?
+      ClosedPathSequence(ensure_connected_paths(paths)) :
+      ClosedPathSequence(ensure_connected_paths([paths..., open_polygonal_path([finish, start])]))
+  end
 
 PathSequence = Union{OpenPathSequence, ClosedPathSequence}
 
@@ -807,6 +828,7 @@ convert(::Type{ClosedPath}, p::OpenPolygonalPath) =
   closed_polygonal_path(coincident_path_location(path_start(p), path_end(p)) ?
     path_vertices(p)[1:end-1] :
     path_vertices(p))
+#=
 convert(::Type{ClosedPath}, p::OpenPath) =
   if isa(p.ops[end], CloseOp) || coincident_path_location(path_start(p), path_end(p))
     closed_path(p.ops)
@@ -826,6 +848,7 @@ convert(::Type{Path}, ops::Vector{<:PathOp}) =
   else
     open_path(ops)
   end
+=#
 convert(::Type{ClosedPolygonalPath}, path::RectangularPath) =
   let p = path.corner,
       dx = path.dx,
@@ -847,6 +870,10 @@ path_interpolated_lengths(path, t0=0, t1=path_length(path), epsilon=collinearity
 convert(::Type{ClosedPolygonalPath}, path::CircularPath) =
   closed_polygonal_path(path_interpolated_frames(path)[1:end-1])
 convert(::Type{OpenPolygonalPath}, path::CircularPath) =
+  open_polygonal_path(path_interpolated_frames(path))
+convert(::Type{ClosedPolygonalPath}, path::EllipticPath) =
+  closed_polygonal_path(path_interpolated_frames(path)[1:end-1])
+convert(::Type{OpenPolygonalPath}, path::EllipticPath) =
   open_polygonal_path(path_interpolated_frames(path))
 convert(::Type{OpenPolygonalPath}, path::ArcPath) =
   open_polygonal_path(path_interpolated_frames(path))
@@ -956,7 +983,7 @@ path_frames(path::OpenPolygonalPath) =
 
 path_frames(path::ClosedPolygonalPath) =
   let pts = path.vertices
-    path_frames(OpenPolygonalPath([pts..., pts[1]]))
+    path_frames(OpenPolygonalPath([pts[end], pts..., pts[1]]))[begin+1:end-1]
   end
 
 subpaths(path::OpenPolygonalPath) =
@@ -1031,14 +1058,20 @@ path_vertices_on(path::Path, p) =
 export path_on
 path_on(path::CircularPath, p) =
   circular_path(on_cs(path.center, p), path.radius)
+path_on(path::EllipticPath, p) =
+  elliptic_path(on_cs(path.center, p), path.r1, path.r2)
 path_on(path::RectangularPath, p) =
   rectangular_path(on_cs(path.corner, p), path.dx, path.dy)
 path_on(path::OpenPolygonalPath, p) =
   open_polygonal_path(on_cs(path_vertices(path), p))
 path_on(path::ClosedPolygonalPath, p) =
   closed_polygonal_path(on_cs(path_vertices(path), p))
+path_on(path::OpenSplinePath, p) =
+  open_spline_path(on_cs(path_vertices(path), p))
 path_on(path::Region, p) =
   region([path_on(path, p) for path in path.paths])
+path_on(path::ClosedPathSequence, p) =
+  closed_path_sequence([path_on(path, p) for path in path.paths]...)
 
 ## Utility operations
 Base.reverse(path::CircularPath) =
@@ -1049,6 +1082,8 @@ Base.reverse(path::OpenPolygonalPath) =
   open_polygonal_path(reverse(path_vertices(path)))
 Base.reverse(path::ClosedPolygonalPath) =
   closed_polygonal_path(reverse(path_vertices(path)))
+Base.reverse(path::ClosedPathSequence) =
+  ClosedPathSequence(reverse(reverse.(path.paths)))
 Base.reverse(path::Region) =
   region(reverse.(path.paths)...)
 
@@ -1132,7 +1167,7 @@ struct Grid
   vertices::Array{Loc,2}
   interpolator::LazyParameter{Any}
 end
-grid(ptss) = Grid(ptss, LazyParameter(Any, ()->grid_interpolator(ptss)))
+grid(ptss) = Grid(ptss, LazyParameter(()->grid_interpolator(ptss)))
 
 location_at(interpolator::Tuple{Spline2D,Spline2D,Spline2D}, u, v) =
   let o = xyz(evaluate.(interpolator, u, v)..., world_cs),
@@ -1201,3 +1236,4 @@ write_obj(io::IO, ptss::AbstractMatrix{<:Loc}, closed_u, closed_v, smooth_u, smo
       end
     end
   end
+  
