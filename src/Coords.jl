@@ -1,7 +1,5 @@
-export LocOrZ,
-       VecOrZ,
-       X, XY, XYZ, Pol, Pold, Cyl, Sph,
-       VX, VY, VXY, VXYZ, VPol, VPold, VCyl, VSph,
+export X, XY, XYZ, Pol, Pold, Cyl, Sph,
+       VX, VXY, VXYZ, VPol, VPold, VCyl, VSph,
        xyz, cyl, sph,
        vxyz, vcyl, vsph,
        world_cs,
@@ -39,6 +37,7 @@ export LocOrZ,
        min_loc, max_loc,
        is_world_cs,
        in_cs, in_world,
+       on_cs,
        intermediate_loc,
        meta_program,
        translated_cs,
@@ -79,11 +78,12 @@ a reference frame which does not
 
 =#
 
-Vec4f = SVector{4,Float64}
-Mat4f = SMatrix{4,4,Float64}
+const Vec4f = SVector{4,Float64}
+const Mat4f = SMatrix{4,4,Float64}
 
 struct CS
   transform::Mat4f
+#  invtransform::Mat4f
 end
 
 show(io::IO, cs::CS) =
@@ -187,10 +187,10 @@ rotate_vector(vector, axis, angle) =
   end
 
 
-global const world_cs = CS(Mat4f(I))
-global const current_cs = Parameter(world_cs)
+const world_cs = CS(Mat4f(I))
+const current_cs = Parameter(world_cs)
 # Special cs for "transparent" vectors
-global const null_cs = CS(Mat4f(I))
+const null_cs = CS(Mat4f(I))
 
 is_world_cs(cs::CS) = cs ===  world_cs
 
@@ -303,37 +303,37 @@ cyl_z(p::Union{Loc,Vec}) = p.z
 
 pol_rho = cyl_rho
 pol_phi = cyl_phi
-import Base.getproperty
-getproperty(s::Union{X,VX}, sym::Symbol) =
+
+Base.getproperty(s::Union{X,VX}, sym::Symbol) =
     sym === :y ? 0 :
     sym === :z ? 0 :
     sym === :ρ ? s.x :
     sym === :ϕ ? 0 :
     sym === :ψ ? 0 :
     getfield(s, sym)
-getproperty(s::Union{XY,VXY}, sym::Symbol) =
+Base.getproperty(s::Union{XY,VXY}, sym::Symbol) =
     sym === :z ? 0 :
     sym === :ρ ? (0 == s.x ? s.y : s.y == 0 ? s.x : sqrt(s.x^2 + s.y^2)) :
     sym === :ϕ ? (0 == s.x == s.y ? 0 : mod(atan(s.y, s.x), 2pi)) :
     sym === :ψ ? 0 :
     getfield(s, sym)
-getproperty(s::Union{XYZ,VXYZ}, sym::Symbol) =
+Base.getproperty(s::Union{XYZ,VXYZ}, sym::Symbol) =
     sym === :ρ ? sqrt(s.x^2 + s.y^2 + s.z^2) :
     sym === :ϕ ? (0 == s.x == s.y ? 0 : mod(atan(s.y, s.x), 2pi)) :
     sym === :ψ ? (0 == s.x == s.y == s.z ? 0 : mod(atan(sqrt(s.x^2 + s.y^2), s.z), 2pi)) :
     getfield(s, sym)
-getproperty(s::Union{Pol,VPol}, sym::Symbol) =
+Base.getproperty(s::Union{Pol,VPol}, sym::Symbol) =
     sym === :x ? s.ρ*cos(s.ϕ) :
     sym === :y ? s.ρ*sin(s.ϕ) :
     sym === :z ? 0 :
     sym === :ψ ? 0 :
     getfield(s, sym)
-getproperty(s::Union{Cyl,VCyl}, sym::Symbol) =
+Base.getproperty(s::Union{Cyl,VCyl}, sym::Symbol) =
     sym === :x ? s.ρ*cos(s.ϕ) :
     sym === :y ? s.ρ*sin(s.ϕ) :
     sym === :ψ ? 0 :
     getfield(s, sym)
-getproperty(s::Union{Sph,VSph}, sym::Symbol) =
+Base.getproperty(s::Union{Sph,VSph}, sym::Symbol) =
     sym === :x ? s.ρ*cos(s.ϕ)*sin(s.ψ) :
     sym === :y ? s.ρ*sin(s.ϕ)*sin(s.ψ) :
     sym === :z ? s.ρ*cos(s.ψ) :
@@ -490,23 +490,11 @@ vsph(v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) = vsph(v.ρ, v.ϕ, v.ψ, v.cs)
 =#
 
 # TO BE PROCESSED (and possibly removed)
-add_pol(p::Loc, ρ::Real, ϕ::Real) =
-  p + vcyl(ρ, ϕ, 0, p.cs)
 xyz(s::Vec4f,cs::CS) =
   XYZ(s[1], s[2], s[3], cs, s)
 #
 vxyz(s::Vec4f,cs::CS) =
   VXYZ(s[1], s[2], s[3], cs, s)
-add_cyl(p::Loc, ρ::Real, ϕ::Real, z::Real) =
-  p + vcyl(ρ, ϕ, z, p.cs)
-add_vcyl(v::Vec, ρ::Real, ϕ::Real, z::Real) =
-  v + vcyl(ρ, ϕ, z, v.cs)
-add_vpol(v::Vec, ρ::Real, ϕ::Real) =
-  add_vcyl(v, ρ, ϕ, 0)
-add_vsph(v::Vec, ρ::Real, ϕ::Real, ψ::Real) =
-  v + vsph(ρ, ϕ, ψ, v.cs)
-add_sph(p::Loc, ρ::Real, ϕ::Real, ψ::Real) =
-  p + vsph(ρ, ϕ, ψ, p.cs)
 
 # TODO add other fields, e.g.,
 # Base.getproperty(p::XYZ, f::Symbol) = f === :rho ? pol_rho(p) : ...
@@ -542,7 +530,9 @@ There are two important operations with coordinate systems:
 in_cs(from_cs::CS, to_cs::CS) =
     to_cs === world_cs ?
         from_cs.transform :
-        inv(to_cs.transform) * from_cs.transform
+        from_cs === world_cs ?
+          inv(to_cs.transform) :
+          inv(to_cs.transform) * from_cs.transform
 
 in_cs(p::Loc, cs::CS) =
   p.cs === cs ?
@@ -576,6 +566,7 @@ on_cs(p, q::Loc) = on_cs(p, q.cs)
 
 
 export inverse_transformation
+inverse_transformation(cs::CS) = CS(inv(cs.transform))
 inverse_transformation(p::Loc) = xyz(0,0,0, CS(inv(translated_cs(p.cs, p.x, p.y, p.z).transform)))
 
 cs_from_o_vx_vy_vz(o::Loc, ux::Vec, uy::Vec, uz::Vec) =
@@ -615,16 +606,23 @@ cs_from_o_phi(o::Loc, phi::Real) =
   =#
 cs_from_o_phi(o::Loc, ϕ::Real) =
   rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ)
+cs_from_o_rot_x(o::Loc, ϕ::Real) =
+  rotated_x_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ)
+cs_from_o_rot_y(o::Loc, ϕ::Real) =
+  rotated_y_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ)
+cs_from_o_rot_z(o::Loc, ϕ::Real) =
+  rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ)
+cs_from_o_rot_zyx(o::Loc, z::Real, y::Real, x::Real) =
+  rotated_x_cs(rotated_y_cs(rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), z), y), x)
 
 loc_from_o_vx(o::Loc, vx::Vec) = loc_from_o_vx_vy(o, vx, vpol(1, pol_phi(vx) + pi/2))
 loc_from_o_vx_vy(o::Loc, vx::Vec, vy::Vec) = u0(cs_from_o_vx_vy(o, vx, vy))
 loc_from_o_vz(o::Loc, vz::Vec) = u0(cs_from_o_vz(o, vz))
 loc_from_o_phi(o::Loc, ϕ::Real) = u0(cs_from_o_phi(o, ϕ))
-loc_from_o_rot_x(o::Loc, ϕ::Real) = u0(rotated_x_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ))
-loc_from_o_rot_y(o::Loc, ϕ::Real) = u0(rotated_y_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ))
-loc_from_o_rot_z(o::Loc, ϕ::Real) = u0(rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), ϕ))
-loc_from_o_rot_zyx(o::Loc, z::Real, y::Real, x::Real) =
-  u0(rotated_x_cs(rotated_y_cs(rotated_z_cs(translated_cs(o.cs, o.x, o.y, o.z), z), y), x))
+loc_from_o_rot_x(o::Loc, ϕ::Real) = u0(cs_from_o_rot_x(o, ϕ))
+loc_from_o_rot_y(o::Loc, ϕ::Real) = u0(cs_from_o_rot_y(o, ϕ))
+loc_from_o_rot_z(o::Loc, ϕ::Real) = u0(cs_from_o_rot_z(o, ϕ))
+loc_from_o_rot_zyx(o::Loc, z::Real, y::Real, x::Real) = u0(cs_from_o_rot_zyx(o, z, y, x))
 
 #To handle the common case
 maybe_loc_from_o_vz(o::Loc, n::Vec) =
@@ -647,6 +645,15 @@ add_xy(p::Loc, x::Real, y::Real) = xyz(p.x+x, p.y+y, p.z, p.cs)
 add_xz(p::Loc, x::Real, z::Real) = xyz(p.x+x, p.y, p.z+z, p.cs)
 add_yz(p::Loc, y::Real, z::Real) = xyz(p.x, p.y+y, p.z+z, p.cs)
 add_xyz(p::Loc, x::Real, y::Real, z::Real) = xyz(p.x+x, p.y+y, p.z+z, p.cs)
+# FIX THIS
+add_pol(p::Loc, ρ::Real, ϕ::Real) = p + vcyl(ρ, ϕ, 0, p.cs)
+add_cyl(p::Loc, ρ::Real, ϕ::Real, z::Real) = p + vcyl(ρ, ϕ, z, p.cs)
+add_vcyl(v::Vec, ρ::Real, ϕ::Real, z::Real) = v + vcyl(ρ, ϕ, z, v.cs)
+add_vpol(v::Vec, ρ::Real, ϕ::Real) = add_vcyl(v, ρ, ϕ, 0)
+add_vsph(v::Vec, ρ::Real, ϕ::Real, ψ::Real) = v + vsph(ρ, ϕ, ψ, v.cs)
+add_sph(p::Loc, ρ::Real, ϕ::Real, ψ::Real) = p + vsph(ρ, ϕ, ψ, p.cs)
+
+
 
 norm(v::Vec) = norm(v.raw)
 length(v::Vec) = norm(v.raw)
@@ -932,3 +939,21 @@ acw_vertices(vs) =
   angle_between(vertices_normal(vs), vz()) < pi/4 ?
     vs :
     reverse(vs)
+
+
+###
+# We need vectors of uniform coordinate dimensions
+
+Base.convert(::Type{Vector{Loc2D}}, ps::Vector{<:Loc3D}) =
+  isempty(ps) ?
+    Loc2D[] :
+    let cs = cs_from_o_vz(vertices_center(ps), vertices_normal(ps))
+      [convert(Loc2D, in_cs(p, cs)) for p in ps]
+    end
+
+Base.convert(::Type{Loc2D}, p::XYZ) =
+  p.z ≈ 0.0 ?
+    xy(p.x, p.y, p.cs) :
+    error("Can't convert to a Loc2D the non-zero z location $p")
+
+
