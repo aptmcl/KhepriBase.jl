@@ -106,6 +106,7 @@ b_ellipse(b::Backend, c, rx, ry, mat) =
 b_rectangle(b::Backend, c, dx, dy, mat) =
   b_polygon(b, [c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy)], mat)
 
+#############################################################
 # First tier: everything is a triangle or a set of triangles
 export b_trig, b_quad, b_ngon, b_quad_strip, b_quad_strip_closed, b_strip
 
@@ -125,8 +126,7 @@ b_ngon(b::Backend, ps, pivot, smooth, mat) =
 	 b_trig(b, pivot, ps[end], ps[1], mat)]
 
 b_quad_strip(b::Backend, ps, qs, smooth, mat) =
-  [b_quad(b, ps[i], ps[i+1], qs[i+1], qs[i], mat)
-   for i in 1:size(ps,1)-1]
+  vcat([b_quad(b, ps[i], ps[i+1], qs[i+1], qs[i], mat) for i in 1:size(ps,1)-1]...)
 
 b_quad_strip_closed(b::Backend, ps, qs, smooth, mat) =
   b_quad_strip(b, [ps..., ps[1]], [qs..., qs[1]], smooth, mat)
@@ -150,9 +150,10 @@ b_strip(b::Backend, path1::Region, path2::Region, mat) =
 
 ############################################################
 # Second tier: surfaces
-export b_surface_polygon, b_surface_regular_polygon,
-	   b_surface_circle, b_surface_arc, b_surface_closed_spline,
-	   b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
+export b_surface_polygon, b_surface_polygon_with_holes, 
+       b_surface_regular_polygon,
+	     b_surface_circle, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
+	     b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
 
 b_surface_polygon(b::Backend, ps, mat) =
   # This only works for convex polygons
@@ -177,6 +178,11 @@ b_surface_arc(b::Backend, c, r, α, Δα, mat) =
           for a in division(α, α + Δα, Δα*32/2/π, true)],
          c, false, mat)
 
+b_surface_ellipse(b::Backend, c, rx, ry, mat) =
+  b_surface_closed_spline(b,
+    [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
+     for ϕ in division(0, 2pi, 64, false)], mat)
+
 @bdef(b_surface_closed_spline(ps, mat))
 
 b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, mat) =
@@ -191,10 +197,10 @@ b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, interpo
 	    (nu, nv) = size(ptss)
 	  end
 	  closed_u ?
-      vcat([b_quad_strip_closed(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
-	      closed_v ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : new_refs(b)) :
-	    vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1],
-	       closed_v ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : new_refs(b))
+      vcat([b_quad_strip_closed(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1]...,
+	         (closed_v ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : new_refs(b))...) :
+	    vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1]...,
+	         (closed_v ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : new_refs(b))...)
   end
 
 b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
@@ -229,6 +235,15 @@ parametric {
 
 ############################################################
 # Third tier: solids
+
+#=
+We will use trigs, quads, quad_strips, and so on, but in order
+to make a solid in the end, we will rely on a solidify operation that, 
+by default, does nothing. However, on backends where solids do exist,
+the solidify operation should convert those primitive shapes into a 
+proper solid.
+=#
+
 export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
        b_generic_pyramid_frustum_with_holes, b_generic_prism_with_holes,
   	   b_pyramid_frustum, b_pyramid, b_prism,
@@ -238,26 +253,30 @@ export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
   	   b_box,
   	   b_sphere,
   	   b_cone,
-  	   b_torus
+  	   b_torus,
+       b_solidify
+
+b_solidify(b::Backend, refs) = refs
 
 # Each solid can have just one material or multiple materials
 b_generic_pyramid_frustum(b::Backend, bs, ts, smooth, bmat, tmat, smat) =
-  collect(
-  	skipmissing(
-	  (isnothing(bmat) ? missing : b_surface_polygon(b, reverse(bs), bmat),
-  	   b_quad_strip_closed(b, bs, ts, smooth, smat),
-  	   isnothing(tmat) ? missing : b_surface_polygon(b, ts, tmat))))
+  b_solidify(b,
+    vcat(isnothing(bmat) ? new_refs(b) : b_surface_polygon(b, reverse(bs), bmat),
+         b_quad_strip_closed(b, bs, ts, smooth, smat),
+         isnothing(tmat) ? new_refs(b) : b_surface_polygon(b, ts, tmat)))
 
 b_generic_pyramid_frustum_with_holes(b::Backend, bs, ts, smooth, bbs, tts, smooths, bmat, tmat, smat) =
-  [b_surface_polygon_with_holes(b, reverse(bs), bbs, bmat),
-   b_quad_strip_closed(b, bs, ts, smooth, smat),
-   [b_quad_strip_closed(b, bs, ts, smooth, smat)
-    for (bs, ts, smooth) in zip(bbs, tts, smooths)]...,
-   b_surface_polygon_with_holes(b, ts, reverse.(tts), tmat)]
+  b_solidify(b,
+    [b_surface_polygon_with_holes(b, reverse(bs), bbs, bmat),
+     b_quad_strip_closed(b, bs, ts, smooth, smat),
+     [b_quad_strip_closed(b, bs, ts, smooth, smat)
+      for (bs, ts, smooth) in zip(bbs, tts, smooths)]...,
+     b_surface_polygon_with_holes(b, ts, reverse.(tts), tmat)])
 
 b_generic_pyramid(b::Backend, bs, t, smooth, bmat, smat) =
-	[b_surface_polygon(b, reverse(bs), bmat),
-	 b_ngon(b, bs, t, smooth, smat)]
+  b_solidify(b,
+    vcat(b_surface_polygon(b, reverse(bs), bmat),
+	       b_ngon(b, bs, t, smooth, smat)))
 
 b_generic_prism(b::Backend, bs, smooth, v, bmat, tmat, smat) =
   b_generic_pyramid_frustum(b, bs, translate(bs, v), smooth, bmat, tmat, smat)
@@ -314,9 +333,10 @@ b_cylinder(b::Backend, cb, r, h, bmat, tmat, smat) =
   	bmat, tmat, smat)
 
 b_cuboid(b::Backend, pb0, pb1, pb2, pb3, pt0, pt1, pt2, pt3, mat) =
-  [b_quad(b, pb3, pb2, pb1, pb0, mat),
-   b_quad_strip_closed(b, [pb0, pb1, pb2, pb3], [pt0, pt1, pt2, pt3], false, mat),
-   b_quad(b, pt0, pt1, pt2, pt3, mat)]
+  b_solidify(b,
+    vcat(b_surface_polygon(b, [pb3, pb2, pb1, pb0], mat), # quads do not work with concave quads
+         b_quad_strip_closed(b, [pb0, pb1, pb2, pb3], [pt0, pt1, pt2, pt3], false, mat),
+         b_surface_polygon(b, [pt0, pt1, pt2, pt3], mat)))
 
 b_box(b::Backend, c, dx, dy, dz, mat) =
   let pb0 = c,
@@ -332,12 +352,13 @@ b_box(b::Backend, c, dx, dy, dz, mat) =
 
 b_sphere(b::Backend, c, r, mat) =
   let ϕs = division(0, 2π, 32, false)
-    [b_ngon(b, [add_sph(c, r, ϕ, π/16) for ϕ in ϕs], add_sph(c, r, 0, 0), true, mat),
-  	 [b_quad_strip_closed(b,
-  			[add_sph(c, r, ϕ, ψ+π/16) for ϕ in ϕs],
-  			[add_sph(c, r, ϕ, ψ) for ϕ in ϕs],
-  			true, mat) for ψ in π/16:π/16:π-π/16]...,
-  	 b_ngon(b, reverse!([add_sph(c, r, ϕ, π-π/16) for ϕ in ϕs]), add_sph(c, r, 0, π), true, mat)]
+    b_solidify(b,
+      [b_ngon(b, [add_sph(c, r, ϕ, π/16) for ϕ in ϕs], add_sph(c, r, 0, 0), true, mat),
+    	 [b_quad_strip_closed(b,
+    			[add_sph(c, r, ϕ, ψ+π/16) for ϕ in ϕs],
+    			[add_sph(c, r, ϕ, ψ) for ϕ in ϕs],
+    			true, mat) for ψ in π/16:π/16:π-π/16]...,
+    	 b_ngon(b, reverse!([add_sph(c, r, ϕ, π-π/16) for ϕ in ϕs]), add_sph(c, r, 0, π), true, mat)])
 	end
 
 b_cone(b::Backend, cb, r, h, mat) =
@@ -365,11 +386,11 @@ b_cone_frustum(b::Backend, cb, rb, h, rt, bmat, tmat, smat) =
 b_torus(b::Backend, c, ra, rb, mat) =
   b_surface_grid(
     b,
-	[add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
-	 for ψ in division(0, 2π, 32, false), ϕ in division(0, 2π, 64, false)],
-    true, true,
-  	true, true,
-  	mat)
+  	[add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
+  	 for ψ in division(0, 2π, 32, false), ϕ in division(0, 2π, 64, false)],
+      true, true,
+    	true, true,
+    	mat)
 ##################################################################
 # Paths and Regions
 b_surface(b::Backend, path::ClosedPath, mat) =
@@ -409,7 +430,7 @@ export b_extruded_curve, b_extruded_surface, b_sweep, b_loft
 b_extruded_curve(b::Backend, path::OpenPolygonalPath, v, cb, mat) =
  	let bs = path_vertices_on(path, cb),
 	  	ts = translate(bs, v)
-  	  b_quad_strip(b, bs, ts, is_smooth_path(path), mat)
+  	b_quad_strip(b, bs, ts, is_smooth_path(path), mat)
   end
 
 b_extruded_curve(b::Backend, path::ClosedPolygonalPath, v, cb, mat) =
@@ -437,16 +458,16 @@ b_extruded_curve(b::Backend, profile::CircularPath, v, cb, mat) =
 b_extruded_surface(b::Backend, profile, v, cb, mat) =
   b_extruded_surface(b, profile, v, cb, mat, mat, mat)
 
-b_extruded_surface(b::Backend, path::Path, v, cb, mat) =
-  b_extruded_surface(b, region(path), v, cb, mat)
+b_extruded_surface(b::Backend, path::Path, v, cb, bmat, tmat, smat) =
+  b_extruded_surface(b, region(path), v, cb, bmat, tmat, smat)
   
 b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
   let outer = outer_path(profile),
       inners = inner_paths(profile)
     vcat(b_extruded_curve(b, outer, v, cb, smat),
          [b_extruded_curve(b, inner, v, cb, smat) for inner in inners]...,
-         b_surface(b, profile, bmat),
-         b_surface(b, translate(profile, v), tmat))
+         b_surface(b, path_on(profile, cb), bmat),
+         b_surface(b, path_on(translate(profile, v), cb), tmat))
     end
     #=
       isempty(inners) ?
@@ -465,7 +486,10 @@ b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
         bmat, tmat, smat)
   end
 =#
-
+b_extruded_curve(b::Backend, profile::PathSequence, v, cb, mat) =
+  vcat([b_extruded_curve(b, subprofile, v, cb, mat) for subprofile in profile.paths]...)
+b_extruded_curve(b::Backend, profile::Path, v, cb, mat) =
+  b_extruded_curve(b, convert(OpenPolygonalPath, profile), v, cb, mat)
 b_extruded_curve(b::Backend, profile::Shape1D, v, cb, mat) =
   b_extruded_curve(b, convert(Path, profile), v, cb, mat)
 b_extruded_surface(b::Backend, profile::Shape2D, v, cb, mat) =
@@ -514,6 +538,7 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
 	      end :
 	      verticess,
    	  points = hcat(map(on_cs, verticess, frames)...)
+    #[b_sphere(b, p, 0.01, mat) for p in points]
     b_surface_grid(
       b,
       points,
@@ -572,7 +597,7 @@ export b_subtracted, b_intersected, b_united,
 
 @bdef b_subtract_ref(sref, mref)
 @bdef b_intersect_ref(sref, mref)
-@bdef b_unite_ref(sref, mref)
+b_unite_ref(b::Backend, sref, mref) = vcat(sref, mref)
 
 b_unite_refs(b::Backend, rs) =
   foldl((s, r)->b_unite_ref(b, s, r), rs)
@@ -740,12 +765,15 @@ b_dim_line(b::Backend, p, q, tv, str, size, outside, mat) =
      b_text(b, str, add_y(loc_from_o_vx(tp, tv), size*0.1-miny), size, mat)]
   end
 
+@bdef b_label(strs, mats)
+
 export b_arc_dimension
 
 b_arc_dimension(b::Backend, c, r, α, Δα, rstr, dstr, size, offset, mat) =
   error("To be finished")
 
-
+##################################################################
+# Text
 # To ensure a portable font, we will 'draw' the letters
 const letter_glyph = Dict(
   ' '=>(bb=[(0, 0), (2/3, 1)], vss=[]),
@@ -875,6 +903,7 @@ b_text_size(b::Backend, str, size, mat) =
 	(minx, maxx, miny, maxy).*size
   end
 
+##################################################################
 # Illustrations
 
 @bdef(b_labels(p, strs, mat))
@@ -882,6 +911,7 @@ b_text_size(b::Backend, str, size, mat) =
 @bdef(b_vectors_illustration(p, a, rs, rs_txts, mat))
 @bdef(b_angles_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mat))
 @bdef(b_arcs_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mat))
+
 ##################################################################
 # Materials
 #=
@@ -1150,9 +1180,12 @@ const Backends = Tuple{Vararg{Backend}}
 const current_backends = Parameter{Backends}(())
 has_current_backend() = !isempty(current_backends())
 
-export add_current_backend
+export add_current_backend, delete_current_backend
 add_current_backend(b::Backend) =
   current_backends(tuple(b, current_backends()...))
+delete_current_backend(b::Backend) =
+  current_backends(filter(!=(b), current_backends()))
+ 
 # but for backward compatibility reasons, we might also select just one.
 top_backend() =
   let bs = current_backends()
@@ -1335,11 +1368,11 @@ b_set_ground(b::Backend, level, mat) =
   b_surface_regular_polygon(b, 16, z(level), 10000, 0, true, material_ref(b, mat))
 
 b_realistic_sky(b::Backend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
-  b_realistic_sky(b::Backend, sun_pos(date, meridian, latitude, longitude)..., turbidity, sun)
+  b_realistic_sky(b, sun_pos(date, meridian, latitude, longitude)..., turbidity, sun)
 
 # Rendering
 
-export b_render_pathname, b_render_inital_setup, b_render_final_setup, b_setup_render, b_render_view
+export b_render_pathname, b_render_initial_setup, b_render_final_setup, b_setup_render, b_render_view
 
 b_setup_render(b::Backend, kind) = kind
 
@@ -1379,7 +1412,7 @@ prepare_for_saving_file(path::String) =
     end
   end
 
-b_render_pathname(::Backend, name::String) = render_default_pathname(name)  
+b_render_pathname(::Backend, name) = render_default_pathname(name)  
 b_render_initial_setup(::Backend, kind) = kind
 b_render_final_setup(::Backend, kind) = kind
 
@@ -1534,11 +1567,12 @@ struct BackendView <: ViewType end
 # By default, we use the backend view
 view_type(::Type{<:Backend}) = BackendView()
 
-b_set_view(b::T, camera, target, lens, aperture) where T = b_set_view(view_type(T), b, camera, target, lens, aperture)
+b_set_view(b::T, camera, target, lens, aperture) where {T<:Backend} =
+  b_set_view(view_type(T), b, camera, target, lens, aperture)
 
-b_set_view_top(b::T) where T = b_set_view_top(view_type(T), b)
+b_set_view_top(b::T) where {T<:Backend} = b_set_view_top(view_type(T), b)
 
-b_get_view(b::T) where T = b_get_view(view_type(T), b)
+b_get_view(b::T) where {T<:Backend} = b_get_view(view_type(T), b)
 
 ###############################################################
 # For the frontend, we assume there is a property to store the 
@@ -1553,7 +1587,7 @@ mutable struct View
 end
 
 default_view() = View(xyz(10,10,10), xyz(0,0,0), 35, 22, false)
-top_view() = View(xyz(10,10,10), xyz(0,0,0), 0, 0, true)
+top_view() = View(xyz(0,0,10), xyz(0,0,0), 0, 0, true)
 
 export View, default_view, top_view, b_get_view, b_set_view, b_set_view_top
 
@@ -1578,3 +1612,25 @@ b_set_view_top(::FrontendView, b) =
 # For legacy reasons, we only return camera, target, and lens.
 b_get_view(::FrontendView, b) =
   b.view.camera, b.view.target, b.view.lens
+
+###############################################################
+# For the backend, we always rely on the b_set_view function.
+
+b_set_view_top(v::BackendView, b) =
+  b_set_view(b, xyz(0.0,0.0,10), xyz(0.0,0.1,0.0), 50, 0)
+
+###############################################################
+# It might be useful to stop view update during batch processing
+export with_batch_processing, b_start_batch_processing, b_stop_batch_processing
+
+b_start_batch_processing(b::Backend) = nothing
+
+b_stop_batch_processing(b::Backend) = nothing
+
+with_batch_processing(f) =
+  try
+    foreach(b_start_batch_processing, current_backends())
+    f()
+  finally
+    foreach(b_stop_batch_processing, current_backends())
+  end
