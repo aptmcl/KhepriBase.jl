@@ -45,29 +45,29 @@ required() = error("Required parameter")
 #########################################
 export division, map_division
 
-division(t0, t1, n::Real, include_last::Bool=true) =
+division(t0, t1, n::Int, include_last::Bool=true) =
   let n = convert(Int, n), iter = range(t0, stop=t1, length=n + 1)
     collect(include_last ? iter : take(iter, n))
   end
 
 # Generic objects are processed using map_division
-division(obj::Any, n::Real) = map_division(identity, obj, n)
+division(obj::Any, n::Int) = map_division(identity, obj, n)
 
 
-map_division(f, t0, t1, n::Real, include_last::Bool=true) =
+map_division(f, t0, t1, n::Int, include_last::Bool=true) =
   let n = convert(Int, n), iter = range(t0, stop=t1, length=n + 1)
     map(f, include_last ? iter : take(iter, n))
   end
 
-map_division(f, u0, u1, nu::Real, include_last_u::Bool, v0, v1, nv::Real) =
+map_division(f, u0, u1, nu::Int, include_last_u::Bool, v0, v1, nv::Int) =
   map_division(u -> map_division(v -> f(u, v), v0, v1, nv),
                u0, u1, nu, include_last_u)
 
-map_division(f, u0, u1, nu::Real, v0, v1, nv::Real, include_last_v::Bool=true) =
+map_division(f, u0, u1, nu::Int, v0, v1, nv::Int, include_last_v::Bool=true) =
   map_division(u -> map_division(v -> f(u, v), v0, v1, nv, include_last_v),
                u0, u1, nu)
 
-map_division(f, u0, u1, nu::Real, include_last_u::Bool, v0, v1, nv::Real, include_last_v::Bool) =
+map_division(f, u0, u1, nu::Int, include_last_u::Bool, v0, v1, nv::Int, include_last_v::Bool) =
   map_division(u -> map_division(v -> f(u, v), v0, v1, nv, include_last_v),
                u0, u1, nu, include_last_u)
 
@@ -294,7 +294,8 @@ Base.length(l::Cons) =
 Base.map(f::Base.Callable, lst::List) = list(f(e) for e in lst)
 Base.filter(f::Function, lst::List) = list(e for e in lst if f(e))
 
-Base.cat() = list()
+# This amounts to type piracy, so let's avoid it.
+#Base.cat() = list()
 Base.cat(lst::List, lsts::List...) =
   let T = typeof(lst).parameters[1]
     n = length(lst)
