@@ -292,7 +292,7 @@ illustrate_path(path) =
 illustrate_expr(expr) =
   :(let p = $(esc(expr)); text($(string(expr)), p); p end)
 
-export illustrate
+export @illustrate
 macro illustrate(exprs...)
   :(tuple($([illustrate_expr(expr) for expr in exprs]...)))
 end
