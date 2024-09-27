@@ -565,8 +565,8 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
           end
         end
         prevlength = currlength
-        push!(refs, materialize_path(b, reverse(c_l_w_path), matleft))
-        push!(refs, materialize_path(b, c_r_w_path, matright))
+        append!(refs, materialize_path(b, reverse(c_l_w_path), matleft))
+        append!(refs, materialize_path(b, c_r_w_path, matright))
       end
     end
     refs
@@ -641,12 +641,19 @@ l_thickness(offset, thickness) = (1/2 + offset)*thickness
 r_thickness(w::Wall) = r_thickness(w.offset, w.family.thickness + w.family.right_coating_thickness)
 l_thickness(w::Wall) = l_thickness(w.offset, w.family.thickness + w.family.left_coating_thickness)
 
+# Windows and doors have frames.
+
+@deffamily(frame_family, Family,
+  profile::Path=rectangular_profile(0.16, 0.16),
+  material::Material=material_metal)
+
 # Door
 
 @deffamily(door_family, Family,
   width::Real=1.0,
   height::Real=2.0,
   thickness::Real=0.05,
+  frame::FrameFamily=default_frame_family(),
   right_material::Material=material_wood,
   left_material::Material=material_wood,
   side_material::Material=material_wood)
@@ -662,6 +669,7 @@ used_materials(f::DoorFamily) = (f.right_material, f.left_material, f.side_mater
   width::Real=1.0,
   height::Real=1.0,
   thickness::Real=0.05,
+  frame::FrameFamily=default_frame_family(),
   right_material::Material=material_glass,
   left_material::Material=material_glass,
   side_material::Material=material_glass)
@@ -672,17 +680,24 @@ used_materials(f::WindowFamily) = (f.right_material, f.left_material, f.side_mat
 @defproxy(window, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, angle::Real=0, family::WindowFamily=default_window_family())
 
 realize(b::Backend, s::Union{Door, Window}) =
-  let base_height = s.wall.bottom_level.height + s.loc.y,
-      height = s.family.height,
-      subpath = subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width),
+  let base_height = s.wall.bottom_level.height + s.loc.y + 0.0001, #To avoid z-fighting :-(
+      height = s.family.height - 0.0001, #To avoid z-fighting :-(,
+      subpath = translate(subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width), vz(base_height)),
       subpath = s.flip_x ? reverse(subpath) : subpath,
-      subpath = translate(rotate(subpath, s.angle), vz(base_height)),
+      subpath = rotate(subpath, s.angle),
       r_thickness = r_thickness(s.wall),
       l_thickness = l_thickness(s.wall),
       thickness = s.family.thickness
-    b_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2,
-           s.family)
+    vcat(b_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family),
+         b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, ref(b, s.family.frame.material).value)
+    )
   end
+
+frame_path(s::Door, subpath, height) =
+  foldr(join_paths, [open_polygonal_path([subpath[end], subpath[end] + vz(height)]), translate(reverse(subpath), vz(height)), open_polygonal_path([subpath[begin] + vz(height), subpath[begin]])])
+
+frame_path(s::Window, subpath, height) =
+  foldr(join_paths, [subpath, open_polygonal_path([subpath[end], subpath[end] + vz(height)]), translate(reverse(subpath), vz(height)), open_polygonal_path([subpath[begin] + vz(height), subpath[begin]])])
 ##
 
 export add_door
@@ -774,21 +789,21 @@ realize(b::Backend, s::CurtainWall) =
       x_panels = ceil(Int, path_length/s.family.max_panel_dx),
       y_panels = ceil(Int, height/s.family.max_panel_dy),
       refs = new_refs(b)
-    push!(refs, b_curtain_wall(b, s, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, :panel))
-    push!(refs, b_curtain_wall(b, s, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-    push!(refs, b_curtain_wall(b, s, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-    push!(refs, b_curtain_wall(b, s, subpath(path, 0, bfw), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-    push!(refs, b_curtain_wall(b, s, subpath(path, path_length-bfw, path_length), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
+    append!(refs, b_curtain_wall(b, s, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, :panel))
+    append!(refs, b_curtain_wall(b, s, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
+    append!(refs, b_curtain_wall(b, s, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
+    append!(refs, b_curtain_wall(b, s, subpath(path, 0, bfw), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
+    append!(refs, b_curtain_wall(b, s, subpath(path, path_length-bfw, path_length), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
     for i in 1:y_panels-1
       l = height/y_panels*i
       sub = subpath(path, bfw, path_length-bfw)
-      push!(refs, b_curtain_wall(b, s, sub, bottom+l-tfw/2, tfw, l_thickness(tfdo, tfd), r_thickness(tfdo, tfd), :transom_frame))
+      append!(refs, b_curtain_wall(b, s, sub, bottom+l-tfw/2, tfw, l_thickness(tfdo, tfd), r_thickness(tfdo, tfd), :transom_frame))
     end
     for i in 1:x_panels-1
       l = path_length/x_panels*i
-      push!(refs, b_curtain_wall(b, s, subpath(path, l-mfw/2, l+mfw/2), bottom+bfw, height-2*bfw, l_thickness(mdfo, mfd), r_thickness(mdfo, mfd), :mullion_frame))
+      append!(refs, b_curtain_wall(b, s, subpath(path, l-mfw/2, l+mfw/2), bottom+bfw, height-2*bfw, l_thickness(mdfo, mfd), r_thickness(mdfo, mfd), :mullion_frame))
     end
-    [ensure_ref(b,r) for r in refs]
+    refs
   end
 
 # By default, curtain wall panels are planar
@@ -1045,7 +1060,7 @@ fixed_truss_node_family =
 
 realize(b::Backend, s::TrussNode) =
   truss_node_is_supported(s) ?
-    [b_truss_node(b, s.p, s.family), b_truss_node_support(b, s.p, s.family)] :
+    vcat(b_truss_node(b, s.p, s.family), b_truss_node_support(b, s.p, s.family)) :
     b_truss_node(b, s.p, s.family)
 
 realize(b::Backend, s::TrussBar) =
