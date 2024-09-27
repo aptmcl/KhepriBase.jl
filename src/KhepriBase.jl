@@ -5,6 +5,7 @@ using StaticArrays
 using Dierckx
 using Dates
 using Sockets
+using HTTP
 using Base.Iterators
 using Base: @kwdef
 
@@ -102,36 +103,19 @@ export and_mark_deleted,
        decode,
        decode_or_error,
        @encode_decode_as,
-       SocketBackend,
-       create_backend_connection,
+       SocketBackend, WebSocketBackend, WebSocketConnection,
        current_backends,
        @remote,
        @get_remote,
        connection,
        reset_backend,
        IOBufferBackend,
-       backend_frame_at,
-       acad_revolution,
-       #backend_bounding_box,
-       b_delete_shapes,
-       backend_map_division,
-       backend_surface_boundary,
-       backend_surface_domain,
-       captured_shape,
-       captured_shapes,
-       create_block,
        dimension,
-       generate_captured_shape,
-       generate_captured_shapes,
-       pre_selected_shapes_from_se,
        ref,
-       save_file,
-       shape_from_ref,
-       show_truss_deformation,
-       slice_ref
+       show_truss_deformation
 
 # Ports for socket-based backends are defined here to avoid conflicts
-export autocad_port, revit_port, rhino_port, unity_port, unreal_port, blender_port, freecad_port, a3dsmax_port
+export autocad_port, revit_port, rhino_port, unity_port, unreal_port, blender_port, freecad_port, a3dsmax_port, threejs_port
 const autocad_port = 11000
 const revit_port = 11001
 const unity_port = 11002
@@ -140,4 +124,5 @@ const freecad_port = 11004
 const a3dsmax_port = 11005
 const unreal_port = 11010
 const rhino_port = 12000
+const threejs_port = 8900
 end
