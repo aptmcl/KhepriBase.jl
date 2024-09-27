@@ -24,24 +24,25 @@ with(f, p, newvalue, others...) =
 
 mutable struct OptionParameter{T}
   value::Union{Missing,T}
+  OptionParameter{T}(v::T1) where {T,T1<:T} = new{T}(v)
+  OptionParameter{T}() where T = new{T}(missing)
+  OptionParameter(v::T) where T = new{T}(v)
 end
-OptionParameter{T}() where T = OptionParameter{T}(missing)
 
 (p::OptionParameter{T})() where T =
   ismissing(p.value) ?
-    error("Parameter was not initialized") :
-    p.value
+    error("Parameter was not initialized with value of type $T") :
+    p.value::T
 (p::OptionParameter{T})(newvalue::T) where T = p.value = newvalue
 
-mutable struct LazyParameter{T}
-  initializer::Union{DataType,Function} #This should be a more specific type: None->T
+mutable struct LazyParameter{T,F<:Function}
+  initializer::F
   value::Union{T,Nothing}
+  LazyParameter(initializer::F) where {F<:Function} =
+    new{Base.return_types(initializer, ())[1],F}(initializer, nothing)
 end
 
-LazyParameter(T::DataType, initializer::Union{DataType,Function}) =
-  LazyParameter{T}(initializer, nothing)
+(p::LazyParameter{T,F})() where {T,F} = isnothing(p.value) ? (p.value = p.initializer()::T) : p.value
+(p::LazyParameter{T,F})(newvalue::T) where {T,F} = p.value = newvalue
 
-(p::LazyParameter{T})() where T = isnothing(p.value) ? (p.value = p.initializer()) : p.value
-(p::LazyParameter{T})(newvalue::T) where T = p.value = newvalue
-
-Base.reset(p::LazyParameter{T}) where T = p.value = nothing
+Base.reset(p::LazyParameter{T,F}) where {T,F} = p.value = nothing
