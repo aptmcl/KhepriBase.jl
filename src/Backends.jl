@@ -4,6 +4,9 @@ RMI, etc.
 =#
 
 abstract type RemoteBackend{K,T} <: Backend{K,T} end
+# We assume there is a property for the name
+backend_name(b::RemoteBackend) = b.name
+
 
 # There is a protocol for retrieving the connection
 connection(b::RemoteBackend) =
@@ -14,6 +17,16 @@ connection(b::RemoteBackend) =
 	    after_connecting(b)
     end
 	  b.connection
+  end
+
+# The protocol to reset the connection:
+reset_backend(b::RemoteBackend) =
+  let c = b.connection
+    for f in b.remote
+      reset_opcode(f)
+    end
+    b.connection = missing
+    close(c) # This might err, so it goes last
   end
 
 export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting
@@ -35,19 +48,8 @@ mutable struct SocketBackend{K,T} <: RemoteBackend{K,T}
   remote::NamedTuple
 end
 
-SocketBackend{K,T}(name::AbstractString, port::Integer, remote::NamedTuple) where {K,T} =
+SocketBackend{K,T}(name, port, remote) where {K,T} =
   SocketBackend{K,T}(name, port, missing, remote)
-
-backend_name(b::SocketBackend) = b.name
-
-reset_backend(b::SocketBackend) =
-  begin
-    for f in b.remote
-      reset_opcode(f)
-    end
-    close(b.connection)
-    b.connection = missing
-  end
 
 # AML: replace with the Base.retry function?
 start_connection(b::SocketBackend) =
@@ -80,6 +82,108 @@ macro get_remote(b, op)
   end
 end
 
+#=
+Another option is to use WebSockets. The goal, here, is to have multiple connections, opened at different times but running simultaneous.
+=#
+struct WebSocketConnection <: IO
+  server::HTTP.Server
+  router::HTTP.Router
+  connections::Set{HTTP.WebSockets.WebSocket}
+end
+
+for_connection(f, s) = begin
+  for websocket in s.connections
+    if HTTP.WebSockets.isclosed(websocket)
+      @warn("Removing closed websocket connection!")
+      delete!(s.connections, websocket)
+    else
+      try
+        return f(websocket)
+      catch e
+        if isa(e, Base.IOError)
+          delete!(s.connections, websocket)
+        else
+          rethrow(e)
+        end
+      end
+    end
+  end
+  error("There are no open WebSocket connections to write to!")
+end
+
+from_connection(f, s) = begin
+  for websocket in s.connections
+    if HTTP.WebSockets.isclosed(websocket)
+      @warn("Removing closed websocket connection!")
+      delete!(s.connections, websocket)
+    else
+      try
+        return f(websocket)
+      catch e
+        if isa(e, Base.IOError)
+          delete!(s.connections, websocket)
+        else
+          rethrow(e)
+        end
+      end
+    end
+  end
+  error("There are no open WebSocket connections to read from!")
+end
+
+broadcast_write(c, data) =
+  for_connection(c) do websocket
+    HTTP.WebSockets.send(websocket, data)
+  end
+
+# These are needed to avoid ambiguous dispatch
+Base.write(c::WebSocketConnection, data::Union{Float16,Float32,Float64,Int128,Int16,Int32,Int64,UInt128,UInt16,UInt32,UInt64}) = broadcast_write(c, data)
+Base.write(c::WebSocketConnection, data::Array) = broadcast_write(c, data)
+Base.write(c::WebSocketConnection, data::Union{SubString{String},String}) = broadcast_write(c, data)
+
+Base.read(c::WebSocketConnection, T::Union{Type{Float16},Type{Float32},Type{Float64},Type{Int128},Type{Int16},Type{Int32},Type{Int64},Type{UInt128},Type{UInt16},Type{UInt32},Type{UInt64}}) =
+  let ans = from_connection(HTTP.WebSockets.receive, c),
+      io = IOBuffer(ans)
+    read(io, T)
+  end
+
+# Why can't the following one be included in the previous union?
+Base.read(c::WebSocketConnection, T::Type{UInt8}) =
+  let ans = from_connection(HTTP.WebSockets.receive, c),
+      io = IOBuffer(ans)
+    read(io, T)
+  end
+Base.close(c::WebSocketConnection) =
+  begin
+    close.(c.connections)
+    empty!(c.connections)
+    if isopen(c.server)
+      HTTP.close(c.server)
+    end
+  end
+
+# Finally, the backend itself:
+mutable struct WebSocketBackend{K,T} <: RemoteBackend{K,T}
+  name::String
+  host::String
+  port::Int
+  connection::Union{WebSocketConnection,Missing}
+  remote::NamedTuple
+end
+
+WebSocketBackend{K,T}(name, host, port, remote) where {K,T} =
+  WebSocketBackend{K,T}(name, host, port, missing, remote)
+
+#=
+Given that this is a server, we can also allow clients to make requests by using, 
+e.g., the fetch API. To that end, we need to be able to add request handlers.
+Be careful about deadlocks and such.
+=#
+export register_handler
+
+register_handler(c::WebSocketBackend{K,T}, method, path, handler) where {K,T} =
+  HTTP.register!(c.connection.router, method, path, handler)
+
 ################################################################
 # Not all backends support all stuff. Some of it might need to be supported
 # by ourselves. Layers are one example.
@@ -107,7 +211,7 @@ b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_i
 ################################################################
 # Not all backends support all stuff. Some of it might need to be supported
 # by ourselves. Render environment is another example.
-export RenderEnvironment, RealisticSkyEnvironment, ClayEnvironment, default_render_environment
+export RenderEnvironment, RealisticSkyEnvironment, ClayEnvironment
 
 abstract type RenderEnvironment end
 struct RealisticSkyEnvironment <: RenderEnvironment
