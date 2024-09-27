@@ -106,6 +106,34 @@ parse_signature(::Val{:PY}, sig::AbstractString) =
     (name, name, parse_params(Meta.parse(params)), parse_type(Meta.parse(ret)))
   end
 
+# JavaScript
+#=
+This is JavaScript, not TypeScript. As a result, the signatures were improvised by me and
+they look like this:
+const createSphere = typedFunction([Vector3, Float64, Id], Id, (c, r, mat) => {
+=#
+
+parse_signature(::Val{:JS}, sig::AbstractString) =
+  let m = match(r"^ *typedFunction *\(\"(.*)\", *(\[.*\]), *(.+), *(\(.*\)) *=>", sig),
+      name = m.captures[1],
+      paramTypes = m.captures[2],
+      params = m.captures[4],
+      ret = m.captures[3],
+      parse_type(t) =
+        if t isa Symbol
+          Val{t}
+        elseif t.head === :vect
+          Vector{parse_type(t.args[1])}
+        else
+          error("Unknown expression type $(t) in signature $(sig)")
+        end,
+      parse_params(ast, typesAst) =
+        ast isa Symbol ? # Julia parses (foo) as foo
+          parse_params(:(($ast,)), typesAst) :
+          [(parse_type(type), p) for (type, p) in zip(typesAst.args, ast.args)]
+    (name, name, parse_params(Meta.parse(params), Meta.parse(paramTypes)), parse_type(Meta.parse(ret)))
+  end
+
 
 #=
 A remote function encapsulates the information needed for communicating with remote
@@ -137,18 +165,20 @@ remote_function(ns::T,
     encoder,
     IOBuffer())
 
-request_operation(f::RemoteFunction{T}, conn::IO) where {T} = begin
-  encode(f.namespace, Val(:int), conn, 0)
-  encode(f.namespace, Val(:string), conn, f.remote_name)
-  op = decode(f.namespace, Val(:size), conn)
-  if op == -1
-    error(f.remote_name * " is not available")
-  else
-    op
+request_operation(f::RemoteFunction{T}, conn) where {T} =
+  let buf = f.buffer
+    encode(f.namespace, Val(:int), buf, 0)
+    encode(f.namespace, Val(:string), buf, f.remote_name)
+    write(conn, take!(buf))
+    op = decode(f.namespace, Val(:size), conn)
+    if op == -1
+      error(f.remote_name * " is not available")
+    else
+      op
+    end
   end
-end
 
-interrupt_processing(conn::IO) = write(conn, Int32(-1))
+interrupt_processing(conn) = write(conn, Int32(-1))
 
 
 ensure_opcode(f::RemoteFunction, conn) =
@@ -222,7 +252,8 @@ lang_rpc(lang, sigs) =
   [let (local_name, remote_name, params, ret) =
       try
         parse_signature(Val(lang.value), str)
-      catch
+      catch e
+        println(e)
         error("Cannot parse in $(lang) the signature $(str)")
       end
     (Symbol(local_name), remote_function_meta_program(lang, str, local_name, remote_name, params, ret))
@@ -324,8 +355,8 @@ decode(ns::Val{NS}, t::Vector{Tuple{T1,T2}}, c::IO) where {NS,T1,T2} = begin
   [(decode(ns, sub1, c), decode(ns, sub2, c)) for i in 1:len]
 end
 
-# Some generic conversions for C#, C++, and Python
-const SizeIsInt = Union{Val{:CS},Val{:CPP},Val{:PY}}
+# Some generic conversions for C#, C++, JavaScript, and Python
+const SizeIsInt = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:PY}}
 encode(ns::SizeIsInt, t::Val{:size}, c::IO, v) =
   encode(ns, Val(:int), c, v)
 decode(ns::SizeIsInt, t::Val{:size}, c::IO) =
@@ -335,41 +366,41 @@ encode(ns::SizeIsInt, t::Val{:address}, c::IO, v) =
 decode(ns::SizeIsInt, t::Val{:address}, c::IO) =
   decode_or_error(ns, Val(:long), c, -1)
 
-const BoolIsByte = Union{Val{:CS},Val{:PY}}
+const BoolIsByte = Union{Val{:CS},Val{:JS},Val{:PY}}
 encode(ns::BoolIsByte, t::Val{:bool}, c::IO, v::Bool) =
   encode(ns, Val(:byte), c, v ? 1 : 0)
 decode(ns::BoolIsByte, t::Val{:bool}, c::IO) =
   decode_or_error(ns, Val(:byte), c, UInt8(127)) == UInt8(1)
 
-const ByteIsUInt8 = Union{Val{:CS},Val{:CPP},Val{:PY}}
+const ByteIsUInt8 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:PY}}
 encode(::ByteIsUInt8, t::Val{:byte}, c::IO, v) =
   write(c, convert(UInt8, v))
 decode(::ByteIsUInt8, t::Val{:byte}, c::IO) =
   convert(UInt8, read(c, UInt8))
 
-# Assuming short is two bytes in C++ and Python
+# Assuming short is two bytes in C#, C++ and Python
 const ShortIsInt16 = Union{Val{:CS},Val{:CPP},Val{:PY}}
 encode(::ShortIsInt16, t::Val{:short}, c::IO, v) =
   write(c, convert(Int16, v))
 decode(::ShortIsInt16, t::Val{:short}, c::IO) =
   convert(Int16, read(c, Int16))
 
-# Assuming int is four bytes in C++ and Python
-const IntIsInt32 = Union{Val{:CS},Val{:CPP},Val{:PY}}
+# Assuming int is four bytes in C#, C++, JavaScript, and Python
+const IntIsInt32 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:PY}}
 encode(::IntIsInt32, t::Val{:int}, c::IO, v) =
   write(c, convert(Int32, v))
 decode(::IntIsInt32, t::Val{:int}, c::IO) =
   convert(Int32, read(c, Int32))
 
-# Assuming long is eight bytes in C++
-const LongIsInt64 = Union{Val{:CS},Val{:CPP}}
+# Assuming long is eight bytes in C#, C++, JavaScript
+const LongIsInt64 = Union{Val{:CS},Val{:CPP},Val{:JS}}
 encode(::LongIsInt64, t::Val{:long}, c::IO, v) =
   write(c, convert(Int64, v))
 decode(::Union{Val{:CS},Val{:CPP}}, t::Val{:long}, c::IO) =
   convert(Int64, read(c, Int64))
 
-# Assuming float is four bytes in C++
-const FloatIsFloat32 = Union{Val{:CS},Val{:CPP}}
+# Assuming float is four bytes in C#, C++, JavaScript
+const FloatIsFloat32 = Union{Val{:CS},Val{:CPP},Val{:JS}}
 encode(::FloatIsFloat32, t::Val{:float}, c::IO, v) =
   write(c, convert(Float32, v))
 decode(ns::FloatIsFloat32, t::Val{:float}, c::IO) =
@@ -386,8 +417,8 @@ decode(ns::FloatIsFloat64, t::Val{:float}, c::IO) =
     isnan(d) ? backend_error(ns, c) : convert(Float64, d)
   end
 
-# Assuming double is eight bytes in C++
-const DoubleIsFloat64 = Union{Val{:CS},Val{:CPP}}
+# Assuming double is eight bytes in C#, C++, JavaScript
+const DoubleIsFloat64 = Union{Val{:CS},Val{:CPP},Val{:JS}}
 encode(::DoubleIsFloat64, t::Val{:double}, c::IO, v) =
   write(c, convert(Float64, v))
 decode(ns::DoubleIsFloat64, t::Val{:double}, c::IO) =
@@ -395,8 +426,8 @@ decode(ns::DoubleIsFloat64, t::Val{:double}, c::IO) =
     isnan(d) ? backend_error(ns, c) : d
   end
 
-# The binary_stream we use with C++ and Python replicates C# behavior
-const StringIsCSString = Union{Val{:CS},Val{:CPP},Val{:PY}}
+# The binary_stream we use with C++, JavaScript, and Python replicates C# behavior
+const StringIsCSString = Union{Val{:CS},Val{:CPP},Val{:PY},Val{:JS}}
 encode(::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO, v) = begin
   str = string(v)
   size = sizeof(str) # length is not applicable to unicode strings
@@ -446,7 +477,7 @@ decode(ns::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO
   end
 end
 
-const VoidIsByte = Union{Val{:CS},Val{:PY}}
+const VoidIsByte = Union{Val{:CS},Val{:PY},Val{:JS}}
 decode(ns::VoidIsByte, t::Union{Val{:void},Val{:None}}, c::IO) =
   decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
 
@@ -462,10 +493,13 @@ decode(ns::Val{:CS}, ::Val{:Guid}, c::IO) =
     iszero(guid) ? backend_error(ns, c) : guid
   end
 
+# It is also useful to encode generic objects.
+const SupportsObjects = Union{Val{:JS},Val{:PY}}
+
 const object_code = Dict(Bool=>0, UInt8=>1, Int32=>2, Int64=>3, Float32=>4, Float64=>5, String=>6)
 
-encode(ns::Val{:CS}, ::Val{:object}, c::IO, v) =
-  let code = v isa RGB ? 7 : v isa RGBA ? 8 : object_code[typeof(v)]
+encode(ns::SupportsObjects, ::Val{:Any}, c::IO, v) =
+  let code = v isa RGB ? 7 : v isa RGBA ? 8 : v isa Dict ? 9 : object_code[typeof(v)]
     encode(ns, Val(:byte), c, code)
     if code == 0      
       encode(ns, Val(:bool), c, v)
@@ -482,49 +516,26 @@ encode(ns::Val{:CS}, ::Val{:object}, c::IO, v) =
     elseif code == 6
       encode(ns, Val(:string), c, v)
     elseif code == 7
-      encode(ns, Val(:Color), c, v)
+      encode(ns, Val(:RGB), c, v)
     elseif code == 8
-      encode(ns, Val(:Color), c, v)
+      encode(ns, Val(:RGBA), c, v)
+    elseif code == 9
+      encode(ns, Val(:Dict), c, v)
     else
       error("Unknown object code", code)
     end
   end
 
-encode(ns::Val{:CS}, ::Val{:Options}, c::IO, dict) =
+encode(ns::SupportsObjects, ::Val{:Dict}, c::IO, dict) =
   begin
     encode(ns, Val(:int), c, length(dict))
-    for (k, v) in dict
+    for (k, v) in pairs(dict)
       encode(ns, Val(:string), c, k)
-      encode(ns, Val(:object), c, v)
+      encode(ns, Val(:Any), c, v)
     end
   end
 
-# It is frequently necessary to encode/decode an abstract type that is
-# implemented os some primitive type
-macro encode_decode_as(ns, from, to)
-  esc(
-    quote
-      encode(ns::Val{$ns}, ::$from, c::IO, v) = encode(ns, $to(), c, v)
-      decode(ns::Val{$ns}, ::$from, c::IO) = decode(ns, $to(), c)
-    end)
-end
-
-#=
-There are lots of cases where doubles need to be encoded/decoded
-(e.g. (points, vectors))
-encode_double3(c::IO, v0::Real, v1::Real, v2::Real) = begin
-    encode_double(c, v0)
-    encode_double(c, v1)
-    encode_double(c, v2)
-end
-encode_float3(c::IO, v0::Real, v1::Real, v2::Real) = begin
-    encode_float(c, v0)
-    encode_float(c, v1)
-    encode_float(c, v2)
-end
-=#
-
-const SupportsTuples = Union{Val{:CS},Val{:CPP},Val{:PY}}
+const SupportsTuples = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:PY}}
 encode(ns::SupportsTuples, t::Tuple{T1,T2}, c::IO, v) where {T1,T2} =
   begin
     encode(ns, T1(), c, v[1])
@@ -556,10 +567,20 @@ decode(ns::SupportsTuples, t::Tuple{T1,T2,T3,T4}, c::IO) where {T1,T2,T3,T4} =
    decode(ns, T3(), c),
    decode(ns, T4(), c))
 
+encode(ns::SupportsTuples, ::Val{:float2}, c::IO, v) =
+  encode(ns, (Val(:float),Val(:float)), c, v)
+decode(ns::SupportsTuples, ::Val{:float2}, c::IO) =
+  decode(ns, (Val(:float),Val(:float)), c)
+
 encode(ns::SupportsTuples, ::Val{:float3}, c::IO, v) =
   encode(ns, (Val(:float),Val(:float),Val(:float)), c, v)
 decode(ns::SupportsTuples, ::Val{:float3}, c::IO) =
   decode(ns, (Val(:float),Val(:float),Val(:float)), c)
+
+encode(ns::SupportsTuples, ::Val{:float4}, c::IO, v) =
+  encode(ns, (Val(:float),Val(:float),Val(:float),Val(:float)), c, v)
+decode(ns::SupportsTuples, ::Val{:float4}, c::IO) =
+  decode(ns, (Val(:float),Val(:float),Val(:float),Val(:float)), c)
 
 encode(ns::SupportsTuples, ::Val{:double3}, c::IO, v) =
   encode(ns, (Val(:double),Val(:double),Val(:double)), c, v)
@@ -598,3 +619,15 @@ encode(ns::Val{:CS}, ::Val{:DateTime}, c::IO, v) =
 
 decode(ns::Val{:CS}, ::Val{:DateTime}, c::IO) =
   Dates.epochms2datetime(decode(ns, Val(:long), c) ÷ 10000 + one_year_milliseconds)
+
+
+# It is frequently necessary to encode/decode an abstract type that is
+# implemented os some primitive type
+macro encode_decode_as(ns, from, to)
+  esc(
+    quote
+      encode(ns::Val{$ns}, ::$from, c::IO, v) = encode(ns, $to(), c, v)
+      decode(ns::Val{$ns}, ::$from, c::IO) = decode(ns, $to(), c)
+    end)
+end
+
