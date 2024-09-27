@@ -25,14 +25,20 @@ def_data(expr) =
 macro defcb(expr)
   name, params, body = def_data(expr)
   params_data = map(param_data, params)
+  pnames = map(pd->pd[1], params_data)
   backend_name = Symbol("b_", name)
   esc(
     quote
       export $(name), $(backend_name)
+      # We don't include types in the parameters to avoid multiple dispatch ambiguities.
+      # However, it might be interesting to include them in the body as assertions.
       @named_params $(name)($(params...), backend::Backend=top_backend()) =
-          $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
-      #$(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
-      #    $(body)
+          $(backend_name)(backend, $(pnames...))
+          # We use a default definition for a Any backend to avoid conflict with a similar def in Backend.jl
+#      $(backend_name)(backend::Any, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
+      $(backend_name)(backend::Any, $(pnames...)) =
+          $(body)
+      $(name)
     end)
 end
 
@@ -40,16 +46,22 @@ end
 macro defcbs(expr)
   name, params, body = def_data(expr)
   params_data = map(param_data, params)
+  pnames = map(pd->pd[1], params_data)
   backend_name = Symbol("b_", name)
   esc(
     quote
       export $(name), $(backend_name)
+      # We don't include types in the parameters to avoid multiple dispatch ambiguities.
+      # However, it might be interesting to include them in the body as assertions.
       @named_params $(name)($(params...), backends::Backends=current_backends()) =
         for backend in backends
-          $(backend_name)(backend, $(map(pd->pd[1], params_data)...))
+          $(backend_name)(backend, $(pnames...))
         end
-      #$(backend_name)(backend::Backend, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
-        #  $(body)
+        # We use a default definition for a Any backend to avoid conflict with a similar def in Backend.jl
+#      $(backend_name)(backend::Any, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
+      $(backend_name)(backend::Any, $(pnames...)) =
+        $(body)
+      $(name)
     end)
 end
 
@@ -152,7 +164,7 @@ There are three major types of renders:
  5. Render
  6. Save the generated image (e.g., in PNG, JPG, PDF)
 =#
-export render_kind, render_setup, render_view, render_clay_view
+export render_kind, render_setup, render_view
 
 const render_kind = Parameter(:realistic) # or :white or :black
 
