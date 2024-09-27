@@ -5,7 +5,10 @@ Here we define the relevant types used in Khepri.
 =#
 
 
-export Loc, Vec, Locs, Vecs
+export Loc1D, Loc2D, Loc3D, Loc, 
+       Vec1D, Vec2D, Vec3D, Vec,
+       Locs1D, Locs2D, Locs3D, Locs,
+       Vecs1D, Vecs1D, Vecs1D, Vecs
 
 # We distinguish between locations and vectors, as they transform differently
 
@@ -33,7 +36,13 @@ const Vecs = Vector{<:Vec}
 
 # Special cases are also useful
 
+const Locs1D = Vector{<:Loc1D}
 const Locs2D = Vector{<:Loc2D}
+const Locs3D = Vector{<:Loc3D}
+
+const Vecs1D = Vector{<:Vec1D}
+const Vecs2D = Vector{<:Vec2D}
+const Vecs3D = Vector{<:Vec3D}
 
 #=
 Paths and Regions are abstract entities that describe geometric curves
