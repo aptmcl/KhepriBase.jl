@@ -29,28 +29,19 @@ export Shape,
        surface_boundary,
        curve_domain,
        surface_domain,
-       get_layer,
        create_layer,
-       get_or_create_layer,
        current_layer,
        delete_all_shapes_in_layer,
-       get_material,
-       create_material,
        merge_materials,
-       get_or_create_material,
-       create_block,
-       instantiate_block,
        reset_backend,
        connection,
        @deffamily,
        @defproxy,
-       force_creation,
        subpath,
        subpath_starting_at,
        subpath_ending_at,
        bounding_box,
        capture_shape, capture_shapes,
-       captured_shape, captured_shapes,
        extrusion, sweep, revolve, loft
 
 #References can be (single or multiple) native references
@@ -106,7 +97,6 @@ DynRef(b::Backend{K,T}, v) where {K,T} = DynRef{K,T}(b, ensure_ref(b, v), 1, 0)
 
 
 const DynRefs = IdDict{Backend, Any}
-const dyn_refs = DynRefs
 
 backend(s::Proxy) = first(first(s.ref))
 
@@ -126,7 +116,16 @@ The protocol is this:
 ref(b, s) calls
   force_realize(b, s)
 =#
-
+#=
+macro curryable(def)
+  @assert def.head === :(=)
+  let name = def.args[1].args[1],
+      params = def.args[1].args[2:end],
+      body = def.args[2:end]
+      defs = [:($name($(params[1:j])...) = $name($(params[i+1:]))))]
+    quote
+      $def
+=#
 ref(b::Backend, s::Proxy) =
   force_realize(b, s)
 ref(b::Backend) =
@@ -245,7 +244,7 @@ maybe_collect(s::Shape) = (in_shape_collection() && collect_shape!(s); s)
 traceability = Parameter(false)
 trace_depth = Parameter(1000)
 excluded_modules = Parameter([Base, Base.CoreLogging, KhepriBase])
-# We a dict from shapes to file locations
+# We use a dict from shapes to file locations
 # and a dict from file locations to shapes
 shape_to_file_locations = IdDict()
 file_location_to_shapes = Dict()
@@ -393,7 +392,7 @@ macro defproxy(name_typename, parent, fields...)
     end
     # we don't need to convert anything because Julia already does that with the default constructor
     # and, by the same idea, we don't need to define parameter types.
-    @noinline $(constructor_name)($(opt_params...); $(key_params...), ref::DynRefs=dyn_refs()) =
+    @noinline $(constructor_name)($(opt_params...); $(key_params...), ref::DynRefs=DynRefs()) =
       after_init($(struct_name)(ref, $(field_converts...)))
     $(predicate_name)(v::$(struct_name)) = true
     $(predicate_name)(v::Any) = false
@@ -488,7 +487,7 @@ realize(b::Backend, m::Material) =
 b_get_material(b::Backend, layer, spec) =
   b_get_material(b, spec)
 
-export merge_materials, merge_backend_material
+export merge_materials, merge_backend_materials
 merge_materials(materials...) =
   let name = join([material.layer.name for material in materials], "_"),
       newdata = IdDict{Backend,Any}()
@@ -590,7 +589,7 @@ rectangle(p::Loc, q::Loc) =
 #=
 Drawings might be annotated with labels, dimensions, and other stuff
 =#
-
+# HACK: This needs to become a field of the backend. Each one knows about its annotations.
 const annotations = Shape[]
 
 export delete_all_annotations
@@ -799,6 +798,7 @@ path_frames(s::Shape1D) = path_frames(shape_path(s))
 
 ## shape_path takes a 1D/2D shape and computes an equivalent path
 shape_path(s::Circle) = circular_path(s.center, s.radius)
+shape_path(s::Ellipse) = elliptic_path(s.center, s.radius_x, s.radius_y)
 shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
 shape_path(s::Line) = open_polygonal_path(s.vertices)
 # The next two should be merged
@@ -813,7 +813,7 @@ shape_path(s::SurfaceCircle) = circular_path(s.center, s.radius)
 shape_path(s::SurfaceRectangle) = rectangular_path(s.corner, s.dx, s.dy)
 shape_path(s::SurfacePolygon) = closed_polygonal_path(s.vertices)
 shape_path(s::SurfaceRegularPolygon) = closed_polygonal_path(regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))
-shape_path(s::Surface) = ClosedPathSequence([shape_path(e) for e in s.frontier])
+shape_path(s::Surface) = length(s.frontier) == 1 ? shape_path(s.frontier[1]) : ClosedPathSequence([shape_path(e) for e in s.frontier])
 
 ## shape_region takes a 2D shape and computes an equivalent region
 shape_region(s::Shape2D) = region(shape_path(s))
@@ -867,8 +867,8 @@ regular_prism(edges::Integer, cb::Loc, r::Real, angle::Real, ct::Loc, inscribed:
   end
 
 @defshape(Shape3D, prism, bs::Locs=[ux(), uy(), uxy()], v::Vec=vz(1))
-prism(bs::Locs, h::Real) =
-  prism(bs, vz(h))
+prism(bs::Locs, h::Real, m=default_material) =
+  prism(bs, vz(h), m)
 
 @defshape(Shape3D, right_cuboid, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
 right_cuboid(cb::Loc, width::Real, height::Real, ct::Loc, angle::Real=0) =
@@ -1382,7 +1382,7 @@ maybe_existing_shape_from_ref(b::Backend, r) = begin
   b_shape_from_ref(b, r)
 end
 
-
+@defcb render_pathname(name)
 export save_view
 save_view(name::String="View") =
   let path = prepare_for_saving_file(render_pathname(name))
@@ -1453,7 +1453,7 @@ stroke(path;
     end
   end
 export fill, b_fill
-fill(path;
+fill(path::Path;
     material::Material=default_surface_material(),
     backend::Backend=top_backend(),
     backends::Backends=(backend,)) =
