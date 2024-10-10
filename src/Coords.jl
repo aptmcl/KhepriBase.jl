@@ -307,13 +307,13 @@ pol_phi = cyl_phi
 Base.getproperty(s::Union{X,VX}, sym::Symbol) =
     sym === :y ? 0 :
     sym === :z ? 0 :
-    sym === :ρ ? s.x :
-    sym === :ϕ ? 0 :
+    sym === :ρ ? abs(s.x) :
+    sym === :ϕ ? (s.x < 0 ? 1π : 0) :
     sym === :ψ ? 0 :
     getfield(s, sym)
 Base.getproperty(s::Union{XY,VXY}, sym::Symbol) =
     sym === :z ? 0 :
-    sym === :ρ ? (0 == s.x ? s.y : s.y == 0 ? s.x : sqrt(s.x^2 + s.y^2)) :
+    sym === :ρ ? (0 == s.x ? abs(s.y) : s.y == 0 ? abs(s.x) : sqrt(s.x^2 + s.y^2)) :
     sym === :ϕ ? (0 == s.x == s.y ? 0 : mod(atan(s.y, s.x), 2pi)) :
     sym === :ψ ? 0 :
     getfield(s, sym)
@@ -361,11 +361,11 @@ gen_addition(C, c, Vc, vc) =
 (+)(v::Vec, p::Loc) = p + v
 
 (-)(p::X, v::VX) =
-    p.cs === v.cs ? x(p.x - v.x, p.cs) : p + in_cs(v, p.cs)
+    p.cs === v.cs ? x(p.x - v.x, p.cs) : p - in_cs(v, p.cs)
 (-)(p::Union{X,XY}, v::Union{VX,VXY,VPol,VPold}) =
-    p.cs === v.cs ? xy(p.x - v.x, p.y - v.y, p.cs) : p + in_cs(v, p.cs)
+    p.cs === v.cs ? xy(p.x - v.x, p.y - v.y, p.cs) : p - in_cs(v, p.cs)
 (-)(p::Union{X,XY,XYZ}, v::Union{VX,VXY,VPol,VPold,VXYZ,VCyl,VSph}) =
-    p.cs === v.cs ? xyz(p.x - v.x, p.y - v.y, p.z - v.z, p.cs) : p + in_cs(v, p.cs)
+    p.cs === v.cs ? xyz(p.x - v.x, p.y - v.y, p.z - v.z, p.cs) : p - in_cs(v, p.cs)
 (-)(p::Pol, v::Union{VX,VXY,VPol,VPold}) =
     pol(xy(p) - v)
 (-)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) =
@@ -901,6 +901,12 @@ Base.isapprox(p::Loc, q::Loc; kwargs...) =
   let wp = in_world(p),
       wq = in_world(q)
       isapprox(wp.x, wq.x; kwargs...) && isapprox(wp.y, wq.y; kwargs...) && isapprox(wp.z, wq.z; kwargs...)
+  end
+
+Base.isequal(v::Vec, w::Vec) =
+  let wv = in_world(v),
+      ww = in_world(w)
+    isequal(wv.x, ww.x) && isequal(wv.y, ww.y) && isequal(wv.z, ww.z)
   end
 
 # angle between
