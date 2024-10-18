@@ -4,12 +4,24 @@ using KhepriBase
 @testset "Coordinate conversions" begin
   @test pol(1, 0).x == 1
   @test pol(1, 0).y == 0
+  @test pol(1, 0).ρ == 1
+  @test pol(1, 0).ϕ == 0
   @test pol(1, π/2).x ≈ 0 atol=1e-9
   @test pol(1, π/2).y == 1
+  @test pol(1, π/2).ρ == 1
+  @test pol(1, π/2).ϕ == π/2
   @test pol(1, π).x == -1
   @test pol(1, π).y == 0
+  @test pol(1, π).ρ == 1
+  @test pol(1, π).ϕ == π
   @test pol(1, 3π/2).x ≈ 0 atol=1e-9
   @test pol(1, 3π/2).y == -1
+  @test x(1).x == 1
+  @test x(1).y == 0  
+  @test xy(1).x == 1
+  @test xy(1).y == 0  
+  @test xy(1, 0).x == 1
+  @test xy(1, 0).y == 0  
 end
 
 @testset "Paths" begin
