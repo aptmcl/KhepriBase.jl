@@ -769,54 +769,9 @@ curtain_wall(p0::Loc, p1::Loc;
      offset::Real=0.0) =
   curtain_wall([p0, p1], bottom_level=bottom_level, top_level=top_level,
          family=family, offset=offset)
-
+       
 realize(b::Backend, s::CurtainWall) =
-  let th = s.family.panel.thickness,
-      bfw = s.family.boundary_frame.width,
-      bfd = s.family.boundary_frame.depth,
-      bfdo = s.family.boundary_frame.depth_offset,
-      mfw = s.family.mullion_frame.width,
-      mfd = s.family.mullion_frame.depth,
-      mdfo = s.family.mullion_frame.depth_offset,
-      tfw = s.family.transom_frame.width,
-      tfd = s.family.transom_frame.depth,
-      tfdo = s.family.transom_frame.depth_offset,
-      path = curtain_wall_path(b, s, s.family.panel),
-      path_length = path_length(path),
-      bottom = level_height(b, s.bottom_level),
-      top = level_height(b, s.top_level),
-      height = top - bottom,
-      x_panels = ceil(Int, path_length/s.family.max_panel_dx),
-      y_panels = ceil(Int, height/s.family.max_panel_dy),
-      refs = new_refs(b)
-    append!(refs, b_curtain_wall(b, s, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, :panel))
-    append!(refs, b_curtain_wall(b, s, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-    append!(refs, b_curtain_wall(b, s, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-    append!(refs, b_curtain_wall(b, s, subpath(path, 0, bfw), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-    append!(refs, b_curtain_wall(b, s, subpath(path, path_length-bfw, path_length), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), :boundary_frame))
-    for i in 1:y_panels-1
-      l = height/y_panels*i
-      sub = subpath(path, bfw, path_length-bfw)
-      append!(refs, b_curtain_wall(b, s, sub, bottom+l-tfw/2, tfw, l_thickness(tfdo, tfd), r_thickness(tfdo, tfd), :transom_frame))
-    end
-    for i in 1:x_panels-1
-      l = path_length/x_panels*i
-      append!(refs, b_curtain_wall(b, s, subpath(path, l-mfw/2, l+mfw/2), bottom+bfw, height-2*bfw, l_thickness(mdfo, mfd), r_thickness(mdfo, mfd), :mullion_frame))
-    end
-    refs
-  end
-
-# By default, curtain wall panels are planar
-curtain_wall_path(b::Backend, s::CurtainWall, panel_family::Family) =
-  s.path
-
-curtain_wall_path(b::Backend, s::CurtainWall, panel_family::PanelFamily) =
-  let path_length = path_length(s.path),
-      x_panels = ceil(Int, path_length/s.family.max_panel_dx),
-      pts = map(t->in_world(location_at_length(s.path, t)),
-                division(0, path_length, x_panels))
-    polygonal_path(pts)
-  end
+  b_curtain_wall(b, s.path, s.bottom_level, s.top_level, s.family, s.offset)
 
 #
 # We need to redefine the default method (maybe add an option to the macro to avoid defining the meta_program)

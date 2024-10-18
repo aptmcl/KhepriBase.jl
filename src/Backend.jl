@@ -467,7 +467,7 @@ b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
     vcat(b_extruded_curve(b, outer, v, cb, smat),
          [b_extruded_curve(b, inner, v, cb, smat) for inner in inners]...,
          b_surface(b, path_on(profile, cb), bmat),
-         b_surface(b, path_on(translate(profile, v), cb), tmat))
+         b_surface(b, translate(path_on(profile, cb), v), tmat))
     end
     #=
       isempty(inners) ?
@@ -739,7 +739,7 @@ on the scale we are using so I'll include a size parameter and I'll
 consider the inicial spacing as 5% of the size and the extension to
 be extra 10% in excess of the size.
 =#
-export b_dimension, b_ext_line, b_dim_line, b_text, b_text_size, b_label
+export b_dimension, b_ext_line, b_dim_line, b_text, b_text_size, b_arc_dimension
 
 b_dimension(b::Backend, p, q, str, size, offset, mat) =
   let qp = in_world(q - p),
@@ -764,10 +764,6 @@ b_dim_line(b::Backend, p, q, tv, str, size, outside, mat) =
     [b_line(b, [p, q], mat),
      b_text(b, str, add_y(loc_from_o_vx(tp, tv), size*0.1-miny), size, mat)]
   end
-
-@bdef b_label(strs, mats)
-
-export b_arc_dimension
 
 b_arc_dimension(b::Backend, c, r, α, Δα, rstr, dstr, size, offset, mat) =
   error("To be finished")
@@ -994,7 +990,7 @@ b_unhighlight_all_refs(b::Backend) =
   b_unhighlight_refs(b, b_all_refs(b))
 
 # BIM
-export b_slab, b_roof, b_beam, b_column, b_free_column, b_wall
+export b_slab, b_roof, b_beam, b_column, b_free_column, b_wall, b_curtain_wall
 
 #=
 BIM operations require some extra support from the backends.
@@ -1112,6 +1108,50 @@ b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
       end
       refs
     end
+
+b_curtain_wall(b::Backend, path, bottom_level, top_level, family, offset) =
+  let th = family.panel.thickness,
+      bfw = family.boundary_frame.width,
+      bfd = family.boundary_frame.depth,
+      bfdo = family.boundary_frame.depth_offset,
+      mfw = family.mullion_frame.width,
+      mfd = family.mullion_frame.depth,
+      mdfo = family.mullion_frame.depth_offset,
+      tfw = family.transom_frame.width,
+      tfd = family.transom_frame.depth,
+      tfdo = family.transom_frame.depth_offset,
+      path = curtain_wall_panel_path(b, path, family),
+      path_length = path_length(path),
+      bottom = level_height(b, bottom_level),
+      top = level_height(b, top_level),
+      height = top - bottom,
+      x_panels = ceil(Int, path_length/family.max_panel_dx),
+      y_panels = ceil(Int, height/family.max_panel_dy),
+      refs = new_refs(b)
+    append!(refs, b_curtain_wall_element(b, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, getproperty(family, :panel)))
+    append!(refs, b_curtain_wall_element(b, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
+    append!(refs, b_curtain_wall_element(b, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
+    append!(refs, b_curtain_wall_element(b, subpath(path, 0, bfw), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
+    append!(refs, b_curtain_wall_element(b, subpath(path, path_length-bfw, path_length), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
+    for i in 1:y_panels-1
+      l = height/y_panels*i
+      sub = subpath(path, bfw, path_length-bfw)
+      append!(refs, b_curtain_wall_element(b, sub, bottom+l-tfw/2, tfw, l_thickness(tfdo, tfd), r_thickness(tfdo, tfd), getproperty(family, :transom_frame)))
+    end
+    for i in 1:x_panels-1
+      l = path_length/x_panels*i
+      append!(refs, b_curtain_wall_element(b, subpath(path, l-mfw/2, l+mfw/2), bottom+bfw, height-2*bfw, l_thickness(mdfo, mfd), r_thickness(mdfo, mfd), getproperty(family, :mullion_frame)))
+    end
+    refs
+  end
+
+curtain_wall_panel_path(b::Backend, path, family) =
+  let path_length = path_length(path),
+      x_panels = ceil(Int, path_length/family.max_panel_dx),
+      pts = map(t->in_world(location_at_length(path, t)),
+                division(0, path_length, x_panels))
+    polygonal_path(pts)
+  end
 
 #AML TO BE CONTINUED!!!
 #b_wall(b::Backend, w_path, w_openings, l_thickness, r_thickness, family) =
@@ -1338,13 +1378,10 @@ b_table_and_chairs(b::Backend, p, table::Function, chair::Function,
      chair.(centered_row(add_y(p, -dy), 0, chairs_on_left))...]
   end
 
-#@bdef curtain_wall(s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol)
-b_curtain_wall(b::Backend, s, path::Path, bottom::Real, height::Real, l_thickness::Real, r_thickness::Real, kind::Symbol) =
-  let family = getproperty(s.family, kind)
-    b_wall(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, family)
-  end
+b_curtain_wall_element(b::Backend, path, bottom, height, l_thickness, r_thickness, family) =
+  b_wall(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, family)
 
-@bdef curtain_wall(s, path::Path, bottom::Real, height::Real, thickness::Real, kind::Symbol)
+#@bdef curtain_wall(s, path, bottom, height, thickness, kind)
 
 backend_fill(b, path) =
   backend_fill_curves(b, backend_stroke(b, path))
