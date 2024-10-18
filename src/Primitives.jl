@@ -494,7 +494,7 @@ decode(ns::Val{:CS}, ::Val{:Guid}, c::IO) =
   end
 
 # It is also useful to encode generic objects.
-const SupportsObjects = Union{Val{:JS},Val{:PY}}
+const SupportsObjects = Union{Val{:JS},Val{:PY},Val{:CS}}
 
 const object_code = Dict(Bool=>0, UInt8=>1, Int32=>2, Int64=>3, Float32=>4, Float64=>5, String=>6)
 
