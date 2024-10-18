@@ -33,7 +33,6 @@ export Shape,
        current_layer,
        delete_all_shapes_in_layer,
        merge_materials,
-       reset_backend,
        connection,
        @deffamily,
        @defproxy,
@@ -588,6 +587,12 @@ rectangle(p::Loc, q::Loc) =
 
 #=
 Drawings might be annotated with labels, dimensions, and other stuff
+
+However:
+1. Not all backends support, e.g., Julia strings (which are Unicode-base).
+2. Sometimes we might want to use entities that generate different textual representations depending on the backend
+
+The solution is to delay the conversion from text to the corresponding but specific backend data 
 =#
 # HACK: This needs to become a field of the backend. Each one knows about its annotations.
 const annotations = Shape[]
@@ -633,16 +638,11 @@ prev_annotation_that(p) =
       end
   end
 
-#@defshape dimension(p0::Loc, p1::Loc, p::Loc, scale::Real, style::Symbol)
-#@defshape dimension(p0::Loc, p1::Loc, sep::Real, scale::Real, style::Symbol)
-@defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::AbstractString=string(distance(from, to)), size::Real=1, offset::Real=0.1)
-@defshape(Shape1D, arc_dimension, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi, radius_text::AbstractString=string(radius), amplitude_text::AbstractString=string(amplitude), size::Real=1, offset::Real=0.1)
 
-@defshape(Shape0D, labels, p::Loc=u0(), strs::Vector{String}=[], mats::Vector{Material}=[])
+@defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::Any=string(distance(from, to)), size::Real=1, offset::Real=0.1)
+@defshape(Shape1D, arc_dimension, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi, radius_text::Any=string(radius), amplitude_text::Any=string(amplitude), size::Real=1, offset::Real=0.1)
 
-# We also need to transform symbolic expressions into some form of text
-@defcb textify(expr)
-b_textify(b::Backend, expr) = string(expr)
+@defshape(Shape0D, labels, p::Loc=u0(), texts::Vector{Any}=[], mats::Vector{Material}=[])
 
 export default_annotation_material
 const default_annotation_material = Parameter{Material}(material(layer("annotation", true, rgba(0, 0, 0.5, 1.0))))
@@ -651,53 +651,53 @@ existing_material(mat, mats) =
   any(m -> m.layer.color == mat.layer.color, mats)
 
 export label
-label(p, str, mat=default_annotation_material()) =
+label(p, txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann->is_labels(ann) && isapprox(p, ann.p, atol=1e-3))
     add_annotation!(
       isnothing(ann) ?
-        labels(p, [str], [mat]) :
-        (str, mat.layer.color) in zip(ann.strs, [mat.layer.color for mat in ann.mats]) ?
-          labels(p, ann.strs, ann.mats) : 
-          labels(p, [ann.strs..., str], [ann.mats..., mat]))
+        labels(p, [txt], [mat]) :
+        (txt, mat.layer.color) in zip(ann.texts, [mat.layer.color for mat in ann.mats]) ?
+          labels(p, ann.texts, ann.mats) : 
+          labels(p, [ann.texts..., txt], [ann.mats..., mat]))
   end
 
 @defshape(Shape1D, vectors_illustration, start::Loc=u0(), angle::Real=0, 
   radii::Vector{Real}=[],
-  radii_texts::Vector{AbstractString}=[],
+  radii_texts::Vector{Any}=[],
   mats::Vector{Material}=[])
 export vector_illustration
-vector_illustration(p, a, r, str, mat=default_annotation_material()) =
+vector_illustration(p, a, r, txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann->is_vectors_illustration(ann) && isequal(p, ann.start) && isequal(a, ann.angle))
     add_annotation!(
       isnothing(ann) ?
-        vectors_illustration(p, a, [r], [str], [mat]) :
-        (str, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
+        vectors_illustration(p, a, [r], [txt], [mat]) :
+        (txt, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
           vectors_illustration(p, a, ann.radii, ann.radii_texts, ann.mats) :
-          vectors_illustration(p, a, [ann.radii..., r], [ann.radii_texts..., str], [ann.mats..., mat]))
+          vectors_illustration(p, a, [ann.radii..., r], [ann.radii_texts..., txt], [ann.mats..., mat]))
   end
 
 @defshape(Shape1D, radii_illustration, center::Loc=u0(), 
   radii::Vector{Real}=[],
-  radii_texts::Vector{AbstractString}=[], 
+  radii_texts::Vector{Any}=[], 
   mats::Vector{Material}=[])
 export radius_illustration
-radius_illustration(c, r, str, mat=default_annotation_material()) =
+radius_illustration(c, r, txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann->is_radii_illustration(ann) && isequal(c, ann.center))
     add_annotation!(
       isnothing(ann) ?
-        radii_illustration(c, [r], [str], [mat]) :
-        (str, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
+        radii_illustration(c, [r], [txt], [mat]) :
+        (txt, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
           radii_illustration(c, ann.radii, ann.radii_texts, ann.mats) :
-          radii_illustration(c, [ann.radii..., r], [ann.radii_texts..., str], [ann.mats..., mat]))
+          radii_illustration(c, [ann.radii..., r], [ann.radii_texts..., txt], [ann.mats..., mat]))
   end
 
 @defshape(Shape1D, angles_illustration, center::Loc=u0(), 
   radii::Vector{Real}=[], 
   start_angles::Vector{Real}=[], 
   amplitudes::Vector{Real}=[],
-  radii_texts::Vector{AbstractString}=[],
-  start_angles_texts::Vector{AbstractString}=[],
-  amplitudes_texts::Vector{AbstractString}=[], 
+  radii_texts::Vector{Any}=[],
+  start_angles_texts::Vector{Any}=[],
+  amplitudes_texts::Vector{Any}=[], 
   mats::Vector{Material}=[])
 export angle_illustration
 angle_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_material()) =
@@ -719,9 +719,9 @@ angle_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_mater
   radii::Vector{Real}=[],
   start_angles::Vector{Real}=[],
   amplitudes::Vector{Real}=[],
-  radii_texts::Vector{AbstractString}=[],
-  start_angles_texts::Vector{AbstractString}=[],
-  amplitudes_texts::Vector{AbstractString}=[],
+  radii_texts::Vector{Any}=[],
+  start_angles_texts::Vector{Any}=[],
+  amplitudes_texts::Vector{Any}=[],
   mats::Vector{Material}=[])
 export arc_illustration
 arc_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_material()) =
