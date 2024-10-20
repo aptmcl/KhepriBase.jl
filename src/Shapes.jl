@@ -646,6 +646,8 @@ prev_annotation_that(p) =
 
 export default_annotation_material
 const default_annotation_material = Parameter{Material}(material(layer("annotation", true, rgba(0, 0, 0.5, 1.0))))
+export annotation_scale
+const annotation_scale = Parameter{Real}(1.0)
 
 existing_material(mat, mats) =
   any(m -> m.layer.color == mat.layer.color, mats)
