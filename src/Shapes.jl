@@ -1391,12 +1391,6 @@ maybe_existing_shape_from_ref(b::Backend, r) = begin
 end
 
 @defcb render_pathname(name)
-export save_view
-save_view(name::String="View") =
-  let path = prepare_for_saving_file(render_pathname(name))
-    save_view(path, top_backend())
-    path
-  end
 
 @defcbs set_time_place(date::DateTime=DateTime(2020, 9, 21, 10, 0, 0), latitude::Real=39, longitude::Real=-9, elevation::Real=0, meridian::Real=0)
 @defcbs set_sky(turbidity::Real=5, sun::Bool=true)
