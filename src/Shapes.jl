@@ -642,25 +642,31 @@ prev_annotation_that(p) =
 @defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::Any=string(distance(from, to)), size::Real=1, offset::Real=0.1)
 @defshape(Shape1D, arc_dimension, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi, radius_text::Any=string(radius), amplitude_text::Any=string(amplitude), size::Real=1, offset::Real=0.1)
 
-@defshape(Shape0D, labels, p::Loc=u0(), texts::Vector{Any}=[], mats::Vector{Material}=[])
+@defshape(Shape0D, labels, p::Loc=u0(), data::Vector{@NamedTuple{txt::Any, mat::Material, scale::Real}}=[])
 
 export default_annotation_material
 const default_annotation_material = Parameter{Material}(material(layer("annotation", true, rgba(0, 0, 0.5, 1.0))))
-export annotation_scale
-const annotation_scale = Parameter{Real}(1.0)
+export default_annotation_scale
+const default_annotation_scale = Parameter{Real}(1.0)
 
 existing_material(mat, mats) =
   any(m -> m.layer.color == mat.layer.color, mats)
 
+equal_illustration_properties(i1, i2) =
+  i1.txt == i2.txt && 
+  i1.mat.layer.color == i2.mat.layer.color &&
+  i1.scale == i2.scale
+
 export label
-label(p, txt, mat=default_annotation_material()) =
-  let ann = prev_annotation_that(ann->is_labels(ann) && isapprox(p, ann.p, atol=1e-3))
+label(p, txt, mat=default_annotation_material(), scale=default_annotation_scale()) =
+  let ann = prev_annotation_that(ann->is_labels(ann) && isapprox(p, ann.p, atol=1e-3)),
+      new_d = (txt=txt, mat=mat, scale=scale);
     add_annotation!(
       isnothing(ann) ?
-        labels(p, [txt], [mat]) :
-        (txt, mat.layer.color) in zip(ann.texts, [mat.layer.color for mat in ann.mats]) ?
-          labels(p, ann.texts, ann.mats) : 
-          labels(p, [ann.texts..., txt], [ann.mats..., mat]))
+        labels(p, [new_d]) :
+        any(d->equal_illustration_properties(new_d, d), ann.data) ?
+          labels(p, ann.data) : 
+          labels(p, [ann.data..., new_d]))
   end
 
 @defshape(Shape1D, vectors_illustration, start::Loc=u0(), angle::Real=0, 
