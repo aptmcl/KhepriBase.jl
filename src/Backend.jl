@@ -1417,7 +1417,6 @@ b_render_view(b::Backend, name) =
   let path = prepare_for_saving_file(b_render_pathname(b, name))
     b_render_final_setup(b, render_kind())
     b_render_and_save_view(b, path)
-    path
   end
 
 #=
@@ -1443,8 +1442,12 @@ prepare_for_saving_file(path::String) =
         let (base, ext) = splitext(path)
           if ext == ".pdf"
             prepare_for_saving_file(base*"_"*ext)
+          else
+            throw(e)
           end
         end
+      else
+        throw(e)
       end
     end
   end
