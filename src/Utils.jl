@@ -95,7 +95,7 @@ cull(template, as) =
 # To create paths from paths
 export path_replace_suffix
 path_replace_suffix(path::String, suffix::String) =
-  let (base, old_suffix) = splitext(path)
+  let (base, _) = splitext(path)
     base * suffix
   end
 
@@ -327,3 +327,45 @@ Base.cat(lst::List, lsts::List...) =
 # Lists can be converted to Arrays
 
 Base.convert(::Type{Array{S,1}}, l::List{T}) where {S, T <: S} = collect(T, l)
+
+# We need a functional way of creating shallow copies of structs where some fields are changed.
+copy_with(t::T; kwargs... ) where T =
+  let fieldnames = fieldnames(T), 
+      nt = NamedTuple{fieldnames, Tuple{fieldtypes(T)...}}([getfield(t, name) for name in fieldnames])
+    T(; merge(nt, kwargs.data)...)
+end
+
+
+# Different outputs can be generated from the backends
+# but we can integrate them with the Julia display system.
+export PNGFile, PDFFile
+
+struct PNGFile path end
+struct PDFFile path end
+
+Base.show(io::IO, ::MIME"image/png", f::PNGFile) =
+  write(io, read(f.path))
+
+Base.show(io::IO, ::MIME"image/svg+xml", f::PDFFile) =
+  let path = f.path
+    ! isfile(path) ?
+      error("Inexisting file $path") :
+      let svgpath = path_replace_suffix(path, ".svg"),
+          needs_update = ! isfile(svgpath) || mtime(path) > mtime(svgpath)
+        if needs_update
+          let pdftocairo = Sys.which("pdftocairo")
+            if isnothing(pdftocairo)
+              error("Could not find pdftocairo. Do you have MikTeX installed?")
+            else
+              try
+                println("Generating $svgpath from $path")
+                run(`$(pdftocairo) -svg -l 1 $(path) $(svgpath)`, wait=true)
+              catch e
+                error("Could not process $path to generate $svgpath.")
+              end
+            end
+          end
+        end
+        write(io, read(svgpath))
+      end
+  end
