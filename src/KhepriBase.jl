@@ -109,7 +109,7 @@ export and_mark_deleted,
        @get_remote,
        connection,
        reset_backend,
-       IOBufferBackend,
+       IOBackend,
        dimension,
        ref,
        show_truss_deformation

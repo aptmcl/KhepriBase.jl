@@ -19,7 +19,11 @@ connection(b::RemoteBackend) =
 	  b.connection
   end
 
-# The protocol to reset the connection:
+#=
+There is a protocol to reset the connection
+It also envolves reseting several resources that are affected such materials, layers, families, etc.
+=#
+
 reset_backend(b::RemoteBackend) =
   let c = b.connection
     for f in b.remote
@@ -235,7 +239,7 @@ end
 # file-based description.
 
 abstract type LocalBackend{K,T} <: LazyBackend{K,T} end
-@kwdef mutable struct IOBufferBackend{K,T,E} <: LocalBackend{K,T}
+@kwdef mutable struct IOBackend{K,T,E} <: LocalBackend{K,T}
   shapes::Shapes=Shape[]
   current_layer::Union{Nothing,AbstractLayer}=nothing
   layers::Dict{AbstractLayer,Vector{Shape}}=Dict{AbstractLayer,Vector{Shape}}()
@@ -245,38 +249,33 @@ abstract type LocalBackend{K,T} <: LazyBackend{K,T} end
   ground_level::Float64=0.0
   ground_material::Union{Nothing,Material}=nothing
   view::View=default_view()
-  cached::Bool=false
-  buffer::IOBuffer=IOBuffer()
+  cached::Bool=false # REMOVE?
+  io::IO=IOBuffer()
   extra::E=E()
 end
 
 view_type(::Type{<:LocalBackend}) = FrontendView()
 
-connection(b::IOBufferBackend) = b.buffer
+connection(b::IOBackend) = b.io
 
-save_shape!(b::IOBufferBackend, s::Shape) =
+save_shape!(b::IOBackend, s::Shape) =
   begin
     push!(b.shapes, s)
     if !isnothing(b.current_layer)
       push!(get!(b.layers, b.current_layer, Shape[]), s)
     end
-	  b.cached = false
     s
   end
 
 export realize_shapes
-realize_shapes(b::IOBufferBackend) =
-  if ! b.cached
-    take!(b.buffer)
-    for s in b.shapes
-      reset_ref(b, s)
-  	  force_realize(b, s)
-    end
-    b.cached = true
+realize_shapes(b::IOBackend) =
+  for s in b.shapes
+    reset_ref(b, s)
+	  force_realize(b, s)
   end
 
 export used_materials
-used_materials(b::IOBufferBackend) =
+used_materials(b::IOBackend) =
   let materials=Set{Material}()
 	for s in b.shapes
 	  for m in used_materials(s)
@@ -289,17 +288,16 @@ used_materials(b::IOBufferBackend) =
 	materials
   end
 
-KhepriBase.b_delete_all_refs(b::IOBufferBackend) =
+KhepriBase.b_delete_all_refs(b::IOBackend) =
   begin
     empty!(b.shapes)
     for ss in values(b.layers)
       empty!(ss)
     end
-    b.cached = false
     nothing
   end
 
-KhepriBase.b_delete_shape(b::IOBufferBackend, shape::Shape) =
+KhepriBase.b_delete_shape(b::IOBackend, shape::Shape) =
   let f(s) = s!== shape
     filter!(f, b.shapes)
     for ss in values(b.layers)
@@ -318,17 +316,17 @@ KhepriBase.b_delete_shapes(b::POVRay, shapes::Shapes) =
 =#
 
 # HACK: This should be filtered on the plugin, not here.
-KhepriBase.b_all_shapes(b::IOBufferBackend) = b.shapes
-KhepriBase.b_all_shapes_in_layer(b::IOBufferBackend, layer) = b.layers[layer]
+KhepriBase.b_all_shapes(b::IOBackend) = b.shapes
+KhepriBase.b_all_shapes_in_layer(b::IOBackend, layer) = b.layers[layer]
 
-KhepriBase.b_realistic_sky(b::IOBufferBackend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
+KhepriBase.b_realistic_sky(b::IOBackend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
   begin
 	  b.date = date
     b.place = GeographicLocation(latitude, longitude, elevation, meridian)
 	  b.render_env = RealisticSkyEnvironment(turbidity, sun)
   end
 
-b_set_ground(b::IOBufferBackend, level, mat) =
+b_set_ground(b::IOBackend, level, mat) =
   begin
 	  b.ground_level=level
 	  b.ground_material=mat
