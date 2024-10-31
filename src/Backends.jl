@@ -34,8 +34,8 @@ reset_backend(b::RemoteBackend) =
   end
 
 export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting
-before_connecting(b::RemoteBackend) = nothing
-after_connecting(b::RemoteBackend) = nothing
+before_connecting(::RemoteBackend) = nothing
+after_connecting(::RemoteBackend) = nothing
 failed_connecting(b::RemoteBackend) =
   @error("Couldn't connect to $(b.name).")
 retry_connecting(b::RemoteBackend) =
