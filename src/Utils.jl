@@ -346,6 +346,25 @@ struct PDFFile path end
 Base.show(io::IO, ::MIME"image/png", f::PNGFile) =
   write(io, read(f.path))
 
+# Copyright TikzPictures
+#------------------------
+const tikz_id = Parameter{Int}(round(UInt64, time() * 1e6))
+
+fixing_svg(io::IO, svgpath) =
+  let s = read(svgpath, String),
+      _tikzid = tikz_id()
+    s = replace(s, "glyph" => "glyph-$(_tikzid)-")
+    s = replace(s, "\"clip" => "\"clip-$(_tikzid)-")
+    s = replace(s, "#clip" => "#clip-$(_tikzid)-")
+    s = replace(s, "\"image" => "\"image-$(_tikzid)-")
+    s = replace(s, "#image" => "#image-$(_tikzid)-")
+    s = replace(s, "linearGradient id=\"linear" => "linearGradient id=\"linear-$(_tikzid)-")
+    s = replace(s, "#linear" => "#linear-$(_tikzid)-")
+    s = replace(s, "image id=\"" => "image style=\"image-rendering: pixelated;\" id=\"")
+    tikz_id(_tikzid + 1)
+    println(io, s)
+  end
+
 Base.show(io::IO, ::MIME"image/svg+xml", f::PDFFile) =
   let path = f.path
     ! isfile(path) ?
@@ -365,6 +384,8 @@ Base.show(io::IO, ::MIME"image/svg+xml", f::PDFFile) =
             end
           end
         end
-        write(io, read(svgpath))
+        fixing_svg(io, svgpath)
       end
   end
+
+  
