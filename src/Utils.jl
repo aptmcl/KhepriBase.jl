@@ -358,8 +358,7 @@ Base.show(io::IO, ::MIME"image/svg+xml", f::PDFFile) =
               error("Could not find pdftocairo. Do you have MikTeX installed?")
             else
               try
-                println("Generating $svgpath from $path")
-                run(`$(pdftocairo) -svg -l 1 $(path) $(svgpath)`, wait=true)
+                run(pipeline(`$(pdftocairo) -svg -l 1 $(path) $(svgpath)`, stdout=devnull, stderr=devnull), wait=true)
               catch e
                 error("Could not process $path to generate $svgpath.")
               end
