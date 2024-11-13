@@ -350,7 +350,7 @@ Base.show(io::IO, ::MIME"image/png", f::PNGFile) =
 #------------------------
 const tikz_id = Parameter{Int}(round(UInt64, time() * 1e6))
 
-fixing_svg(io::IO, svgpath) =
+fixed_svg(svgpath) =
   let s = read(svgpath, String),
       _tikzid = tikz_id()
     s = replace(s, "glyph" => "glyph-$(_tikzid)-")
@@ -364,7 +364,7 @@ fixing_svg(io::IO, svgpath) =
     s = replace(s, r"width\s*=\s*\"[^\"]*\"" => "width=\"$(render_width())\"")
     s = replace(s, r"height\s*=\s*\"[^\"]*\"" => "height=\"$(render_height())\"")
     tikz_id(_tikzid + 1)
-    println(io, s)
+    s
   end
 
 Base.show(io::IO, ::MIME"image/svg+xml", f::PDFFile) =
@@ -380,13 +380,14 @@ Base.show(io::IO, ::MIME"image/svg+xml", f::PDFFile) =
             else
               try
                 run(pipeline(`$(pdftocairo) -svg -l 1 $(path) $(svgpath)`, stdout=devnull, stderr=devnull), wait=true)
+                write(svgpath, fixed_svg(svgpath))
               catch e
                 error("Could not process $path to generate $svgpath.")
               end
             end
           end
         end
-        fixing_svg(io, svgpath)
+        write(io, read(svgpath, String))
       end
   end
 
