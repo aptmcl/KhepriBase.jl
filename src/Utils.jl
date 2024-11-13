@@ -361,6 +361,8 @@ fixing_svg(io::IO, svgpath) =
     s = replace(s, "linearGradient id=\"linear" => "linearGradient id=\"linear-$(_tikzid)-")
     s = replace(s, "#linear" => "#linear-$(_tikzid)-")
     s = replace(s, "image id=\"" => "image style=\"image-rendering: pixelated;\" id=\"")
+    s = replace(s, r"width\s*=\s*\"[^\"]*\"" => "width=\"$(render_width())\"")
+    s = replace(s, r"height\s*=\s*\"[^\"]*\"" => "height=\"$(render_height())\"")
     tikz_id(_tikzid + 1)
     println(io, s)
   end
