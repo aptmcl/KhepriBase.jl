@@ -338,10 +338,11 @@ end
 
 # Different outputs can be generated from the backends
 # but we can integrate them with the Julia display system.
-export PNGFile, PDFFile
+export PNGFile, PDFFile, DVIFile
 
 struct PNGFile path end
 struct PDFFile path end
+struct DVIFile path end
 
 Base.show(io::IO, ::MIME"image/png", f::PNGFile) =
   write(io, read(f.path))
@@ -350,9 +351,20 @@ Base.show(io::IO, ::MIME"image/png", f::PNGFile) =
 #------------------------
 const tikz_id = Parameter{Int}(round(UInt64, time() * 1e6))
 
+#=
+Different tools generate different SVG files from the same TeX input
+TeX -> PDF -> SVG using pdftocairo creates the following:
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="768" viewBox="0 0 687.348 680.713" version="1.2">
+
+TeX -> DVI -> SVG using dvisvgm creates the following:
+<svg version='1.1' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' width='227.1755pt' height='227.1725pt' viewBox='-65.36705 -72.00015 227.1755 227.1725'>
+=#
+
 fixed_svg(svgpath) =
   let s = read(svgpath, String),
       _tikzid = tikz_id()
+    s = replace(s, "'" => "\"")
+    s = replace(s, "\r" => "") # Poor man approach to convert from DOS to Unix, as Julia plugin gets confused. 
     s = replace(s, "glyph" => "glyph-$(_tikzid)-")
     s = replace(s, "\"clip" => "\"clip-$(_tikzid)-")
     s = replace(s, "#clip" => "#clip-$(_tikzid)-")
@@ -361,34 +373,48 @@ fixed_svg(svgpath) =
     s = replace(s, "linearGradient id=\"linear" => "linearGradient id=\"linear-$(_tikzid)-")
     s = replace(s, "#linear" => "#linear-$(_tikzid)-")
     s = replace(s, "image id=\"" => "image style=\"image-rendering: pixelated;\" id=\"")
-    s = replace(s, r"width\s*=\s*\"[^\"]*\"" => "width=\"$(render_width())\"")
-    s = replace(s, r"height\s*=\s*\"[^\"]*\"" => "height=\"$(render_height())\"")
+    s = replace(s, r"(<svg .+ width\s*=\s*\")[^\"]*(\".* height\s*=\s*\")[^\"]*(\".*)" => SubstitutionString("\\g<1>$(render_width())\\g<2>$(render_height())\\g<3>"))
     tikz_id(_tikzid + 1)
     s
   end
 
-Base.show(io::IO, ::MIME"image/svg+xml", f::PDFFile) =
-  let path = f.path
-    ! isfile(path) ?
-      error("Inexisting file $path") :
-      let svgpath = path_replace_suffix(path, ".svg"),
-          needs_update = ! isfile(svgpath) || mtime(path) > mtime(svgpath)
-        if needs_update
-          let pdftocairo = Sys.which("pdftocairo")
-            if isnothing(pdftocairo)
-              error("Could not find pdftocairo. Do you have MikTeX installed?")
-            else
-              try
-                run(pipeline(`$(pdftocairo) -svg -l 1 $(path) $(svgpath)`, stdout=devnull, stderr=devnull), wait=true)
-                write(svgpath, fixed_svg(svgpath))
-              catch e
-                error("Could not process $path to generate $svgpath.")
-              end
+export to_from
+to_from(f, suffix, path, program) =
+  ! isfile(path) ?
+    error("Inexisting file $path") :
+    let topath = path_replace_suffix(path, suffix),
+        needs_update = ! isfile(topath) || mtime(path) > mtime(topath)
+      if needs_update
+        let prog = Sys.which(program)
+          if isnothing(prog)
+            error("Could not find $prog. Do you have MikTeX installed?")
+          else
+            try
+              f(prog, path, topath)
+            catch e
+              error("Could not process $path to generate $topath.")
+              println(e)
             end
           end
         end
-        write(io, read(svgpath, String))
       end
+      topath
+    end
+
+Base.show(io::IO, ::MIME"image/svg+xml", f::PDFFile) =
+  let svgpath = 
+    to_from(".svg", f.path, "pdftocairo") do pdftocairo, path, svgpath
+      run(pipeline(`$(pdftocairo) -svg -l 1 $(path) $(svgpath)`, stdout=devnull, stderr=devnull), wait=true)
+      write(svgpath, fixed_svg(svgpath))
+    end
+    write(io, read(svgpath, String))
   end
 
-  
+Base.show(io::IO, ::MIME"image/svg+xml", f::DVIFile) =
+  let svgpath = 
+    to_from(".svg", f.path, "dvisvgm") do dvisvgm, path, svgpath
+      run(pipeline(`$(dvisvgm) --font-format=woff -o $(svgpath) $(path)`, stdout=devnull, stderr=devnull), wait=true)
+      write(svgpath, fixed_svg(svgpath))
+    end
+    write(io, read(svgpath, String))
+  end
