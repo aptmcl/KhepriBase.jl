@@ -561,7 +561,7 @@ on_cs(p::Loc, cs::CS) =
 on_cs(ps::Locs, cs::CS) =
   [on_cs(p, cs) for p in ps]
 
-on_cs(p, q::Loc) = on_cs(p, q.cs)
+on_cs(p, q::Loc) = on_cs(p, translated_cs(q.cs, q.x, q.y, q.z))
 
 
 
