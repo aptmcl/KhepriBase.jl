@@ -407,7 +407,7 @@ b_surface(b::Backend, frontier::Shapes, mat) =
   let path = foldr(join_paths, [convert(OpenPolygonalPath, shape_path(e)) for e in frontier])
     and_delete_shapes(b_surface_polygon(b, path_vertices(path), mat), frontier)
   end
-  
+
 # In theory, this should be implemented using a loft
 b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
   let blength = path_length(bpath),
@@ -424,9 +424,17 @@ b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
 	end
 
 # Extrusions, lofts, sweeps, etc
-export b_extruded_curve, b_extruded_surface, b_sweep, b_loft
+export b_extruded_point, b_extruded_curve, b_extruded_surface, b_sweep, b_loft
 
 # Extruding a profile
+b_extruded_point(b::Backend, path::PointPath, v, cb, mat) =
+  let p = path_on(path, cb).location
+    b_line(b, [p, p + v], mat)
+  end
+
+b_extruded_point(b::Backend, pt::Shape0D, v, cb, mat) =
+  b_extruded_point(b, convert(Path, pt), v, cb, mat)
+
 b_extruded_curve(b::Backend, path::OpenPolygonalPath, v, cb, mat) =
  	let bs = path_vertices_on(path, cb),
 	  	ts = translate(bs, v)

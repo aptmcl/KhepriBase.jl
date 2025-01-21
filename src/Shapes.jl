@@ -804,7 +804,8 @@ b_map_division(b::Backend, f::Function, s::Shape2D, nu::Int, nv::Int) =
 path_vertices(s::Shape1D) = path_vertices(shape_path(s))
 path_frames(s::Shape1D) = path_frames(shape_path(s))
 
-## shape_path takes a 1D/2D shape and computes an equivalent path
+## shape_path takes a 0D/1D/2D shape and computes an equivalent path
+shape_path(s::Point) = point_path(s.position)
 shape_path(s::Circle) = circular_path(s.center, s.radius)
 shape_path(s::Ellipse) = elliptic_path(s.center, s.radius_x, s.radius_y)
 shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
@@ -828,6 +829,8 @@ shape_region(s::Shape2D) = region(shape_path(s))
 
 #####################################################################
 ## Conversions
+convert(::Type{Path}, s::Shape0D) =
+  and_delete_shape(shape_path(s), s)
 
 convert(::Type{Path}, s::Shape1D) =
   and_delete_shape(shape_path(s), s)
@@ -936,17 +939,17 @@ being the marching cubes the most popular one.
 
 @defshape(Shape3D, isosurface, frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(+1,+1,+1)])
 
-@defshape(Shape1D, extruded_point, profile::Union{Loc,Shape0D}=point(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape1D, extruded_point, profile::Union{PointPath,Shape0D}=point_path(), v::Vec=vz(1), cb::Loc=u0())
 @defshape(Shape2D, extruded_curve, profile::Union{Path,Shape1D}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
 @defshape(Shape3D, extruded_surface, profile::Union{Region,Shape2D}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
 
 extrusion(profile, h::Real) = extrusion(profile, vz(h))
 extrusion(profile, v::Vec) =
-  if is_point(profile)
+  if profile isa PointPath || is_point(profile)
     extruded_point(profile, v)
-  elseif is_curve(profile)
+  elseif profile isa Path || is_curve(profile)
     extruded_curve(profile, v)
-  elseif is_surface(profile)
+  elseif profile isa Region || is_surface(profile)
     extruded_surface(profile, v)
   else
     error("Profile is neither a point nor a curve nor a surface")
@@ -957,11 +960,11 @@ extrusion(profile, v::Vec) =
 @defshape(Shape3D, swept_surface, path::Union{Path,Shape1D}=circular_path(), profile::Union{Region,Shape2D}=surface_circle(), rotation::Real=0, scale::Real=1)
 
 sweep(path, profile, rotation=0, scale=1) =
-  if is_point(profile)
+  if profile isa PointPath || is_point(profile)
     swept_point(path, profile, rotation, scale)
-  elseif is_curve(profile)
+  elseif profile isa Path || is_curve(profile)
     swept_curve(path, profile, rotation, scale)
-  elseif is_surface(profile)
+  elseif profile isa Region || is_surface(profile)
     swept_surface(path, profile, rotation, scale)
   else
     error("Profile is neither a point nor a curve nor a surface")
@@ -971,11 +974,11 @@ sweep(path, profile, rotation=0, scale=1) =
 @defshape(Shape2D, revolved_curve, profile::Union{Shape,Path}=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defshape(Shape3D, revolved_surface, profile::Union{Shape,Path,Region}=circle(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 revolve(profile::Shape=point(x(1)), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi) =
-  if is_point(profile)
+  if profile isa PointPath || is_point(profile)
     revolved_point(profile, p, n, start_angle, amplitude)
-  elseif is_curve(profile)
+  elseif profile isa Path || is_curve(profile)
     revolved_curve(profile, p, n, start_angle, amplitude)
-  elseif is_surface(profile)
+  elseif profile isa Region || is_surface(profile)
     revolved_surface(profile, p, n, start_angle, amplitude)
   else
     error("Profile is neither a point nor a curve nor a surface")

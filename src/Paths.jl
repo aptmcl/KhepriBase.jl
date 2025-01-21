@@ -1,4 +1,5 @@
 export empty_path,
+       point_path,
        #open_path,
        #closed_path,
        open_path_ops,
@@ -80,6 +81,8 @@ is_empty_path(path::EmptyPath) = true
 struct PointPath <: Path
     location::Loc
 end
+
+point_path(loc::Loc) = PointPath(loc)
 
 getindex(p::Path, i::Real) = location_at_length(p, i)
 firstindex(p::Path) = 0
@@ -1056,6 +1059,8 @@ path_vertices_on(path::Path, p) =
   on_cs(path_vertices(path), p)
 
 export path_on
+path_on(path::PointPath, p) =
+  point_path(on_cs(path.location, p))
 path_on(path::CircularPath, p) =
   circular_path(on_cs(path.center, p), path.radius)
 path_on(path::EllipticPath, p) =
