@@ -2,7 +2,6 @@ export GenericRef,
        NativeRef,
        NativeRefs,
        DynRef,
-       DynRefs,
        void_ref,
        ensure_ref,
        map_ref,
@@ -13,7 +12,6 @@ export Shape,
        LazyBackend,
        Path,
        backend,
-       new_backend,
        backend_name,
        current_backend,
        has_current_backend,
@@ -91,24 +89,20 @@ mutable struct DynRef{K,R}
   deleted::Int
 end
 
-#DynRef{K,R}(backend::Backend{K,T}) where {K,R} = DynRef{K,R}(backend, void_ref(backend), 0, 0)
 DynRef(b::Backend{K,T}, v) where {K,T} = DynRef{K,T}(b, ensure_ref(b, v), 1, 0)
-
-
-const DynRefs = IdDict{Backend, Any}
 
 backend(s::Proxy) = first(first(s.ref))
 
-realized_in(s::Proxy, b::Backend) = s.ref[b].created == s.ref[b].deleted + 1
+realized_in(s::Proxy, b::Backend) = b.refs[s].created == b.refs[s].deleted + 1
 # This is so stupid. We need call-next-method.
-really_mark_deleted(b::Backend, s::Proxy) = really_mark_deleted(b, s.ref)
-really_mark_deleted(b::Backend, ref::DynRefs) = delete!(ref, b)
+really_mark_deleted(b::Backend, s::Proxy) = delete!(b.refs, s)
+#really_mark_deleted(b::Backend, ref::DynRefs) = delete!(ref, b)
 really_mark_deleted(b::Backend, s::Any) = nothing
 mark_deleted(b::Backend, s::Proxy) = really_mark_deleted(b, s)
 # We also need to propagate this to all dependencies
 mark_deleted(b::Backend, ss::Array{<:Proxy}) = foreach(s->mark_deleted(b, s), ss)
 mark_deleted(b::Backend, s::Any) = nothing
-marked_deleted(b::Backend, s::Proxy) = !haskey(s.ref, b)
+marked_deleted(b::Backend, s::Proxy) = !haskey(b.refs, s)
 
 #=
 The protocol is this:
@@ -125,25 +119,37 @@ macro curryable(def)
     quote
       $def
 =#
+
+#=
+Given a backend and a proxy, the ref function ensures that the proxy exists in the backend and returns the corresponding reference.
+=#
 ref(b::Backend, s::Proxy) =
   force_realize(b, s)
 ref(b::Backend) =
   s::Proxy -> ref(b, s)
 
 reset_ref(b::Backend, s::Proxy) =
-  delete!(s.ref, b)
+  delete!(b.refs, s)
 
 force_realize(b::Backend, s::Proxy) =
-  haskey(s.ref, b) ?
-    s.ref[b] : #error("Shape was already realized in $(b)") :
-    s.ref[b] = ensure_ref(b, realize(b, s))
+  haskey(b.refs, s) ?
+    b.refs[s] : #error("Shape was already realized in $(b)") :
+    b.refs[s] = ensure_ref(b, realize(b, s))
 
 realized(b::Backend, s::Proxy) =
-  haskey(s.ref, b)
+  haskey(b.refs, s)
 
-force_realize(s::Proxy) =
-  for b in current_backends()
-    force_realize(b, s)
+#=
+Shapes are realized on the current_backends(), but this parameter might be
+changed during realization, particularly, in a multi-threaded environment.
+To avoid the problem, we capture the current value and only realize on it.
+=#
+
+force_realize(s::Proxy) = 
+  let backends = current_backends()
+    for b in backends
+      force_realize(b, s)
+    end
   end
 
 # We can also use a shape as a surrogate for another shape
@@ -195,13 +201,11 @@ with_transaction(fn) =
   end
 
 maybe_realize(s) =
-  let backends = current_backends()
-    delaying_realize() ?
-      push!(delayed_realizations(), s) :
-      for b in backends
-        maybe_realize(b, s)
-      end
-  end
+  delaying_realize() ?
+    push!(delayed_realizations(), s) :
+    for b in current_backends()
+      maybe_realize(b, s)
+    end
 
 maybe_realize(::EagerRealization, b, s) =
   if ! realized(b, s)
@@ -333,26 +337,33 @@ macro defshapeop(name_params)
     end
 end
 
-export all_shapes, delete_all_shapes
-delete_all_shapes() = begin
+#=
+We have a hierarchy of deletion.
+delete_all_annotations() # Deletes shape annotations but not the underlying shapes.
+delete_all_shapes()      # Deletes all shapes but not the underlying resources (e.g., materials)
+delete_all()             # Deletes all shapes and the underlying resources (e.g., materials, layers, etc)
+=#
+
+@defcb delete_all_annotations()
+@defcb delete_all_shapes()
+@defcb delete_all()
+
+b_delete_all_shapes(b::Backend) = begin
   empty!(KhepriBase.shape_to_file_locations)
   empty!(KhepriBase.file_location_to_shapes)
-  delete_all_annotations()
-  delete_all_refs()
+  #b_delete_all_annotations(b) This needs to be turned on after moving the annotations to the backend
+  b_delete_all_refs(b)
 end
+
 
 @defcb all_shapes()
 b_all_shapes(b::Backend) =
   Shape[maybe_existing_shape_from_ref(b, r) for r in b_all_refs(b)]
 @bdef(b_shape_from_ref(r))
 
-
-
 @defcbs set_length_unit(unit::String="")
 @defcb reset_backend()
 @defcb save_as(pathname::String, format::String)
-
-new_backend(b::Backend = top_backend()) = backend(b)
 
 struct WrongTypeForParam <: Exception
   param::Symbol
@@ -374,7 +385,8 @@ macro defproxy(name_typename, parent, fields...)
 #  field_renames = map(esc ∘ Symbol ∘ uppercasefirst ∘ string, field_names)
   field_renames = map(Symbol ∘ string, field_names)
   field_replacements = Dict(zip(field_names, field_renames))
-  struct_fields = map((name,typ) -> :($(name) :: $(typ)), field_names, field_types)
+  #struct_fields = map((name,typ) -> :($(name) :: $(typ)), field_names, field_types) # To ensure identity, we need a mutable struct with const fields. 
+  struct_fields = map((name,typ) -> Expr(:const, Expr(:(::), name, typ)), field_names, field_types)
   mk_param(name,typ,init) = Expr(:kw, name, init) #Expr(:kw, Expr(:(::), name, typ), init)
   opt_params = map(mk_param, field_renames, field_types, map(init -> replace_in(init, field_replacements), field_inits))
   key_params = map(mk_param, field_names, field_types, field_renames)
@@ -385,14 +397,13 @@ macro defproxy(name_typename, parent, fields...)
   selector_names = map(field_name -> esc(Symbol(name_str, "_", string(field_name))), field_names)
   quote
     export $(constructor_name), $(struct_name), $(predicate_name), $(selector_names...)
-    struct $struct_name <: $parent
-      ref::DynRefs
+    mutable struct $struct_name <: $parent
       $(struct_fields...)
     end
     # we don't need to convert anything because Julia already does that with the default constructor
     # and, by the same idea, we don't need to define parameter types.
-    @noinline $(constructor_name)($(opt_params...); $(key_params...), ref::DynRefs=DynRefs()) =
-      after_init($(struct_name)(ref, $(field_converts...)))
+    @noinline $(constructor_name)($(opt_params...); $(key_params...)) =
+      after_init($(struct_name)($(field_converts...)))
     $(predicate_name)(v::$(struct_name)) = true
     $(predicate_name)(v::Any) = false
     $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
@@ -408,21 +419,20 @@ macro defproxy(name_typename, parent, fields...)
 end
 
 #=
-There are entities who have parameters that depend on the backend.
-We will assume that these entities have one field called data which
-should be a BackendParameter.
-To assign such a parameter, we use the set_on! function.
+There are entities who have parameters that depend on the type of backend, e.g., AutoCAD, Rhino, Revit, etc.
+As a concrete example, a material might have widely different realizations, depending on the backend, and some might require specific parameters.
+We will encapsulate such parameters in a BackendParameter object.
 =#
 
-export set_on!
-set_on!(b::Backend, proxy, ref) =
+set_on!(tb::Type{<:Backend}, proxy, ref) =
   begin
-    proxy.data(b, ref)
-    reset_ref(b, proxy)
+    proxy.data(tb, ref)
+    #reset_ref(b, proxy)
     proxy
   end
 set_on!(proxy, ref) =
   begin
+  error("Don't do this!")
     proxy.data(ref)
     proxy
   end
@@ -441,8 +451,8 @@ create_layer(args...) =
   end
 realize(b::Backend, l::Layer) =
   b_layer(b, l.name, l.active, l.color)
-current_layer(backends::Backends=current_backends()) =
-  layer(ref=DynRefs(b=>ensure_ref(b, b_current_layer(b)) for b in backends))
+current_layer(backends::Backends=current_backends()) = error("To be fixed")
+  #layer(ref=DynRefs(b=>ensure_ref(b, b_current_layer(b)) for b in backends))
 
 current_layer(layer, backends::Backends=current_backends()) =
   for b in backends
@@ -481,10 +491,16 @@ with_material_as_layer(f::Function, b::Backend, m::Material) =
     f()
 
 realize(b::Backend, m::Material) =
-  b_get_material(b, m.layer, m.data(b))
+  b_get_material(b, m.layer, m.data(typeof(b)))
 # By default, the layer is ignored in the creation of materials, as only a few backends depend on that.
 b_get_material(b::Backend, layer, spec) =
   b_get_material(b, spec)
+
+#=
+Material references are stored on each backend. They might be erased when needed (but that should be the exception, not the rule).
+=#
+
+#delete_all_materials()
 
 export merge_materials, merge_backend_materials
 merge_materials(materials...) =
@@ -540,6 +556,10 @@ b_stroke(b::Backend, path::Shape, mat) =
 # This might be usable, so
 export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
 
+#=
+A shape is just a proxy with a set of configurable defaults (e.g., material, layer, etc) and a 
+standard method specialization for the realize function.
+=#
 macro defshape(supertype, name_typename, fields...)
   (name, typename) = name_typename isa Symbol ?
     (name_typename, Symbol(string(map(uppercasefirst,split(string(name_typename),'_'))...))) :
@@ -598,6 +618,7 @@ The solution is to delay the conversion from text to the corresponding but speci
 const annotations = Shape[]
 
 export delete_all_annotations
+#=
 delete_all_annotations() =
   begin
     for shape in annotations
@@ -608,6 +629,7 @@ delete_all_annotations() =
     end
     empty!(annotations)
   end
+=#
 add_annotation!(ann) =
   begin
     push!(annotations, ann)
