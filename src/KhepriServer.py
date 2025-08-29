@@ -248,6 +248,11 @@ def generate_rmi(f):
     return dict[rmi_name]
 
 ##############################################################
+# There are two options: either I am the server, or I am the client.
+
+i_am_the_server = True
+
+##############################################################
 # Socket server
 import socket
 
@@ -312,14 +317,28 @@ def provide_operation(name:str)->int:
 # The first operation is the operation that makes operations available
 operations.append(generate_rmi(provide_operation))
 
-
 def execute(op, conn):
     operations[op](conn)
 
 def wait_for_connection():
     global current_action
     warn('Waiting for connection...')
-    current_action = accept_client
+    current_action = accept_client if i_am_the_server else start_client
+
+import traceback
+def execute_current_action():
+    #warn(f"Execute {current_action}")
+    try:
+        current_action()
+    except Exception as ex:
+        traceback.print_exc()
+        #warn('Resetting socket server.')
+        warn('Killing socket server.')
+        if connection:
+            connection.close()
+        wait_for_connection()
+    finally:
+        return max_wait_time # timer
 
 def start_server():
     global socket_server
@@ -350,7 +369,6 @@ def accept_client():
         traceback.print_exc()
         #warn('Resetting socket server.')
 
-
 def handle_client():
     conn = connection
     op = try_read_operation(conn)
@@ -363,22 +381,40 @@ def handle_client():
     else:
         execute_read_and_repeat(op, conn)
 
-import traceback
-current_action = start_server
+################################################################################
+# Alternatively, instead of starting the socket server on the Python side, 
+# we can start as a client.
+backend_name = None
 
-def execute_current_action():
-    #warn(f"Execute {current_action}")
+def start_client():
+    global connection
+    global backend_name
+    global current_action
+    connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    connection.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        current_action()
-    except Exception as ex:
-        traceback.print_exc()
-        #warn('Resetting socket server.')
-        warn('Killing socket server.')
-        if connection:
-            connection.close()
-        wait_for_connection()
-    finally:
-        return max_wait_time # timer
+        connection.connect(('localhost', backend_port))
+        connection.settimeout(max_wait_time)
+        w_str(backend_name, connection)
+        current_action = handle_client
+        return True
+    except socket.error:
+        warn("Couldn't connect to server.")
+        connection.close()
+        return False
+
+def init_client_server(name, server_port):
+    global i_am_the_server
+    global current_action
+    global backend_name
+    backend_name = name
+    i_am_the_server = server_port > 0
+    if i_am_the_server:
+        set_backend_port(server_port)
+        current_action = start_server
+    else:
+        set_backend_port(12345)
+        current_action = start_client
 
 ################################################################################
 # Now, the backend-specific part. First, import this file:
@@ -416,11 +452,16 @@ def circle(c:Point3d, v:Vector3d, r:float, mat:MatId)->Id:
     ...
 """
 
-# Finally, to run the server, define the listening port:
+# To run as a server (the default), define the listening port:
 """
-set_backend_port(12345)
+init_client_server("FooBackend", 12345)
 """
-# and then either we run in batch mode:
+# To run as a client, specify a listening port of 0 (or less):
+"""
+init_client_server("FooBackend", 0)
+"""
+
+# We then either run in batch mode:
 """
 while True:
     execute_current_action()
