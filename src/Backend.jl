@@ -59,7 +59,8 @@ export b_point, b_line, b_closed_line, b_polygon, b_regular_polygon,
 b_polygon(b::Backend, ps, mat) =
   b_line(b, [ps..., ps[1]], mat)
 
-b_closed_line = b_polygon
+# Legacy
+const b_closed_line = b_polygon
 
 b_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
   b_polygon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), mat)
@@ -476,7 +477,7 @@ b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
          [b_extruded_curve(b, inner, v, cb, smat) for inner in inners]...,
          b_surface(b, path_on(profile, cb), bmat),
          b_surface(b, translate(path_on(profile, cb), v), tmat))
-    end
+  end
     #=
       isempty(inners) ?
       b_generic_prism(
@@ -971,7 +972,7 @@ b_delete_all_refs(b::Backend) =
 
 b_delete_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
   for r in rs
-	b_delete_ref(b, r)
+	  b_delete_ref(b, r)
   end
 
 b_delete_ref(b::Backend{K,T}, r::T) where {K,T} =
@@ -1237,10 +1238,11 @@ delete_current_backend(b::Backend) =
 # but for backward compatibility reasons, we might also select just one.
 top_backend() =
   let bs = current_backends()
-	isempty(bs) ?
-  	  throw(UndefinedBackendException()) :
-	  bs[1]
+    isempty(bs) ?
+      throw(UndefinedBackendException()) :
+	    bs[1]
   end
+
 # The current_backend function is just an alias for current_backends
 current_backend() = current_backends()
 current_backend(bs::Backends) = current_backends(bs)
@@ -1254,19 +1256,40 @@ backend(backend::Backend) =
 switch_to_backend(from::Backend, to::Backend) =
   current_backend(to)
 
+export purge_backends
+purge_backends() =
+  let bs = current_backends(),
+      ok_bs = []
+    for b in bs
+      try
+        with(current_backend, b) do
+          get_view() # use a more efficient operation
+        end
+        push!(ok_bs, b)
+      catch e
+        @info("Backend $(b.name) is dead!")
+      end
+    end
+    current_backends((ok_bs...,))
+  end
+
 # Variables with backend-specific values can be useful.
 # Basically, they are dictionaries.
 # but they also support a default value for the case
 # where there is no backend-specific value available
 export BackendParameter
 struct BackendParameter
-	value::IdDict{Backend, Any}
-	BackendParameter(ps::Pair{<:Backend}...) = new(IdDict{Backend, Any}(ps...))
+	value::IdDict{Type{<:Backend}, Any}
+	BackendParameter(ps...) = new(IdDict{Type{<:Backend}, Any}(ps...))
 	BackendParameter(p::BackendParameter) = new(copy(p.value))
 end
 
-(p::BackendParameter)(b::Backend=top_backend()) = get(p.value, b, nothing)
-(p::BackendParameter)(b::Backend, newvalue) = p.value[b] = newvalue
+(p::BackendParameter)(b::Backend=top_backend()) = error("Don't do this") #get(p.value, b, nothing)
+(p::BackendParameter)(b::Backend, newvalue) = error("Don't do this") #p.value[b] = newvalue
+
+(p::BackendParameter)(tb::Type{<:Backend}) = get(p.value, tb, nothing)
+(p::BackendParameter)(tb::Type{<:Backend}, newvalue) = p.value[tb] = newvalue
+
 
 Base.copy(p::BackendParameter) = BackendParameter(p)
 
