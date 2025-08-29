@@ -42,6 +42,23 @@ retry_connecting(b::RemoteBackend) =
   (@info("Please, start/restart $(b.name)."); sleep(8))
 
 #=
+Backends might have resources that are shared by many shapes, such as materials, layers, families, etc.
+Moreover, these resources tend to live longer than the shapes themselves.
+This means that shapes can be deleted without necessarily affecting the underlying resources.
+=#
+
+#=
+struct References{T}
+  material_refs::Dict{Material,T}
+  shape_refs::Dict{Shape,T}
+  annotation_refs::Dict{Shape,T}
+  References{T}() where {T} =
+    new{T}(Dict{Material,T}(), Dict{Shape,T}(), Dict{Shape,T}())
+end
+=#
+
+const References{K,T} = IdDict{Proxy,GenericRef{K,T}}
+#=
 We start by defining socket-based communication.
 =#
 
@@ -49,11 +66,16 @@ mutable struct SocketBackend{K,T} <: RemoteBackend{K,T}
   name::String
   port::Integer
   connection::Union{Missing,TCPSocket}
+  static_remote::NamedTuple
   remote::NamedTuple
+  refs::References{K,T}
 end
 
 SocketBackend{K,T}(name, port, remote) where {K,T} =
   SocketBackend{K,T}(name, port, missing, remote)
+
+SocketBackend{K,T}(name, port, connection, remote) where {K,T} =
+  SocketBackend{K,T}(name, port, connection, remote, remote_functions(remote), References{K,T}())
 
 # AML: replace with the Base.retry function?
 start_connection(b::SocketBackend) =
@@ -87,8 +109,70 @@ macro get_remote(b, op)
 end
 
 #=
-Another option is to use WebSockets. The goal, here, is to have multiple connections, opened at different times but running simultaneous.
+In some cases, it might be useful to have multiple backends running at the same time, controlled by a single frontend.
+This entails treating the frontend as a server and each backend as a client.
+Another option is simply to have a socket server running on the Julia side, that waits for connection requests.
+After connecting, we can expect a string that specifies the backend to instantiate and then we simply initialize it.
 =#
+
+const default_khepri_server_port = Parameter(12345)
+export default_khepri_server_port
+const khepri_server_task = Parameter{Union{Nothing,Task}}(nothing)
+
+export ensure_khepri_server_running
+ensure_khepri_server_running() =
+  if isnothing(khepri_server_task())
+    khepri_server_task(errormonitor(Threads.@spawn start_khepri_server()))
+  end
+
+
+const backend_init_map = Dict{String, Function}()
+add_client_backend_init_function(name, init_function) = begin
+  backend_init_map[name] = init_function
+  ensure_khepri_server_running()
+end
+get_client_backend_init_function(name) =
+  get(backend_init_map, name) do 
+    error("Requested backend '$name' is not available!")
+  end
+export add_client_backend_init_function
+
+#=
+Upon connection and initialization, it might be
+necessary to place some initial geometry on each
+client that connects.
+To that end, we will use the main generic function,
+as a metaphor for the startup function that is the
+entry program of C, Java, etc, programs.
+=#
+export main
+main(b::Backend) = nothing
+
+
+export start_khepri_server
+start_khepri_server(port=default_khepri_server_port()) =
+  let server = listen(port)
+    #println("Listening on port $port")
+    while true
+      println("Waiting for a new client")
+      let conn = accept(server)
+        println("Client connected")
+        let backend_name = decode(Val(:CS), Val(:string), conn),
+            init_func = get_client_backend_init_function(backend_name),
+            backend = invokelatest(init_func, conn)
+          invokelatest(before_connecting, backend)
+    	    invokelatest(after_connecting, backend)
+          add_current_backend(backend)
+          invokelatest(main, backend)
+        end
+      end
+    end
+  end
+
+#=
+Another option is to use WebSockets.
+=#
+
 struct WebSocketConnection <: IO
   server::HTTP.Server
   router::HTTP.Router
@@ -172,11 +256,13 @@ mutable struct WebSocketBackend{K,T} <: RemoteBackend{K,T}
   host::String
   port::Int
   connection::Union{WebSocketConnection,Missing}
+  static_remote::NamedTuple
   remote::NamedTuple
+  refs::References{K,T}
 end
 
 WebSocketBackend{K,T}(name, host, port, remote) where {K,T} =
-  WebSocketBackend{K,T}(name, host, port, missing, remote)
+  WebSocketBackend{K,T}(name, host, port, missing, remote, remote_functions(remote), References{K,T}())
 
 #=
 Given that this is a server, we can also allow clients to make requests by using, 
@@ -241,6 +327,7 @@ end
 abstract type LocalBackend{K,T} <: LazyBackend{K,T} end
 @kwdef mutable struct IOBackend{K,T,E} <: LocalBackend{K,T}
   shapes::Shapes=Shape[]
+  refs::References{K,T}=References{K,T}()
   current_layer::Union{Nothing,AbstractLayer}=nothing
   layers::Dict{AbstractLayer,Vector{Shape}}=Dict{AbstractLayer,Vector{Shape}}()
   date::DateTime=DateTime(2020, 9, 21, 10, 0, 0)
@@ -294,6 +381,7 @@ KhepriBase.b_delete_all_refs(b::IOBackend) =
     for ss in values(b.layers)
       empty!(ss)
     end
+    empty!(b.refs)
     nothing
   end
 
