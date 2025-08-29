@@ -385,8 +385,9 @@ macro defproxy(name_typename, parent, fields...)
 #  field_renames = map(esc ∘ Symbol ∘ uppercasefirst ∘ string, field_names)
   field_renames = map(Symbol ∘ string, field_names)
   field_replacements = Dict(zip(field_names, field_renames))
-  #struct_fields = map((name,typ) -> :($(name) :: $(typ)), field_names, field_types) # To ensure identity, we need a mutable struct with const fields. 
-  struct_fields = map((name,typ) -> Expr(:const, Expr(:(::), name, typ)), field_names, field_types)
+  struct_fields = map((name,typ) -> :($(name) :: $(typ)), field_names, field_types) # To ensure identity, we need a mutable struct with const fields.
+  # It seams Julia 1.9 does not support const fields. 
+  #struct_fields = map((name,typ) -> Expr(:const, Expr(:(::), name, typ)), field_names, field_types)
   mk_param(name,typ,init) = Expr(:kw, name, init) #Expr(:kw, Expr(:(::), name, typ), init)
   opt_params = map(mk_param, field_renames, field_types, map(init -> replace_in(init, field_replacements), field_inits))
   key_params = map(mk_param, field_names, field_types, field_renames)
