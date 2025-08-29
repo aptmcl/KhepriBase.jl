@@ -125,4 +125,8 @@ const a3dsmax_port = 11005
 const unreal_port = 11010
 const rhino_port = 12000
 const threejs_port = 8900
+
+function __init__()
 end
+end
+
