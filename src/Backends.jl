@@ -1,4 +1,70 @@
 #=
+
+Backends need to store references to resources such as shapes, materials, layers, families, etc.
+Moreover, some of these resources live longer than others. For example, a shape can be deleted 
+but its material should be preserved, as it can be referenced from other shapes.
+To handle this, these references are going to be classified according to their type.
+=#
+
+struct References{K,T}
+  shapes::Dict{Shape,GenericRef{K,T}}
+  materials::Dict{Material,GenericRef{K,T}}
+  layers::Dict{Layer,GenericRef{K,T}}
+  annotations::Dict{Annotation,GenericRef{K,T}}
+  families::Dict{Family,GenericRef{K,T}}
+  levels::Dict{Level,GenericRef{K,T}}
+  References{K,T}() where {K,T} =
+    new{K,T}(Dict{Shape,GenericRef{K,T}}(), 
+             Dict{Material,GenericRef{K,T}}(),
+             Dict{Layer,GenericRef{K,T}}(),
+             Dict{Annotation,GenericRef{K,T}}(),
+             Dict{Family,GenericRef{K,T}}(),
+             Dict{Level,GenericRef{K,T}}())
+end
+
+# Constraint: all backends must have a References field named refs
+export shape_refs_storage, material_refs_storage, layer_refs_storage, annotation_refs_storage, family_refs_storage, level_refs_storage, refs_storage
+shape_refs_storage(b::Backend) = b.refs.shapes
+material_refs_storage(b::Backend) = b.refs.materials
+layer_refs_storage(b::Backend) = b.refs.layers
+annotation_refs_storage(b::Backend) = b.refs.annotations
+family_refs_storage(b::Backend) = b.refs.families
+level_refs_storage(b::Backend) = b.refs.levels
+
+# To dispatch on the type of proxy
+refs_storage(b::Backend, p::Shape) = shape_refs_storage(b)
+refs_storage(b::Backend, p::Material) = material_refs_storage(b)
+refs_storage(b::Backend, p::Layer) = layer_refs_storage(b)
+refs_storage(b::Backend, p::Annotation) = annotation_refs_storage(b)
+refs_storage(b::Backend, p::Family) = family_refs_storage(b)
+refs_storage(b::Backend, p::Level) = level_refs_storage(b)
+
+# Get the shape from the reference
+export get_or_create_shape_from_ref_value
+
+get_or_create_from_ref_value(b::Backend, r, storage, create) =
+  let dict = storage(b)
+    for (proxy, ref) in dict
+      if contains(ref, r)
+        return proxy
+      end
+    end
+    let new_sh = 
+          with(current_backends, ()) do # To avoid realizing shapes
+            create(b, r)
+          end
+      ref!(b, new_sh, r)
+      new_sh
+    end
+  end
+
+get_or_create_shape_from_ref_value(b::Backend, r) =
+  get_or_create_from_ref_value(b, r, shape_refs_storage, b_create_shape_from_ref_value)
+
+get_or_create_layer_from_ref_value(b::Backend, r) =
+  get_or_create_from_ref_value(b, r, layer_refs_storage, b_create_layer_from_ref_value)
+
+#=
 Backends might use different communication mechanisms, e.g., sockets, COM,
 RMI, etc.
 =#
@@ -42,23 +108,6 @@ retry_connecting(b::RemoteBackend) =
   (@info("Please, start/restart $(b.name)."); sleep(8))
 
 #=
-Backends might have resources that are shared by many shapes, such as materials, layers, families, etc.
-Moreover, these resources tend to live longer than the shapes themselves.
-This means that shapes can be deleted without necessarily affecting the underlying resources.
-=#
-
-#=
-struct References{T}
-  material_refs::Dict{Material,T}
-  shape_refs::Dict{Shape,T}
-  annotation_refs::Dict{Shape,T}
-  References{T}() where {T} =
-    new{T}(Dict{Material,T}(), Dict{Shape,T}(), Dict{Shape,T}())
-end
-=#
-
-const References{K,T} = IdDict{Proxy,GenericRef{K,T}}
-#=
 We start by defining socket-based communication.
 =#
 
@@ -68,6 +117,7 @@ mutable struct SocketBackend{K,T} <: RemoteBackend{K,T}
   connection::Union{Missing,TCPSocket}
   static_remote::NamedTuple
   remote::NamedTuple
+  transaction::Parameter{Transaction}
   refs::References{K,T}
 end
 
@@ -75,7 +125,7 @@ SocketBackend{K,T}(name, port, remote) where {K,T} =
   SocketBackend{K,T}(name, port, missing, remote)
 
 SocketBackend{K,T}(name, port, connection, remote) where {K,T} =
-  SocketBackend{K,T}(name, port, connection, remote, remote_functions(remote), References{K,T}())
+  SocketBackend{K,T}(name, port, connection, remote, remote_functions(remote), Parameter{Transaction}(AutoCommitTransaction()), References{K,T}())
 
 # AML: replace with the Base.retry function?
 start_connection(b::SocketBackend) =
@@ -176,78 +226,24 @@ Another option is to use WebSockets.
 struct WebSocketConnection <: IO
   server::HTTP.Server
   router::HTTP.Router
-  connections::Set{HTTP.WebSockets.WebSocket}
+  websocket::HTTP.WebSockets.WebSocket
+  buffer::IOBuffer
+  WebSocketConnection(server, router, websocket) =
+    new(server, router, websocket, IOBuffer(UInt8[], read=true, write=true))
 end
 
-for_connection(f, s) = begin
-  for websocket in s.connections
-    if HTTP.WebSockets.isclosed(websocket)
-      @warn("Removing closed websocket connection!")
-      delete!(s.connections, websocket)
-    else
-      try
-        return f(websocket)
-      catch e
-        if isa(e, Base.IOError)
-          delete!(s.connections, websocket)
-        else
-          rethrow(e)
-        end
-      end
-    end
-  end
-  error("There are no open WebSocket connections to write to!")
-end
+# Sending stuff is trivial.
 
-from_connection(f, s) = begin
-  for websocket in s.connections
-    if HTTP.WebSockets.isclosed(websocket)
-      @warn("Removing closed websocket connection!")
-      delete!(s.connections, websocket)
-    else
-      try
-        return f(websocket)
-      catch e
-        if isa(e, Base.IOError)
-          delete!(s.connections, websocket)
-        else
-          rethrow(e)
-        end
-      end
-    end
-  end
-  error("There are no open WebSocket connections to read from!")
-end
+send(c::WebSocketConnection, buffer) = 
+  HTTP.WebSockets.send(c.websocket, take!(buffer))
 
-broadcast_write(c, data) =
-  for_connection(c) do websocket
-    HTTP.WebSockets.send(websocket, data)
-  end
-
-# These are needed to avoid ambiguous dispatch
-Base.write(c::WebSocketConnection, data::Union{Float16,Float32,Float64,Int128,Int16,Int32,Int64,UInt128,UInt16,UInt32,UInt64}) = broadcast_write(c, data)
-Base.write(c::WebSocketConnection, data::Array) = broadcast_write(c, data)
-Base.write(c::WebSocketConnection, data::Union{SubString{String},String}) = broadcast_write(c, data)
-
-Base.read(c::WebSocketConnection, T::Union{Type{Float16},Type{Float32},Type{Float64},Type{Int128},Type{Int16},Type{Int32},Type{Int64},Type{UInt128},Type{UInt16},Type{UInt32},Type{UInt64}}) =
-  let ans = from_connection(HTTP.WebSockets.receive, c),
-      io = IOBuffer(ans)
-    read(io, T)
-  end
-
-# Why can't the following one be included in the previous union?
-Base.read(c::WebSocketConnection, T::Type{UInt8}) =
-  let ans = from_connection(HTTP.WebSockets.receive, c),
-      io = IOBuffer(ans)
-    read(io, T)
-  end
-Base.close(c::WebSocketConnection) =
-  begin
-    close.(c.connections)
-    empty!(c.connections)
-    if isopen(c.server)
-      HTTP.close(c.server)
-    end
+receive(c::WebSocketConnection) = 
+  let bytes = HTTP.WebSockets.receive(c.websocket)
+    #println("Received data of length $(length(bytes))")
+    take!(c.buffer) # Clear the buffer
+    write(c.buffer, bytes)
+    seekstart(c.buffer)
+    c.buffer
   end
 
 # Finally, the backend itself:
@@ -258,21 +254,119 @@ mutable struct WebSocketBackend{K,T} <: RemoteBackend{K,T}
   connection::Union{WebSocketConnection,Missing}
   static_remote::NamedTuple
   remote::NamedTuple
+  transaction::Parameter{Transaction}
   refs::References{K,T}
+  handlers::Vector{Function}
+
+  WebSocketBackend{K,T}(name, host, port, remote) where {K,T} =
+    new(name, host, port,
+        missing, remote, remote_functions(remote),
+        Parameter{Transaction}(AutoCommitTransaction()), References{K,T}(), Function[])
 end
 
-WebSocketBackend{K,T}(name, host, port, remote) where {K,T} =
-  WebSocketBackend{K,T}(name, host, port, missing, remote, remote_functions(remote), References{K,T}())
-
 #=
-Given that this is a server, we can also allow clients to make requests by using, 
+Given that this is a server, we can also allow clients to make requests by using,
 e.g., the fetch API. To that end, we need to be able to add request handlers.
 Be careful about deadlocks and such.
 =#
-export register_handler
+export register_handler, register_http_handler, register_websocket_handler
 
-register_handler(c::WebSocketBackend{K,T}, method, path, handler) where {K,T} =
-  HTTP.register!(c.connection.router, method, path, handler)
+const using_http_requests = Parameter(false)
+
+register_handler(c::WebSocketBackend{K,T}, target, handler) where {K,T} =
+  if using_http_requests()
+    let request_str = "/api/"*randstring()
+      register_http_handler(c, request_str, handler)
+      request_str
+    end
+  else
+    register_websocket_handler(c, target, handler)
+  end
+
+register_websocket_handler(c::WebSocketBackend{K,T}, target, handler) where {K,T} =
+  (push!(c.handlers, handler); length(c.handlers))
+
+call_handler(c::WebSocketBackend{K,T}, target, args...) where {K,T} =
+  let handler = c.handlers[target]
+    handler(args...)
+  end
+
+export process_requests
+#=
+Note that we cannot process client requests while server requests are being processed.
+This means that the handler being called must do its job and return as soon as possible, 
+so that other requests can be processed.
+=#
+process_requests(c::WebSocketBackend{K,T}) where {K,T} =
+  let namespace = c.static_remote[1].namespace # An awful way of retrieving the namespace
+    while true
+      let buf = receive(c.connection),
+          target = decode(namespace, Val(:size), buf),
+          args_len = decode(namespace, Val(:size), buf),
+          args = Any[]
+        for i in 1:args_len
+          push!(args, decode(namespace, Val(:Any), buf))
+        end
+        println("Calling '$target' with $(args)")
+        let result_code = -1 # Default: no result
+          try
+            call_handler(c, target, args...)
+          catch e
+            println("Error occurred while processing request '$target': $e")
+            showerror(stdout, e, catch_backtrace())
+            result_code = -2 # Error
+          finally
+            # Signal that the request has been processed
+            let buf = IOBuffer()
+              encode(namespace, Val(:int), buf, result_code)
+              send(c.connection, buf)
+            end
+          end
+        end
+      end
+    end
+  end
+
+#=
+Another option is to use HTTP handlers.
+=#
+export register_http_handler
+
+# Backends encode the parameters as query parameters p0, p1, p2, ...
+# e.g., /api/handler?p0=val0&p1=val1&...
+request_parameters(req) =
+  let dict = HTTP.queryparams(HTTP.URI(HTTP.Messages.getfield(req, :target)))
+    map(i -> haskey(dict, "p$i") ? dict["p$i"] : error("Missing parameter p$i"), 0:(length(dict)-1))
+  end
+
+register_http_handler(c::WebSocketBackend{K,T}, target, handler) where {K,T} =
+  HTTP.register!(c.connection.router, "GET", target, req -> (handler(request_parameters(req)...); HTTP.Response(200, "0")))
+
+#=
+It is going to be useful to have an algebra of handlers.
+=#
+export action_handler, sequence_handler, wrapper_handler, update_parameter_handler
+
+action_handler(f) =
+  (args...) -> f()
+
+sequence_handler(handler...) = 
+  (args...) -> for handler in handlers
+                  handler(args...)
+               end
+
+wrapper_handler(wrapper, f) =
+  (args...) -> wrapper(f, args...)
+
+#=
+A particular case of handler is the one that updates a parameter.
+=#
+
+update_parameter_handler(parameter::Parameter{T}) where {T} = 
+  using_http_requests() ?
+    (str) -> parameter(parse(T, str)) :
+    (val) -> parameter(convert(T, val))
+
 
 ################################################################
 # Not all backends support all stuff. Some of it might need to be supported
@@ -287,13 +381,13 @@ struct BasicLayer <: AbstractLayer
   color::RGB
 end
 
-export b_layer, b_current_layer,
+export b_layer, b_current_layer_ref,
        b_all_shapes_in_layer, b_delete_all_shapes_in_layer
 
 # Default implementation assumes that backends have properties for current_layer and layers (a dict)
 b_layer(b::Backend, name, active, color) = BasicLayer(name, active, color)
-b_current_layer(b::Backend) = b.current_layer
-b_current_layer(b::Backend, layer) = b.current_layer = layer
+b_current_layer_ref(b::Backend) = b.current_layer
+b_current_layer_ref(b::Backend, layer) = b.current_layer = layer
 b_all_shapes_in_layer(b::Backend, layer) = b.layers[layer]
 b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_in_layer(b, layer))
 
@@ -324,9 +418,10 @@ end
 # Another backend option is to save all shapes locally and then generate, e.g., a
 # file-based description.
 
-abstract type LocalBackend{K,T} <: LazyBackend{K,T} end
+abstract type LocalBackend{K,T} <: Backend{K,T} end
 @kwdef mutable struct IOBackend{K,T,E} <: LocalBackend{K,T}
   shapes::Shapes=Shape[]
+  transaction::Parameter{Transaction}=Parameter{Transaction}(ManualCommitTransaction())
   refs::References{K,T}=References{K,T}()
   current_layer::Union{Nothing,AbstractLayer}=nothing
   layers::Dict{AbstractLayer,Vector{Shape}}=Dict{AbstractLayer,Vector{Shape}}()
@@ -375,7 +470,7 @@ used_materials(b::IOBackend) =
 	materials
   end
 
-KhepriBase.b_delete_all_refs(b::IOBackend) =
+KhepriBase.b_delete_all_shape_refs(b::IOBackend) =
   begin
     empty!(b.shapes)
     for ss in values(b.layers)
