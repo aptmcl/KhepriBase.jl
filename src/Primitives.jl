@@ -1,24 +1,6 @@
 #=
 julia_type(ctype, is_array) = is_array ? :(Vector{$(julia_type(ctype, false))}) : julia_type_for_c_type[ctype]
 =#
-export show_rpc, step_rpc
-const show_rpc = Parameter(false)
-const step_rpc = Parameter(false)
-function initiate_rpc_call(conn, opcode, name)
-    if step_rpc()
-        print(stderr, "About to call $(name) (opcode $(opcode)) [press ENTER]")
-        readline()
-    end
-    if show_rpc()
-        print(stderr, "$(name) (opcode $(opcode))")
-    end
-end
-function complete_rpc_call(conn, opcode, result)
-    if show_rpc()
-        println(stderr, isnothing(result) ? "-> nothing" : "-> $(result)")
-    end
-    result
-end
 
 function my_symbol(prefix, name)
   Symbol(prefix * replace(string(name), ":" => "_"))
@@ -110,11 +92,11 @@ parse_signature(::Val{:PY}, sig::AbstractString) =
 #=
 This is JavaScript, not TypeScript. As a result, the signatures were improvised by me and
 they look like this:
-const createSphere = typedFunction([Vector3, Float64, Id], Id, (c, r, mat) => {
+typedFunction([Vector3, Float64, Id], Id, (c, r, mat) => {
 =#
 
 parse_signature(::Val{:JS}, sig::AbstractString) =
-  let m = match(r"^ *typedFunction *\(\"(.*)\", *(\[.*\]), *(.+), *(\(.*\)) *=>", sig),
+  let m = match(r"^ *typed(?:Async)?.*Function *\(\"(.*)\", *(\[.*\]), *(.+), *(\(.*\)) *=>", sig),
       name = m.captures[1],
       paramTypes = m.captures[2],
       params = m.captures[4],
@@ -134,6 +116,36 @@ parse_signature(::Val{:JS}, sig::AbstractString) =
     (name, name, parse_params(Meta.parse(params), Meta.parse(paramTypes)), parse_type(Meta.parse(ret)))
   end
 
+# TypeScript
+#=
+TypeScript does not provide reflective capabilities. 
+As a result, the signatures were improvised by me and
+they look like this:
+typedFunction("sphere", [Point3d, Float32, MatId], Id, (c: THREE.Vector3, r: number, mat: THREE.Material) => {
+=#
+
+parse_signature(::Val{:TS}, sig::AbstractString) =
+  let m = match(r"^ *typed(?:Async)?Function *\(\"(.*)\", *(\[.*\]), *(.+), *\((.*)\) *=>", sig),
+      name = m.captures[1],
+      paramTypes = m.captures[2],
+      params = all(isspace, m.captures[4]) ? "()" : "($(m.captures[4]),)", # Enforce a tuple, even if there is a single parameter
+      ret = m.captures[3],
+      parse_type(t) =
+        t isa Symbol ?
+          Val{t} :
+          t.head === :vect ?
+            Vector{parse_type(t.args[1])} :
+            error("Unknown expression type $(t) in signature $(sig)"),
+      parse_param(p) = 
+        p isa Symbol ? # foo
+          p :
+          p isa Expr && p.head === :call ? # (foo: type)
+              (p.args[1] === :(:) ? p.args[2] : p.args[1]) :
+              error("Unknown parameter $(p) in signature $(sig)"), 
+      parse_params(ast, typesAst) =
+        [(parse_type(type), parse_param(p)) for (type, p) in zip(typesAst.args, ast.args)]
+    (name, name, parse_params(Meta.parse(params), Meta.parse(paramTypes)), parse_type(Meta.parse(ret)))
+  end
 
 #=
 A remote function encapsulates the information needed for communicating with remote
@@ -171,21 +183,35 @@ end
 RemoteFunction(info::RemoteFunctionInfo{T}) where {T} =
   RemoteFunction{T}(info, Int32(-1), IOBuffer())
 
+#=
+We assume there are two fundamental operations:
+ - send(conn, buffer) sends the content of the buffer to the remote application
+ - receive(conn) receives data from the remote application and returns it as a buffer
+
+Note that in the case of sockets, the receive operation might return the socket itself
+=#
+
+send(conn, buf) = write(conn, take!(buf))
+receive(conn) = conn
+
 request_operation(f::RemoteFunction, conn) =
   let i = f.info,
       buf = f.buffer
     encode(i.namespace, Val(:int), buf, 0)
     encode(i.namespace, Val(:string), buf, i.remote_name)
-    write(conn, take!(buf))
-    op = decode(i.namespace, Val(:size), conn)
-    if op == -1
-      error(i.remote_name * " is not available")
-    else
-      op
+    send(conn, buf)
+    let buf = receive(conn)
+      op = decode(i.namespace, Val(:size), buf)
+      if op == -1
+        error(i.remote_name * " is not available")
+      else
+        op
+      end
     end
   end
 
-interrupt_processing(conn) = write(conn, Int32(-1))
+
+#interrupt_processing(conn) = write(conn, Int32(-1))
 
 ensure_opcode(f::RemoteFunction, conn) =
   f.opcode == -1 ?
@@ -218,7 +244,6 @@ remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
            $(local_name),
            $(remote_name),
            (opcode, conn, buf, $([p[2] for p in params]...)) -> begin
-              initiate_rpc_call(conn, opcode, $(remote_name))
               take!(buf) # Reset the buffer just in case there was an encoding error on a previous call
               encode($(namespace), Val(:int), buf, opcode)
               $([:(encode($(namespace),
@@ -226,10 +251,10 @@ remote_function_meta_program(nssym, sig, local_name, remote_name, params, ret) =
                           buf,
                           $(p[2])))
                  for p in params]...)
-              write(conn, take!(buf))
-              #flush(conn)
-              complete_rpc_call(conn, opcode,
-                decode($(namespace), $(type_constructor(ret)), conn))
+              send(conn, buf)
+              let buf = receive(conn)
+                decode($(namespace), $(type_constructor(ret)), buf)
+              end
             end))
   end
 
@@ -304,12 +329,12 @@ export remote_functions
 remote_functions(infos) = map(RemoteFunction, infos)
 
 #=
-@macroexpand @remote_functions :CS """
+@macroexpand @remote_api :CS """
   int add(int a, int b)
   int sub(int a, int b)
 """
 
-@macroexpand @remote_functions :PY """
+@macroexpand @remote_api :PY """
 def get_view()->Tuple[Point3d, Point3d, float]:
 """
 =#
@@ -374,7 +399,7 @@ decode(ns::Val{NS}, t::Vector{Tuple{T1,T2}}, c::IO) where {NS,T1,T2} = begin
 end
 
 # Some generic conversions for C#, C++, JavaScript, and Python
-const SizeIsInt = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:PY}}
+const SizeIsInt = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS},Val{:PY}}
 encode(ns::SizeIsInt, t::Val{:size}, c::IO, v) =
   encode(ns, Val(:int), c, v)
 decode(ns::SizeIsInt, t::Val{:size}, c::IO) =
@@ -384,13 +409,13 @@ encode(ns::SizeIsInt, t::Val{:address}, c::IO, v) =
 decode(ns::SizeIsInt, t::Val{:address}, c::IO) =
   decode_or_error(ns, Val(:long), c, -1)
 
-const BoolIsByte = Union{Val{:CS},Val{:JS},Val{:PY}}
+const BoolIsByte = Union{Val{:CS},Val{:JS},Val{:TS},Val{:PY}}
 encode(ns::BoolIsByte, t::Val{:bool}, c::IO, v::Bool) =
   encode(ns, Val(:byte), c, v ? 1 : 0)
 decode(ns::BoolIsByte, t::Val{:bool}, c::IO) =
   decode_or_error(ns, Val(:byte), c, UInt8(127)) == UInt8(1)
 
-const ByteIsUInt8 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:PY}}
+const ByteIsUInt8 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS},Val{:PY}}
 encode(::ByteIsUInt8, t::Val{:byte}, c::IO, v) =
   write(c, convert(UInt8, v))
 decode(::ByteIsUInt8, t::Val{:byte}, c::IO) =
@@ -404,21 +429,21 @@ decode(::ShortIsInt16, t::Val{:short}, c::IO) =
   convert(Int16, read(c, Int16))
 
 # Assuming int is four bytes in C#, C++, JavaScript, and Python
-const IntIsInt32 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:PY}}
+const IntIsInt32 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS},Val{:PY}}
 encode(::IntIsInt32, t::Val{:int}, c::IO, v) =
   write(c, convert(Int32, v))
 decode(::IntIsInt32, t::Val{:int}, c::IO) =
   convert(Int32, read(c, Int32))
 
 # Assuming long is eight bytes in C#, C++, JavaScript
-const LongIsInt64 = Union{Val{:CS},Val{:CPP},Val{:JS}}
+const LongIsInt64 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS}}
 encode(::LongIsInt64, t::Val{:long}, c::IO, v) =
   write(c, convert(Int64, v))
-decode(::Union{Val{:CS},Val{:CPP}}, t::Val{:long}, c::IO) =
+decode(::LongIsInt64, t::Val{:long}, c::IO) =
   convert(Int64, read(c, Int64))
 
 # Assuming float is four bytes in C#, C++, JavaScript
-const FloatIsFloat32 = Union{Val{:CS},Val{:CPP},Val{:JS}}
+const FloatIsFloat32 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS}}
 encode(::FloatIsFloat32, t::Val{:float}, c::IO, v) =
   write(c, convert(Float32, v))
 decode(ns::FloatIsFloat32, t::Val{:float}, c::IO) =
@@ -436,7 +461,7 @@ decode(ns::FloatIsFloat64, t::Val{:float}, c::IO) =
   end
 
 # Assuming double is eight bytes in C#, C++, JavaScript
-const DoubleIsFloat64 = Union{Val{:CS},Val{:CPP},Val{:JS}}
+const DoubleIsFloat64 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS}}
 encode(::DoubleIsFloat64, t::Val{:double}, c::IO, v) =
   write(c, convert(Float64, v))
 decode(ns::DoubleIsFloat64, t::Val{:double}, c::IO) =
@@ -445,7 +470,7 @@ decode(ns::DoubleIsFloat64, t::Val{:double}, c::IO) =
   end
 
 # The binary_stream we use with C++, JavaScript, and Python replicates C# behavior
-const StringIsCSString = Union{Val{:CS},Val{:CPP},Val{:PY},Val{:JS}}
+const StringIsCSString = Union{Val{:CS},Val{:CPP},Val{:PY},Val{:JS},Val{:TS}}
 encode(::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO, v) = begin
   str = string(v)
   size = sizeof(str) # length is not applicable to unicode strings
@@ -495,7 +520,7 @@ decode(ns::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO
   end
 end
 
-const VoidIsByte = Union{Val{:CS},Val{:PY},Val{:JS}}
+const VoidIsByte = Union{Val{:CS},Val{:PY},Val{:JS},Val{:TS}}
 decode(ns::VoidIsByte, t::Union{Val{:void},Val{:None}}, c::IO) =
   decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
 
@@ -511,37 +536,39 @@ decode(ns::Val{:CS}, ::Val{:Guid}, c::IO) =
     iszero(guid) ? backend_error(ns, c) : guid
   end
 
-# It is also useful to encode generic objects.
-const SupportsObjects = Union{Val{:JS},Val{:PY},Val{:CS}}
-
-const object_code = Dict(Bool=>0, UInt8=>1, Int32=>2, Int64=>3, Float32=>4, Float64=>5, String=>6)
+# It is also useful to encode/decode generic objects.
+const SupportsObjects = Union{Val{:JS},Val{:TS},Val{:PY},Val{:CS}}
 
 encode(ns::SupportsObjects, ::Val{:Any}, c::IO, v) =
-  let code = v isa RGB ? 7 : v isa RGBA ? 8 : v isa Dict ? 9 : object_code[typeof(v)]
+  let (code, type) = 
+        v isa Bool ? (0, :bool) :
+        v isa UInt8 ? (1, :byte) :
+        v isa Int32 ? (2, :int) :
+        v isa Int64 ? (3, :long) :
+        v isa Float32 ? (4, :float) :
+        v isa Float64 ? (5, :double) :
+        v isa String ? (6, :string) :
+        v isa RGB ? (7, :RGB) :
+        v isa RGBA ? (8, :RGBA) : 
+        v isa Dict ? (9, :Dict) : 
+        error("Unknown encoding for object $v of type $(typeof(v))")
     encode(ns, Val(:byte), c, code)
-    if code == 0      
-      encode(ns, Val(:bool), c, v)
-    elseif code == 1
-      encode(ns, Val(:byte), c, v)
-    elseif code == 2
-      encode(ns, Val(:int), c, v)
-    elseif code == 3
-      encode(ns, Val(:long), c, v)
-    elseif code == 4
-      encode(ns, Val(:float), c, v)
-    elseif code == 5
-      encode(ns, Val(:double), c, v)
-    elseif code == 6
-      encode(ns, Val(:string), c, v)
-    elseif code == 7
-      encode(ns, Val(:RGB), c, v)
-    elseif code == 8
-      encode(ns, Val(:RGBA), c, v)
-    elseif code == 9
-      encode(ns, Val(:Dict), c, v)
-    else
-      error("Unknown object code", code)
-    end
+    encode(ns, Val(type), c, v)
+  end
+decode(ns::SupportsObjects, ::Val{:Any}, c::IO) =
+  let code = decode(ns, Val(:byte), c),
+      type = code == 0 ? :bool :
+             code == 1 ? :byte :
+             code == 2 ? :int :
+             code == 3 ? :long :
+             code == 4 ? :float :
+             code == 5 ? :double :
+             code == 6 ? :string :
+             code == 7 ? :RGB :
+             code == 8 ? :RGBA :
+             code == 9 ? :Dict :
+             error("Unknown decoding for type code $code")
+    decode(ns, Val(type), c)
   end
 
 encode(ns::SupportsObjects, ::Val{:Dict}, c::IO, dict) =
@@ -552,8 +579,19 @@ encode(ns::SupportsObjects, ::Val{:Dict}, c::IO, dict) =
       encode(ns, Val(:Any), c, v)
     end
   end
+decode(ns::SupportsObjects, ::Val{:Dict}, c::IO) =
+  let len = decode(ns, Val(:int), c),
+      dict = Dict{String,Any}()
+    for i in 1:len
+      let k = decode(ns, Val(:string), c),
+          v = decode(ns, Val(:Any), c)
+        dict[k] = v
+      end
+    end
+    dict
+  end
 
-const SupportsTuples = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:PY}}
+const SupportsTuples = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS},Val{:PY}}
 encode(ns::SupportsTuples, t::Tuple{T1,T2}, c::IO, v) where {T1,T2} =
   begin
     encode(ns, T1(), c, v[1])
