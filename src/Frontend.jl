@@ -124,10 +124,10 @@ end
 #=
 export current_layer
 current_layer(backends::Backends=current_backends()) =
-  [b_current_layer(b) for b in backends]
+  [b_current_layer_ref(b) for b in backends]
 current_layer(layer, backends::Backends=current_backends()) =
   for (b, l) in zip(backends, layer)
-	b_current_layer(b, l)
+	b_current_layer_ref(b, l)
   end
 =#
 @defcbs set_layer_active(layer, status)
