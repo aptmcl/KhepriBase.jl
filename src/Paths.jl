@@ -64,6 +64,7 @@ export empty_path,
        inner_paths,
        path_tolerance,
        is_closed_path,
+       is_smooth_path,
        coincident_path_location
 
 path_tolerance = Parameter(1e-10)
@@ -82,7 +83,7 @@ struct PointPath <: Path
     location::Loc
 end
 
-point_path(loc::Loc) = PointPath(loc)
+point_path(loc::Loc=u0()) = PointPath(loc)
 
 getindex(p::Path, i::Real) = location_at_length(p, i)
 firstindex(p::Path) = 0
