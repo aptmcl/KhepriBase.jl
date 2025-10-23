@@ -1,11 +1,10 @@
 export GenericRef,
        NativeRef,
        NativeRefs,
-       DynRef,
        void_ref,
        ensure_ref,
        map_ref,
-       collect_ref
+       ref_values
 export Shape,
        Shapes,
        Backend,
@@ -18,6 +17,7 @@ export Shape,
        switch_to_backend,
        delete_shape, delete_shapes,
        delete_all_shapes, mark_deleted,
+       ref, ref!,
        force_realize,
        set_length_unit,
        is_collecting_shapes,
@@ -41,18 +41,6 @@ export Shape,
        capture_shape, capture_shapes,
        extrusion, sweep, revolve, loft
 
-#References can be (single or multiple) native references
-abstract type GenericRef{K,T} end
-
-# Typically, we have a reference to the represented object
-struct NativeRef{K,T} <: GenericRef{K,T}
-  value::T
-end
-# Sometimes, the represented object require multiple references
-struct NativeRefs{K,T} <: GenericRef{K,T}
-  values::Vector{T}
-end
-
 ensure_ref(b::Backend{K,T}, r::T) where {K,T} = NativeRef{K,T}(r)
 ensure_ref(b::Backend{K,T}, rs::Vector{T1}) where {K,T,T1<:T} =
   length(rs) == 1 ?
@@ -60,49 +48,55 @@ ensure_ref(b::Backend{K,T}, rs::Vector{T1}) where {K,T,T1<:T} =
     NativeRefs{K,T}(rs)
 ensure_ref(b::Backend{K,T}, rs::Vector{Vector{T1}}) where {K,T,T1<:T} =
   ensure_ref(b, reduce(vcat, rs))
-
+#=
 ensure_ref(b::Backend{K,T}, r::Vector{Any}) where {K,T} = begin
   @warn("Unexpected reference $r")
   ensure_ref(b, T[r...])
 end
-ensure_ref(b::Backend, r::Any) = error("Unexpected reference $r")
+=#
+ensure_ref(b::Backend{K,T}, r::Any) where {K,T} =
+  LocalRef{K,T}(r)
+
+# This is not type-stable, but it is convenient
+ref_value(b::Backend{K,T}, a::Any) where {K,T} = a
+ref_value(b::Backend, s::Proxy) = ref_value(b, ref(b, s))
+ref_value(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = r.value
+ref_value(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
+ref_value(b::Backend{K,T}, r::LocalRef{K,T}) where {K,T} = r.value
 
 # currying
-map_ref(b::Backend{K,T}, f::Function) where {K,T} = r -> map_ref(b, f, r)
-
-map_ref(b::Backend{K,T}, f::Function, r::NativeRef{K,T}) where {K,T} = f(r.value)
-map_ref(b::Backend{K,T}, f::Function, r::NativeRefs{K,T}) where {K,T} = map(f, r.values)
+ref_values(b::Backend{K,T}) where {K,T} = (r::GenericRef{K,T}) -> ref_values(b, r)
+# This is type-stable
+ref_values(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = T[r.value]
+ref_values(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
+ref_values(b::Backend, s::Proxy) = ref_values(b, ref(b, s))
+ref_values(b::Backend{K,T}, ss::Proxies) where {K,T} = mapreduce(s->ref_values(b, ref(b, s)), vcat, ss, init=T[])
 
 # currying
-collect_ref(b::Backend{K,T}) where {K,T} = 
-  (r::GenericRef{K,T}) -> collect_ref(b, r)
+map_ref(f::Function, b::Backend{K,T}) where {K,T} = r -> map_ref(f, b, r)
 
-collect_ref(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = T[r.value]
-collect_ref(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
+map_ref(f::Function, b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = f(r.value)
+map_ref(f::Function, b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = map(f, r.values)
+map_ref(f::Function, b::Backend, s::Proxy) = map_ref(b, f, ref(b, s))
 
-# References need to be created, deleted, and recreated, depending on the way the backend works
-# For example, each time a shape is consumed, it becomes deleted and might need to be recreated
-mutable struct DynRef{K,R}
-  backend::Backend{K,R}
-  value::GenericRef{K,R}
-  created::Int
-  deleted::Int
-end
+#=
+A Proxy can have subtypes whose realization might need separate reference storage 
+(e.g, because we might want to delete shapes but not their materials).
+This means that we need to retrieve the appropriate storage for each subtype.
+=#
 
-DynRef(b::Backend{K,T}, v) where {K,T} = DynRef{K,T}(b, ensure_ref(b, v), 1, 0)
 
-backend(s::Proxy) = first(first(s.ref))
 
-realized_in(s::Proxy, b::Backend) = b.refs[s].created == b.refs[s].deleted + 1
 # This is so stupid. We need call-next-method.
-really_mark_deleted(b::Backend, s::Proxy) = delete!(b.refs, s)
-#really_mark_deleted(b::Backend, ref::DynRefs) = delete!(ref, b)
+really_mark_deleted(b::Backend, s::Proxy) = (error("BREAK!"); delete!(refs_storage(b, s), s))
 really_mark_deleted(b::Backend, s::Any) = nothing
 mark_deleted(b::Backend, s::Proxy) = really_mark_deleted(b, s)
 # We also need to propagate this to all dependencies
 mark_deleted(b::Backend, ss::Array{<:Proxy}) = foreach(s->mark_deleted(b, s), ss)
 mark_deleted(b::Backend, s::Any) = nothing
-marked_deleted(b::Backend, s::Proxy) = !haskey(b.refs, s)
+marked_deleted(b::Backend, s::Proxy) = !haskey(refs_storage(b, s), s)
+
+realize(b::Backend, s::Proxy) = error("Undefined realization for $(typeof(s)) in $(b)")
 
 #=
 The protocol is this:
@@ -124,20 +118,29 @@ macro curryable(def)
 Given a backend and a proxy, the ref function ensures that the proxy exists in the backend and returns the corresponding reference.
 =#
 ref(b::Backend, s::Proxy) =
-  force_realize(b, s)
+  let refs = refs_storage(b, s)
+    haskey(refs, s) ?
+      refs[s] :
+      refs[s] = ensure_ref(b, realize(b, s))
+  end
+
 ref(b::Backend) =
   s::Proxy -> ref(b, s)
 
 reset_ref(b::Backend, s::Proxy) =
-  delete!(b.refs, s)
+  delete!(refs_storage(b, s), s)
+
+ref!(b::Backend, s::Proxy, r) =
+  let refs = refs_storage(b, s)
+    refs[s] = ensure_ref(b, r)
+  end
 
 force_realize(b::Backend, s::Proxy) =
-  haskey(b.refs, s) ?
-    b.refs[s] : #error("Shape was already realized in $(b)") :
-    b.refs[s] = ensure_ref(b, realize(b, s))
+  ref!(b, s, realize(b, s))
 
 realized(b::Backend, s::Proxy) =
-  haskey(b.refs, s)
+  haskey(refs_storage(b, s), s)
+
 
 #=
 Shapes are realized on the current_backends(), but this parameter might be
@@ -160,10 +163,6 @@ ensure_ref(b::Backend{K,T}, v::Proxy) where {K,T} =
 show(io::IO, s::Shape) =
   print(io, "$(typeof(s))(...)")
 
-map_ref(f::Function, b::Backend, s::Shape) = map_ref(b, f, ref(b, s))
-collect_ref(b::Backend, s::Shape) = collect_ref(b, ref(b, s))
-collect_ref(b::Backend, ss::Shapes) = mapreduce(s->collect_ref(b, ref(b, s)), vcat, ss, init=[])
-
 #=
 Whenever a shape is created, it might be eagerly realized in its backend,
 depending on the kind of shape and kind of backend (and/or its current state).
@@ -174,6 +173,34 @@ The protocol after_init takes care of that.
 =#
 
 after_init(a::Any) = a
+after_init(s::Proxy) =
+  begin
+    maybe_realize(s)
+    s
+  end
+# UniqueProxy is ... unique! We need to ensure that there is only one instance of it, at least, in what concerns its specification.
+
+equal_spec(s1, s2) = s1 == s2
+equal_spec(s1::BackendParameter, s2::BackendParameter) =
+  s1 === s2 || isequal(pairs(s1.value), pairs(s2.value))
+
+after_init(s::UniqueProxy) =
+  let bs = current_backends(),
+      unique(s) = begin
+        for b in bs
+          for (si, _) in refs_storage(b, s)
+            if equal_spec(s, si)
+              return si
+            end
+          end
+        end
+        s
+      end,
+      unique_s = unique(s)
+    maybe_realize(unique_s)
+    unique_s
+  end
+
 after_init(s::Shape) =
   begin
     maybe_realize(s)
@@ -188,41 +215,120 @@ realization of shapes, particularly, when the construction is incremental.
 In that case, we collect all created shapes and then realize them at the end.
 =#
 
-delaying_realize = Parameter(false)
-delayed_realizations = Parameter([])
 with_transaction(fn) = 
-  with(delayed_realizations, []) do
-    with(delaying_realize, true) do
-      fn()
-    end
-    for s in delayed_realizations()
-      maybe_realize(s)
-    end
+  let all_bs = current_backends(),
+      recur(bs) =
+        if isempty(bs)
+          fn()
+          for b in all_bs
+            for s in b.delayed_realizations()
+              maybe_realize(b, s)
+            end
+          end
+        else
+          with(b.delayed_realizations, []) do
+            with(b.delaying_realize, true) do
+              recur(bs)
+            end
+          end
+        end
+    recur(all_bs)
   end
 
 maybe_realize(s) =
-  delaying_realize() ?
-    push!(delayed_realizations(), s) :
-    for b in current_backends()
-      maybe_realize(b, s)
-    end
+  for b in current_backends()
+    maybe_realize(b, s)
+  end
 
-maybe_realize(::EagerRealization, b, s) =
+#=
+Backends might need to immediately realize a shape while supporting further modifications
+e.g., using boolean operations. Others, however, cannot do that and can only realize
+shapes when they have complete information about them.
+We are going to implement these two strategies using transactions. The first strategy 
+corresponds to an auto-commit transaction, while the second corresponds to a manual commit transaction.
+=#
+abstract type Transaction end
+struct AutoCommitTransaction <: Transaction end
+struct ManualCommitTransaction <: Transaction
+  proxies::Vector{<:Proxy}
+  ManualCommitTransaction() = new(Proxy[])
+end
+#=
+When a backend is in auto-commit mode, proxies are immediately realized.
+When a backend is in manual-commit mode, proxies are collected and only realized when the transaction ends.
+=#
+# By default, backends have a field called transaction containing a Parameter to a transaction.
+current_transaction(b) = b.transaction
+
+start_transaction(b) = start_transaction(b, current_transaction(b)())
+commit_transaction(b) = commit_transaction(b, current_transaction(b)())
+abort_transaction(b) = abort_transaction(b, current_transaction(b)())
+
+start_transaction(b, t::AutoCommitTransaction) = error("Cannot start an auto-commit transaction")
+commit_transaction(b, t::AutoCommitTransaction) = error("Cannot commit an auto-commit transaction")
+abort_transaction(b, t::AutoCommitTransaction) = error("Cannot abort an auto-commit transaction")
+
+start_transaction(b, t::ManualCommitTransaction) =
+  isempty(t.proxies) ? nothing : error("Cannot start a new transaction in backend $b while another one is active")
+
+commit_transaction(b, t::ManualCommitTransaction) =
+  while !isempty(t.proxies)
+    let s = popfirst!(t.proxies)
+      if ! realized(b, s)
+        force_realize(b, s)
+      end
+    end
+  end
+abort_transaction(b, t::ManualCommitTransaction) =
+  empty!(t.proxies)
+
+maybe_realize(b, s) = maybe_realize(current_transaction(b)(), b, s)
+maybe_delete(b, s) = maybe_delete(current_transaction(b)(), b, s)
+
+maybe_realize(::AutoCommitTransaction, b, s) =
   if ! realized(b, s)
     force_realize(b, s)
   end
+maybe_delete(::AutoCommitTransaction, b, s) =
+  if realized(b, s)
+    b_delete_refs(b, ref_values(b, s))
+    reset_ref(b, s)
+  end
 
-maybe_realize(t::LazyRealization, b, s) =
-  save_shape!(b, s)
+maybe_realize(t::ManualCommitTransaction, b, s) =
+  push!(t.proxies, s)
+maybe_delete(t::ManualCommitTransaction, b, s) =
+  if realized(b, s)
+    b_delete_refs(b, ref_values(b, s))
+    reset_ref(b, s)
+  else
+    let idx = findfirst(==(s), t.proxies)
+      if isnothing(idx)
+        @warn("Shape $s is not realized in $b neither is present in the current transaction")
+      else
+        deleteat!(t.proxies, idx)
+      end
+    end
+  end
 
+ensure_manual_commit_transaction(b) =
+  let t = current_transaction(b)()
+    t isa ManualCommitTransaction ?
+      t :
+      ManualCommitTransaction()
+  end
 
-abstract type LazyBackend{K,T} <: Backend{K,T} end
-realization_type(::Type{<:LazyBackend}) = LazyRealization()
-
-
-# By default, save_shape! assumes there is a field in the backend to store shapes
-export save_shape!
-save_shape!(b::Backend, s::Shape) = (push!(b.shapes, s); s)
+with_transaction(f, b) =
+  with(current_transaction(b), ensure_manual_commit_transaction(b)) do
+    start_transaction(b)
+    try
+      f()
+      commit_transaction(b)
+    catch e
+      abort_transaction(b)
+      rethrow(e)
+    end
+  end
 
 #=
 Frequently, we need to collect all shapes that are created:
@@ -348,18 +454,32 @@ delete_all()             # Deletes all shapes and the underlying resources (e.g.
 @defcb delete_all_shapes()
 @defcb delete_all()
 
-b_delete_all_shapes(b::Backend) = begin
-  empty!(KhepriBase.shape_to_file_locations)
-  empty!(KhepriBase.file_location_to_shapes)
-  #b_delete_all_annotations(b) This needs to be turned on after moving the annotations to the backend
-  b_delete_all_refs(b)
-end
+b_delete_all_annotations(b::Backend) =
+  let refs = annotation_refs_storage(b)
+    for (shape, _) in refs
+      try # It might have been deleted already
+        delete_shape(shape)
+      catch e
+      end
+    end
+    empty!(refs)
+  end
+
+b_delete_all_shapes(b::Backend) =
+  let refs = shape_refs_storage(b)
+    empty!(KhepriBase.shape_to_file_locations)
+    empty!(KhepriBase.file_location_to_shapes)
+    b_delete_all_annotations(b)
+    b_delete_all_shape_refs(b)
+    empty!(refs)
+  end
 
 
 @defcb all_shapes()
 b_all_shapes(b::Backend) =
-  Shape[maybe_existing_shape_from_ref(b, r) for r in b_all_refs(b)]
+  Shape[get_or_create_shape_from_ref_value(b, r) for r in b_all_shape_refs(b)]
 @bdef(b_shape_from_ref(r))
+@bdef(b_create_shape_from_ref_value(r))
 
 @defcbs set_length_unit(unit::String="")
 @defcb reset_backend()
@@ -379,6 +499,7 @@ macro defproxy(name_typename, parent, fields...)
     name_typename.args
   name_str = string(name)
   struct_name = esc(typename)
+  abstract_name = esc(Symbol("Abstract", typename))
   field_names = map(field -> field.args[1].args[1], fields)
   field_types = map(field -> esc(field.args[1].args[2]), fields)
   field_inits = map(field -> field.args[2], fields)
@@ -386,7 +507,7 @@ macro defproxy(name_typename, parent, fields...)
   field_renames = map(Symbol ∘ string, field_names)
   field_replacements = Dict(zip(field_names, field_renames))
   struct_fields = map((name,typ) -> :($(name) :: $(typ)), field_names, field_types) # To ensure identity, we need a mutable struct with const fields.
-  # It seams Julia 1.9 does not support const fields. 
+  # It seems Julia 1.9 does not support const fields. 
   #struct_fields = map((name,typ) -> Expr(:const, Expr(:(::), name, typ)), field_names, field_types)
   mk_param(name,typ,init) = Expr(:kw, name, init) #Expr(:kw, Expr(:(::), name, typ), init)
   opt_params = map(mk_param, field_renames, field_types, map(init -> replace_in(init, field_replacements), field_inits))
@@ -398,7 +519,8 @@ macro defproxy(name_typename, parent, fields...)
   selector_names = map(field_name -> esc(Symbol(name_str, "_", string(field_name))), field_names)
   quote
     export $(constructor_name), $(struct_name), $(predicate_name), $(selector_names...)
-    mutable struct $struct_name <: $parent
+    abstract type $(abstract_name) <: $(parent) end
+    mutable struct $struct_name <: $(abstract_name)
       $(struct_fields...)
     end
     # we don't need to convert anything because Julia already does that with the default constructor
@@ -409,32 +531,37 @@ macro defproxy(name_typename, parent, fields...)
     $(predicate_name)(v::Any) = false
     $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
           selector_names, field_names)...)
-    KhepriBase.mark_deleted(b::Backend, v::$(struct_name)) =
+    KhepriBase.realize(b::Backend, s::$(abstract_name)) =
+      $(Symbol(:b_, name))(b, $(map(f->:(ref_value(b, getproperty(s, $(QuoteNode(f))))), field_names)...))
+    KhepriBase.mark_deleted(b::Backend, v::$(abstract_name)) =
       if ! marked_deleted(b, v)
         really_mark_deleted(b, v)
         $(map(field_name -> :(mark_deleted(b, v.$(field_name))), field_names)...)
       end
-    KhepriBase.meta_program(v::$(struct_name)) =
+    KhepriBase.meta_program(v::$(abstract_name)) =
         Expr(:call, $(Expr(:quote, name)), $(map(field_name -> :(meta_program(v.$(field_name))), field_names)...))
+    KhepriBase.equal_spec(s1::$(abstract_name), s2::$(abstract_name)) =
+      $(reduce((a,b) -> :($a && $b),
+               map(field_name -> :(equal_spec(s1.$(field_name), s2.$(field_name))), field_names),
+               init=:true))
   end
 end
 
 #=
 There are entities who have parameters that depend on the type of backend, e.g., AutoCAD, Rhino, Revit, etc.
-As a concrete example, a material might have widely different realizations, depending on the backend, and some might require specific parameters.
-We will encapsulate such parameters in a BackendParameter object.
+As a concrete example, a material might have widely different realizations, depending on the backend. This
+is similar to what happens with shapes. The difference is that we want to change the way a material is 
+instantiated in a backend without requiring additional generic function specializations.
 =#
 
 set_on!(tb::Type{<:Backend}, proxy, ref) =
   begin
     proxy.data(tb, ref)
-    #reset_ref(b, proxy)
-    proxy
-  end
-set_on!(proxy, ref) =
-  begin
-  error("Don't do this!")
-    proxy.data(ref)
+    for b in current_backend()
+      if b isa tb
+        reset_ref(b, proxy)
+      end
+    end
     proxy
   end
 
@@ -443,25 +570,35 @@ Layers are just a classification mechanism.
 Some backends, however, can colorize the shapes that have that layer, or can make
 those shapes appear and disappear by activating or deactivating the layer.
 =#
-
-@defproxy(layer, Proxy, name::String="Layer", active::Bool=true, color::RGBA=rgba(1,1,1,1))
-create_layer(args...) =
-  let s = layer(args...)
+@defproxy(base_layer, Layer)
+@defproxy((layer, StandardLayer), Layer, name::String="Layer", active::Bool=true, color::RGBA=rgba(1,1,1,1))
+export layer
+create_layer(args...; kargs...) =
+  let s = layer(args...; kargs...)
     force_realize(s)
     s
   end
-realize(b::Backend, l::Layer) =
+#=
+realize(b::Backend, l::StandardLayer) =
   b_layer(b, l.name, l.active, l.color)
-current_layer(backends::Backends=current_backends()) = error("To be fixed")
-  #layer(ref=DynRefs(b=>ensure_ref(b, b_current_layer(b)) for b in backends))
+=#
+current_layer(backends::Backends=current_backends()) =
+  let b1 = first(backends),
+      layer = get_or_create_layer_from_ref_value(b1, b_current_layer_ref(b1))
+    for b in Base.tail(backends)
+      set_realization!(b, layer, b_current_layer_ref(b))
+    end
+    layer
+  end
+@bdef(b_create_layer_from_ref_value(r))
 
 current_layer(layer, backends::Backends=current_backends()) =
   for b in backends
-    b_current_layer(b, ref(b, layer).value)
+    b_current_layer_ref(b, ref_value(b, layer))
   end
 delete_all_shapes_in_layer(layer, backends::Backends=current_backends()) =
   for b in backends
-    b_delete_all_shapes_in_layer(b, ref(b, layer).value)
+    b_delete_all_shapes_in_layer(b, ref_value(b, layer))
   end
 
 #=
@@ -469,32 +606,39 @@ Materials
 A shape can be directly associated to a material or the shape can be associated
 to a layer and the layer is then associated to the material
 =#
-@defproxy(material, Proxy, layer::Layer=current_layer(), data::BackendParameter=BackendParameter())
+@defproxy((material, MaterialInLayer), Material, layer::Layer=current_layer(), data::BackendParameter=BackendParameter())
 material(name::String, bvs...) = material(layer(name, true), BackendParameter(bvs...))
+export material_in_layer
+const material_in_layer = material
 # Some backends prefer to use layers instead of materials
 export material_as_layer, with_material_as_layer
 const material_as_layer = Parameter(false)
 use_material_as_layer(b::Backend) = material_as_layer()
-with_material_as_layer(f::Function, b::Backend, m::Material) =
+with_material_as_layer(f::Function, b::Backend, m::MaterialInLayer) =
   use_material_as_layer(b) ?
-    let cur_layer = b_current_layer(b),
-        new_layer = ref(b, m.layer).value
+    let cur_layer = b_current_layer_ref(b),
+        new_layer = ref_value(b, m.layer)
       cur_layer == new_layer ?
         f() :
         begin
-          b_current_layer(b, new_layer)
+          b_current_layer_ref(b, new_layer)
           let res = f()
-            b_current_layer(b, cur_layer)
+            b_current_layer_ref(b, cur_layer)
             res
           end
         end
       end :
     f()
 
-realize(b::Backend, m::Material) =
-  b_get_material(b, m.layer, m.data(typeof(b)))
+# The ref_value of a BackendParameter is the ref_value for parameter value for the backend
+ref_value(b::Backend{K,T}, data::BackendParameter) where {K,T} = ref_value(b, data(typeof(b)))
+
+b_material(b::Backend, data) =
+  #b_get_material(b, m.layer, m.data(typeof(b)))
+  b_get_material(b, data)
+
 # By default, the layer is ignored in the creation of materials, as only a few backends depend on that.
-b_get_material(b::Backend, layer, spec) =
+b_material(b::Backend, layer, spec) =
   b_get_material(b, spec)
 
 #=
@@ -521,7 +665,7 @@ merge_backend_materials(b::Backend, v1, v2) = v1
 export set_material
 const set_material = set_on!
 # To facilitate accessing the material reference that is provided to the backends:
-material_ref(b::Backend, m::Material) = ref(b, m).value
+material_ref(b::Backend, m::Material) = ref_value(b, m)
 material_ref(b::Backend, s::Shape) = material_ref(b, s.material)
 
 # These are pre-defined materials that need to be specified by each backend.
@@ -551,7 +695,7 @@ const default_material = Parameter{Material}(material_basic)
 
 # To handle the direct use of shapes as paths:
 b_stroke(b::Backend, path::Shape, mat) =
-  and_mark_deleted(b, ref(b, path).value, path)
+  and_mark_deleted(b, ref_value(b, path), path)
 
 
 # This might be usable, so
@@ -571,11 +715,12 @@ macro defshape(supertype, name_typename, fields...)
     supertype == :Shape1D ? :default_curve_material :
     supertype == :Shape2D ? :default_surface_material :
     supertype == :Shape3D ? :default_material :
+    supertype == :Annotation ? :default_annotation_material :
     error("Unknown supertype:", supertype)
   esc(quote
     @defproxy($(name_typename), $(supertype), $(fields...), material::Material=$(default_material)())
-    realize(b::Backend, s::$(typename)) =
-      $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
+    #realize(b::Backend, s::$(typename)) =
+    #  $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
   end)
 end
 
@@ -615,60 +760,34 @@ However:
 
 The solution is to delay the conversion from text to the corresponding but specific backend data 
 =#
-# HACK: This needs to become a field of the backend. Each one knows about its annotations.
-const annotations = Shape[]
 
-export delete_all_annotations
-#=
-delete_all_annotations() =
-  begin
-    for shape in annotations
-      try
-        delete_shape(shape)
-      catch e
-      end
+findkey_that(p, dict) = begin
+  for k in keys(dict)
+    if p(k)
+      return k
     end
-    empty!(annotations)
   end
-=#
-add_annotation!(ann) =
-  begin
-    push!(annotations, ann)
-    ann
-  end
+  nothing
+end
 
-all_annotations() =
-  annotations
-
-prev_annotation_that(p) =
-  let idx = findfirst(p, annotations)
-    isnothing(idx) ?
+prev_annotation_that(p, b=top_backend()) =
+  let dict = annotation_refs_storage(b),
+      ann = findkey_that(p, dict)
+    isnothing(ann) ?
       nothing :
-      let ann = annotations[idx]
-        # Don't reuse annotations that have different materials
-        if true #ann.material.layer.color == default_material().layer.color
-          try # might have been previously deleted, e.g., by delete_all_shapes()
-            delete_shape(ann)
-          catch e
-            @warn("Was already deleted!")
-          finally
-            deleteat!(annotations, idx)
-          end
-          ann
-        else
-          nothing
-        end
+      begin
+         delete_shape(ann) # We delete it so that we can replace it with a new one
+         ann
       end
   end
 
+@defshape(Annotation, dimension, from::Loc=u0(), to::Loc=ux(), text::Any=string(distance(from, to)), size::Real=1, offset::Real=0.1)
+@defshape(Annotation, arc_dimension, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi, radius_text::Any=string(radius), amplitude_text::Any=string(amplitude), size::Real=1, offset::Real=0.1)
 
-@defshape(Shape1D, dimension, from::Loc=u0(), to::Loc=ux(), text::Any=string(distance(from, to)), size::Real=1, offset::Real=0.1)
-@defshape(Shape1D, arc_dimension, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi, radius_text::Any=string(radius), amplitude_text::Any=string(amplitude), size::Real=1, offset::Real=0.1)
-
-@defshape(Shape0D, labels, p::Loc=u0(), data::Vector{@NamedTuple{txt::Any, mat::Material, scale::Real}}=[])
+@defshape(Annotation, labels, p::Loc=u0(), data::Vector{@NamedTuple{txt::Any, mat::Material, scale::Real}}=[(txt="Hello, World!", mat=default_annotation_material(), scale=1.0)])
 
 export default_annotation_material
-const default_annotation_material = Parameter{Material}(material(layer("annotation", true, rgba(0, 0, 0.5, 1.0))))
+const default_annotation_material = Parameter{Material}(material_in_layer(layer("annotation", true, rgba(0, 0, 0.5, 1.0))))
 export default_annotation_scale
 const default_annotation_scale = Parameter{Real}(1.0)
 
@@ -684,45 +803,42 @@ export label
 label(p, txt, mat=default_annotation_material(), scale=default_annotation_scale()) =
   let ann = prev_annotation_that(ann->is_labels(ann) && isapprox(p, ann.p, atol=1e-3)),
       new_d = (txt=txt, mat=mat, scale=scale);
-    add_annotation!(
-      isnothing(ann) ?
-        labels(p, [new_d]) :
-        any(d->equal_illustration_properties(new_d, d), ann.data) ?
-          labels(p, ann.data) : 
-          labels(p, [ann.data..., new_d]))
+    isnothing(ann) ?
+      labels(p, [new_d]) :
+      any(d->equal_illustration_properties(new_d, d), ann.data) ?
+        labels(p, ann.data) : 
+        labels(p, [ann.data..., new_d])
   end
 
-@defshape(Shape1D, vectors_illustration, start::Loc=u0(), angle::Real=0, 
+@defshape(Annotation, vectors_illustration, start::Loc=u0(), angle::Real=0, 
   radii::Vector{Real}=[],
   radii_texts::Vector{Any}=[],
   mats::Vector{Material}=[])
 export vector_illustration
 vector_illustration(p, a, r, txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann->is_vectors_illustration(ann) && isequal(p, ann.start) && isequal(a, ann.angle))
-    add_annotation!(
-      isnothing(ann) ?
-        vectors_illustration(p, a, [r], [txt], [mat]) :
-        (txt, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
-          vectors_illustration(p, a, ann.radii, ann.radii_texts, ann.mats) :
-          vectors_illustration(p, a, [ann.radii..., r], [ann.radii_texts..., txt], [ann.mats..., mat]))
+    isnothing(ann) ?
+      vectors_illustration(p, a, [r], [txt], [mat]) :
+      (txt, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
+        vectors_illustration(p, a, ann.radii, ann.radii_texts, ann.mats) :
+        vectors_illustration(p, a, [ann.radii..., r], [ann.radii_texts..., txt], [ann.mats..., mat])
   end
 
-@defshape(Shape1D, radii_illustration, center::Loc=u0(), 
+@defshape(Annotation, radii_illustration, center::Loc=u0(), 
   radii::Vector{Real}=[],
   radii_texts::Vector{Any}=[], 
   mats::Vector{Material}=[])
 export radius_illustration
 radius_illustration(c, r, txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann->is_radii_illustration(ann) && isequal(c, ann.center))
-    add_annotation!(
-      isnothing(ann) ?
-        radii_illustration(c, [r], [txt], [mat]) :
-        (txt, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
-          radii_illustration(c, ann.radii, ann.radii_texts, ann.mats) :
-          radii_illustration(c, [ann.radii..., r], [ann.radii_texts..., txt], [ann.mats..., mat]))
+    isnothing(ann) ?
+      radii_illustration(c, [r], [txt], [mat]) :
+      (txt, mat.layer.color) in zip(ann.radii_texts, [mat.layer.color for mat in ann.mats]) ?
+        radii_illustration(c, ann.radii, ann.radii_texts, ann.mats) :
+        radii_illustration(c, [ann.radii..., r], [ann.radii_texts..., txt], [ann.mats..., mat])
   end
 
-@defshape(Shape1D, angles_illustration, center::Loc=u0(), 
+@defshape(Annotation, angles_illustration, center::Loc=u0(), 
   radii::Vector{Real}=[], 
   start_angles::Vector{Real}=[], 
   amplitudes::Vector{Real}=[],
@@ -733,20 +849,19 @@ radius_illustration(c, r, txt, mat=default_annotation_material()) =
 export angle_illustration
 angle_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann -> is_angles_illustration(ann) && isequal(c, ann.center))
-    add_annotation!(
-      isnothing(ann) ?
-        angles_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt], [mat]) :
-        angles_illustration(c, [ann.radii..., r], 
-                               [ann.start_angles..., s],
-                               [ann.amplitudes..., a],
-                               [ann.radii_texts..., r_txt], 
+    isnothing(ann) ?
+      angles_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt], [mat]) :
+      angles_illustration(c, [ann.radii..., r], 
+                           [ann.start_angles..., s],
+                           [ann.amplitudes..., a],
+                           [ann.radii_texts..., r_txt], 
                                [ann.start_angles_texts..., s_txt], 
                                [ann.amplitudes_texts..., a_txt],
-                               [ann.mats..., mat]))
+                               [ann.mats..., mat])
   end
 
 # This is similar to an angles illustration but not entirely equal
-@defshape(Shape1D, arcs_illustration, center::Loc=u0(),
+@defshape(Annotation, arcs_illustration, center::Loc=u0(),
   radii::Vector{Real}=[],
   start_angles::Vector{Real}=[],
   amplitudes::Vector{Real}=[],
@@ -757,16 +872,15 @@ angle_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_mater
 export arc_illustration
 arc_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_material()) =
   let ann = prev_annotation_that(ann -> is_arcs_illustration(ann) && isequal(c, ann.center))
-    add_annotation!(
-      isnothing(ann) ?
-        arcs_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt], [mat]) :
-        arcs_illustration(c, [ann.radii..., r],
-                             [ann.start_angles..., s],
-                             [ann.amplitudes..., a],
-                             [ann.radii_texts..., r_txt], 
-                             [ann.start_angles_texts..., s_txt], 
-                             [ann.amplitudes_texts..., a_txt], 
-                             [ann.mats..., mat]))
+    isnothing(ann) ?
+      arcs_illustration(c, [r], [s], [a], [r_txt], [s_txt], [a_txt], [mat]) :
+      arcs_illustration(c, [ann.radii..., r],
+                           [ann.start_angles..., s],
+                           [ann.amplitudes..., a],
+                           [ann.radii_texts..., r_txt],
+                           [ann.start_angles_texts..., s_txt], 
+                           [ann.amplitudes_texts..., a_txt], 
+                           [ann.mats..., mat])
   end
 
 #=@defshape(Shape1D, line_illustration, vertices::Locs=[u0(), ux()],
@@ -799,9 +913,10 @@ surface(c0::Shape, cs...) = surface([c0, cs...])
 surface_from = surface
 
 @defproxy(surface_path, Shape2D, path::ClosedPath=[circular_path()])
+#=
 realize(b::Backend, s::SurfacePath) =
   backend_fill(b, s.path)
-
+=#
 surface_boundary(s::Shape2D, backend::Backend=top_backend()) =
   backend_surface_boundary(backend, s)
 
@@ -962,47 +1077,47 @@ being the marching cubes the most popular one.
 
 @defshape(Shape3D, isosurface, frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(+1,+1,+1)])
 
-@defshape(Shape1D, extruded_point, profile::Union{PointPath,Shape0D}=point_path(), v::Vec=vz(1), cb::Loc=u0())
-@defshape(Shape2D, extruded_curve, profile::Union{Path,Shape1D}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
-@defshape(Shape3D, extruded_surface, profile::Union{Region,Shape2D}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape1D, extruded_point, profile::PointPath=point_path(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape2D, extruded_curve, profile::Path=circular_path(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape3D, extruded_surface, profile::Region=region(circular_path()), v::Vec=vz(1), cb::Loc=u0())
 
-extrusion(profile, h::Real) = extrusion(profile, vz(h))
-extrusion(profile, v::Vec) =
+extrusion(profile, h::Real, args...; kargs...) = extrusion(profile, vz(h), args...; kargs...)
+extrusion(profile, v::Vec, args...; kargs...) =
   if profile isa PointPath || is_point(profile)
-    extruded_point(profile, v)
+    extruded_point(profile, v, args...; kargs...)
   elseif profile isa Path || is_curve(profile)
-    extruded_curve(profile, v)
+    extruded_curve(profile, v, args...; kargs...)
   elseif profile isa Region || is_surface(profile)
-    extruded_surface(profile, v)
+    extruded_surface(profile, v, args...; kargs...)
   else
     error("Profile is neither a point nor a curve nor a surface")
   end
 
-@defshape(Shape1D, swept_point, path::Union{Path,Shape1D}=circular_path(), profile::Union{Loc,Shape0D}=point(), rotation::Real=0, scale::Real=1)
-@defshape(Shape2D, swept_curve, path::Union{Path,Shape1D}=circular_path(), profile::Union{Path,Shape1D}=circular_path(), rotation::Real=0, scale::Real=1)
-@defshape(Shape3D, swept_surface, path::Union{Path,Shape1D}=circular_path(), profile::Union{Region,Shape2D}=surface_circle(), rotation::Real=0, scale::Real=1)
+@defshape(Shape1D, swept_point, path::Path=circular_path(), profile::Path=point_path(), rotation::Real=0, scale::Real=1)
+@defshape(Shape2D, swept_curve, path::Path=circular_path(), profile::Path=circular_path(), rotation::Real=0, scale::Real=1)
+@defshape(Shape3D, swept_surface, path::Path=circular_path(), profile::Region=region(circular_path()), rotation::Real=0, scale::Real=1)
 
-sweep(path, profile, rotation=0, scale=1) =
+sweep(path, profile, args...; kargs...) =
   if profile isa PointPath || is_point(profile)
-    swept_point(path, profile, rotation, scale)
+    swept_point(path, profile, args...; kargs...)
   elseif profile isa Path || is_curve(profile)
-    swept_curve(path, profile, rotation, scale)
+    swept_curve(path, profile, args...; kargs...)
   elseif profile isa Region || is_surface(profile)
-    swept_surface(path, profile, rotation, scale)
+    swept_surface(path, profile, args...; kargs...)
   else
     error("Profile is neither a point nor a curve nor a surface")
   end
 
 @defshape(Shape1D, revolved_point, profile::Union{Loc,Point}=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defshape(Shape2D, revolved_curve, profile::Union{Shape,Path}=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
-@defshape(Shape3D, revolved_surface, profile::Union{Shape,Path,Region}=circle(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
-revolve(profile::Shape=point(x(1)), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi) =
+@defshape(Shape3D, revolved_surface, profile::Union{Shape,Path,Region}=region(circular_path()), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
+revolve(profile::Shape=point(x(1)), args...; kargs...) =
   if profile isa PointPath || is_point(profile)
-    revolved_point(profile, p, n, start_angle, amplitude)
+    revolved_point(profile, args...; kargs...)
   elseif profile isa Path || is_curve(profile)
-    revolved_curve(profile, p, n, start_angle, amplitude)
+    revolved_curve(profile, args...; kargs...)
   elseif profile isa Region || is_surface(profile)
-    revolved_surface(profile, p, n, start_angle, amplitude)
+    revolved_surface(profile, args...; kargs...)
   else
     error("Profile is neither a point nor a curve nor a surface")
   end
@@ -1013,13 +1128,13 @@ revolve(profile::Shape=point(x(1)), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle:
 @defshape(Shape2D, loft_curve_point, profile::Shape1D=circle(), point::Shape0D=point(z(1)))
 @defshape(Shape3D, loft_surface_point, profile::Shape2D=surface_circle(), point::Shape0D=point(z(1)))
 
-loft(profiles::Shapes=Shape[], rails::Shapes=Shape[], ruled::Bool=false, closed::Bool=false) =
+loft(profiles::Shapes=Shape[], args...; kargs...) =
   if all(is_point, profiles)
-    loft_points(profiles, rails, ruled, closed)
+    loft_points(profiles, args...; kargs...)
   elseif all(is_curve, profiles)
-    loft_curves(profiles, rails, ruled, closed)
+    loft_curves(profiles, args...; kargs...)
   elseif all(is_surface, profiles)
-    loft_surfaces(profiles, rails, ruled, closed)
+    loft_surfaces(profiles, args...; kargs...)
   elseif length(profiles) == 2
     let (p, sh) = if is_point(profiles[1])
                     (profiles[1], profiles[2])
@@ -1192,11 +1307,11 @@ frame_at(s::SurfaceCircle, u::Real, v::Real) = add_pol(s.center, u, v)
 surface_grid(_points::Vector{<:Vector{<:Loc}},
   _closed_u=false, _closed_v=false, _smooth_u=true, _smooth_v=true, _material=default_material();
   points=_points, closed_u=_closed_u, closed_v=_closed_v, smooth_u=_smooth_u, smooth_v=_smooth_v, material=_material) =
-  surface_grid(permutedims(hcat(points...)), closed_u, closed_v, smooth_u, smooth_v, material=material)
+  surface_grid(stack(_points, dims=1), closed_u, closed_v, smooth_u, smooth_v, material=material)
 # For interpolator to work, we need this:
 
 convert(::Type{Matrix{XYZ}}, ptss::Vector{Vector{<:Loc}}) =
-  permutedims(hcat(ptss...))
+  stack(ptss, dims=1)
 
 surface_domain(s::SurfaceGrid) = (0.0, 1.0, 0.0, 1.0)
 frame_at(s::SurfaceGrid, u::Real, v::Real) = evaluate(s, u, v)
@@ -1238,27 +1353,24 @@ bounding_box(shapes::Shapes=Shape[]) =
 backend_bounding_box(backend::Backend, shape::Shape) =
   throw(UndefinedBackendException())
 
-@defcbs delete_shape(s::Shape)
+@defcbs delete_shape(s::Proxy)
 
-b_delete_shape(b::Backend, s::Shape) =
-  if realized(b, s)
-    b_delete_refs(b, collect_ref(b, ref(b, s)))
-    reset_ref(b, s)
-  end
+b_delete_shape(b::Backend, s::Proxy) =
+  maybe_delete(b, s)
 
-delete_shapes(ss::Shapes=Shape[], bs=current_backends()) =
+delete_shapes(ss::Proxies=Proxy[], bs=current_backends()) =
   for s in ss
     delete_shape(s, bs)
   end
 
 export and_delete_shape, and_delete_shapes, and_mark_deleted
-and_delete_shape(r::Any, shape::Shape) =
+and_delete_shape(r::Any, shape::Proxy) =
   begin
     delete_shape(shape)
     r
   end
 
-and_delete_shapes(r::Any, shapes::Shapes) =
+and_delete_shapes(r::Any, shapes::Proxies) =
   begin
     delete_shapes(shapes)
     r
@@ -1308,11 +1420,11 @@ end
 @defcbs highlight_shape(s::Shape)
 @defcbs unhighlight_shape(s::Shape)
 b_highlight_shapes(b::Backend{K, T}, ss::Shapes) where {K, T} =
-  let refs = reduce(vcat, [collect_ref(b, s) for s in ss if realized(b, s)], init=T[])
+  let refs = reduce(vcat, [ref_values(b, s) for s in ss if realized(b, s)], init=T[])
     b_highlight_refs(b, refs)
   end
 b_unhighlight_shapes(b::Backend{K, T}, ss::Shapes) where {K, T} =
-  let refs = reduce(vcat, [collect_ref(b, s) for s in ss if realized(b, s)], init=T[])
+  let refs = reduce(vcat, [ref_values(b, s) for s in ss if realized(b, s)], init=T[])
     b_unhighlight_refs(b, refs)
   end
 b_highlight_shape(b::Backend, s::Shape) =
@@ -1409,7 +1521,7 @@ maybe_existing_shape_from_ref(b::Backend, r) = begin
   # If we were collecting shapes, we could check the collection
   # if traceability was on, we can search for the exact shape
   for (s, fl) in KhepriBase.shape_to_file_locations
-    if ref(b, s).value == r # Found it!
+    if ref_value(b, s) == r # Found it!
       return s
     end
   end
@@ -1490,3 +1602,16 @@ fill(path::Path;
       b_fill(backend, path, mat)
     end
   end
+
+
+###############################################################
+# GUI
+@defcb(gui_create(name))
+@defcb(gui_visible(gui, isvisible))
+@defcb(gui_add_folder(gui, name))
+@defcb(gui_add_button(gui, name, handler))
+@defcb(gui_add_checkbox(gui, name, curr, handler))
+@defcb(gui_add_slider(gui, name, min, max, step, curr, handler))
+@defcb(gui_add_dropdown(gui, name, options, curr, handler))
+@defcb(gui_add_slider_parameter(gui, name, min, max, step, parameter))
+@defcb(gui_add_button_load_file(gui, name, handler))
