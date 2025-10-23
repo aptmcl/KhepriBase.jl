@@ -22,25 +22,18 @@ We will start with the simplest of BIM elements, namely, levels, slabs, walls,
 windows and doors.
 =#
 
-abstract type BIMElement <: Proxy end
-abstract type Measure <: BIMElement end
-BIMElements = Vector{<:BIMElement}
-
 # Level
-@defproxy(level, Measure, height::Real=0, elements::BIMElements=BIMElement[])
-levels_cache = Dict{Real,Level}()
-maybe_replace(level::Level) = get!(levels_cache, level.height, level)
+@defproxy(level, UniqueProxy, height::Real=0, elements::BIMElements=BIMElement[])
 
 convert(::Type{Level}, h::Real) = level(h)
 
-current_levels() = values(levels_cache)
 default_level = OptionParameter{Level}(level())
 default_level_to_level_height = Parameter{Real}(3)
 upper_level(lvl=default_level(), height=default_level_to_level_height()) = level(lvl.height + height)
 Base.:(==)(l1::Level, l2::Level) = l1.height == l2.height
 
 #default implementation
-realize(b::Backend, s::Level) = s.height
+b_level(b::Backend, h, elements) = h
 
 export all_levels, default_level, default_level_to_level_height, upper_level
 
@@ -51,7 +44,19 @@ export all_levels, default_level, default_level_to_level_height, upper_level
 @defproxy(column, BIMShape, center::Loc, bottom_level::Any, top_level::Any, family::Any)
 =#
 
-abstract type BIMShape <: Shape3D end
+
+#=
+The main structure is the model, more specifically, the building information model.
+Given that multiple buldings might be under constructions simultaneously, it becomes 
+necessary to include all defaults (i.e., the parameters) that govern the creation of
+the building elements.
+=#
+
+struct BIM
+  levels::Vector{Level}
+  current_level::Level
+  elements::BIMElements
+end
 
 #=
 
@@ -63,7 +68,7 @@ This means that, apart from the wall's path, all other wall features will come
 from defaults. The base height will be determined by the current level and the
 wall height by the current level-to-level height. Finally, the wall thickness,
 constituent parts, thermal characteristics, and so on will come from the wall
-defaults.  In the case of wall, we will assume that current_wall_defaults() is
+defaults.  In the case of a wall, we will assume that current_wall_defaults() is
 a parameter that contains a set of wall parameters.  As an example of use, we
 might have:
 
@@ -195,11 +200,6 @@ family_registry(WallFamily) -> Vector{WallFamily}
 register_family(family)
 =#
 
-export Family, FamilyInstance, family, family_ref
-
-abstract type Family <: Proxy end
-abstract type FamilyInstance <: Family end
-
 family(f::Family) = f
 family(f::FamilyInstance) = f.family
 
@@ -297,9 +297,6 @@ end
 
 export set_family
 const set_family = set_on!
-
-#family_ref(b::Backend, m::Family) = ref(b, m).value
-#family_ref(b::Backend, s::BIMShape) = family_ref(b, s.family)
 
 #=
 
@@ -480,9 +477,7 @@ realize(b::B, w::Wall) where B<:Backend =
   realize(has_boolean_ops(B), b, w)
 
 realize(::HasBooleanOps{true}, b::Backend, w::Wall) =
-  #with_material_as_layer(b, w.family) do
     realize_wall_openings(b, w, realize_wall_no_openings(b, w), [w.doors..., w.windows...])
-  #end
 
 realize_wall_no_openings(b::Backend, w::Wall) =
   let w_base_height = w.bottom_level.height,
@@ -689,7 +684,7 @@ realize(b::Backend, s::Union{Door, Window}) =
       l_thickness = l_thickness(s.wall),
       thickness = s.family.thickness
     vcat(b_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family),
-         b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, ref(b, s.family.frame.material).value)
+         b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, ref_value(b, s.family.frame.material))
     )
   end
 
@@ -705,7 +700,7 @@ add_door(w::Wall=required(), loc::Loc=u0(), family::DoorFamily=default_door_fami
   let d = door(w, loc, family=family)
     push!(w.doors, d)
     delete_shape(w)
-    force_realize(w)
+    maybe_realize(w)
     w
   end
 
@@ -713,7 +708,7 @@ add!(d::Door) =
   let w = d.wall
     push!(w.doors, d)
     delete_shape(w)
-    force_realize(w)
+    maybe_realize(w)
     w
   end
 
@@ -722,7 +717,7 @@ add_window(w::Wall=required(), loc::Loc=u0(), family::WindowFamily=default_windo
   let d = window(w, loc, family=family)
     push!(w.windows, d)
     delete_shape(w)
-    force_realize(w)
+    maybe_realize(w)
     w
   end
 
