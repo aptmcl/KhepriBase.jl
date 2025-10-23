@@ -73,6 +73,13 @@ as layers or materials. In both cases, we need proxies.
 
 abstract type Proxy end
 
+const Proxies = Vector{<:Proxy}
+
+#=
+UniqueProxy (there are not two structurally identical instances of the same proxy)
+=#
+abstract type UniqueProxy <: Proxy end
+
 #=
 Shapes are a particular type of proxy:
 =#
@@ -110,3 +117,53 @@ const Shapes = Vector{<:Shape}
 const Shapes0D = Vector{<:Any}
 const Shapes1D = Vector{<:Any}
 const Shapes2D = Vector{<:Any}
+
+# Materials
+
+abstract type Material <: UniqueProxy end
+const Materials = Vector{<:Material}
+
+# Layers
+
+abstract type Layer <: UniqueProxy end
+const Layers = Vector{<:Layer}
+
+# Annotations
+
+abstract type Annotation <: Proxy end
+const Annotations = Vector{<:Annotation}
+
+# BIM Elements
+
+abstract type BIMElement <: Proxy end
+const BIMElements = Vector{<:BIMElement}
+
+abstract type BIMShape <: Shape3D end
+const BIMShapes = Vector{<:BIMShape}
+
+export Family, FamilyInstance, family, family_ref
+
+abstract type Family <: UniqueProxy end
+abstract type FamilyInstance <: Family end
+
+# Proxies are realized and referenced in a backend
+
+# References can be (single or multiple) native references
+abstract type GenericRef{K,T} end
+
+# Typically, we have a reference to the represented object
+struct NativeRef{K,T} <: GenericRef{K,T}
+  value::T
+end
+# Sometimes, the represented object require multiple references
+struct NativeRefs{K,T} <: GenericRef{K,T}
+  values::Vector{T}
+end
+
+Base.contains(r::NativeRef, v) = r.value == v
+Base.contains(r::NativeRefs, v) = v in r.values
+
+# Rarely, we have a reference that is a local value, such as a string or a number
+struct LocalRef{K,T} <: GenericRef{K,T} 
+  value::Any
+end
