@@ -20,6 +20,7 @@ abstract type Backend{K,T} end
 backend_name(b::Backend) = string(typeof(b))
 show(io::IO, b::Backend) = print(io, backend_name(b))
 
+
 # Backends need to implement operations or an exception is triggered
 struct UnimplementedBackendOperationException <: Exception
 	backend
@@ -45,6 +46,7 @@ end
 
 export new_refs
 new_refs(b::Backend{K,T}) where {K,T} = T[]
+
 ############################################################
 # Zeroth tier: curves. Not all backends support these.
 
@@ -186,23 +188,31 @@ b_surface_ellipse(b::Backend, c, rx, ry, mat) =
 
 @bdef(b_surface_closed_spline(ps, mat))
 
-b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, mat) =
-  b_surface_grid(b, ptss, closed_u, closed_v, smooth_u, smooth_v, smooth_u || smooth_v ? grid_interpolator(ptss) : nothing, mat)
+#=
+This implementation is based on independent quadstrips, therefore, it is impossible
+to be smooth in both u,v dimensions. We opt to be smooth in just the v dimension.
+=#
 
-b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, interpolator, mat) =
-  let (nu, nv) = size(ptss)
-    if smooth_u || smooth_v
-      ptss = [location_at(interpolator, u, v)
-	            for v in division(0, 1, smooth_v ? 4*nv-7 : nv-1),
-                  u in division(0, 1, smooth_u ? 4*nu-7 : nu-1)] # 2->1, 3->5, 4->9, 5->13
-	    (nu, nv) = size(ptss)
-	  end
-	  closed_u ?
-      vcat([b_quad_strip_closed(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1]...,
-	         (closed_v ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : new_refs(b))...) :
-	    vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_u, mat) for i in 1:nu-1]...,
-	         (closed_v ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_u, mat)] : new_refs(b))...)
+b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, mat) =
+  let ptss = maybe_interpolate_grid(ptss, smooth_u, smooth_v),
+      (nu, nv) = size(ptss)
+	  closed_v ?
+      vcat([b_quad_strip_closed(b, ptss[i,:], ptss[i+1,:], smooth_v, mat) for i in 1:nu-1]...,
+	         (closed_u ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_v, mat)] : new_refs(b))...) :
+	    vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_v, mat) for i in 1:nu-1]...,
+	         (closed_u ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_v, mat)] : new_refs(b))...)
   end
+
+export maybe_interpolate_grid
+maybe_interpolate_grid(ptss, smooth_u, smooth_v) =
+  smooth_u || smooth_v ? 
+    let interpolator = grid_interpolator(ptss),
+        (nu, nv) = size(ptss)
+      [location_at(interpolator, u, v)
+	     for u in division(0, 1, smooth_u ? 4*nu-7 : nu-1),
+           v in division(0, 1, smooth_v ? 4*nv-7 : nv-1)] # 2->1, 3->5, 4->9, 5->13
+    end :
+    ptss
 
 b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
   b_surface_grid(b, smooth_grid(ptss), closed_u, closed_v, true, true, mat)
@@ -392,6 +402,12 @@ b_torus(b::Backend, c, ra, rb, mat) =
       true, true,
     	true, true,
     	mat)
+
+export b_mesh_obj_fmt
+@bdef(b_mesh_obj_fmt(obj_name))
+export b_set_environment
+@bdef(b_set_environment(env_name, set_background))
+
 ##################################################################
 # Paths and Regions
 b_surface(b::Backend, path::ClosedPath, mat) =
@@ -433,8 +449,10 @@ b_extruded_point(b::Backend, path::PointPath, v, cb, mat) =
     b_line(b, [p, p + v], mat)
   end
 
+#=
 b_extruded_point(b::Backend, pt::Shape0D, v, cb, mat) =
   b_extruded_point(b, convert(Path, pt), v, cb, mat)
+=#
 
 b_extruded_curve(b::Backend, path::OpenPolygonalPath, v, cb, mat) =
  	let bs = path_vertices_on(path, cb),
@@ -457,6 +475,7 @@ b_extrusion(b::Backend, path, v, cb, bmat, tmat, smat) =
 
 b_extruded_curve(b::Backend, profile::CircularPath, v, cb, mat) =
   v.cs === cb.cs && iszero(v.x) && iszero(v.y) ?
+    # HACK: This is wrong. It should be an open cylinder
   	b_cylinder(b, add_xy(cb, profile.center.x, profile.center.y), profile.radius, v.z, nothing, nothing, mat) :
 	b_generic_prism(b,
 	  path_vertices_on(profile, cb),
@@ -467,9 +486,11 @@ b_extruded_curve(b::Backend, profile::CircularPath, v, cb, mat) =
 b_extruded_surface(b::Backend, profile, v, cb, mat) =
   b_extruded_surface(b, profile, v, cb, mat, mat, mat)
 
+#=
 b_extruded_surface(b::Backend, path::Path, v, cb, bmat, tmat, smat) =
   b_extruded_surface(b, region(path), v, cb, bmat, tmat, smat)
-  
+=#
+
 b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
   let outer = outer_path(profile),
       inners = inner_paths(profile)
@@ -499,10 +520,13 @@ b_extruded_curve(b::Backend, profile::PathSequence, v, cb, mat) =
   vcat([b_extruded_curve(b, subprofile, v, cb, mat) for subprofile in profile.paths]...)
 b_extruded_curve(b::Backend, profile::Path, v, cb, mat) =
   b_extruded_curve(b, convert(OpenPolygonalPath, profile), v, cb, mat)
+
+#=
 b_extruded_curve(b::Backend, profile::Shape1D, v, cb, mat) =
   b_extruded_curve(b, convert(Path, profile), v, cb, mat)
 b_extruded_surface(b::Backend, profile::Shape2D, v, cb, mat) =
   b_extruded_surface(b, convert(Region, profile), v, cb, mat)
+=#
 
 b_loft(b::Backend, profiles, closed, smooth, mat) =
   let ptss = path_vertices.(profiles),
@@ -511,11 +535,17 @@ b_loft(b::Backend, profiles, closed, smooth, mat) =
 	b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
   end
 
-b_swept_curve(b::Backend, path::Shape1D, profile::Shape1D, rotation, scaling, mat) =
-  b_sweep(b, convert(Path, path), convert(Path, profile), rotation, scaling, mat)
+b_swept_curve(b::Backend, path::Path, profile::Path, rotation, scaling, mat) =
+  b_sweep(b, path, profile, rotation, scaling, mat)
 
-b_swept_surface(b::Backend, path::Shape1D, profile::Shape2D, rotation, scaling, mat) =
-  b_sweep(b, convert(Path, path), convert(Region, profile), rotation, scaling, mat)
+#b_swept_curve(b::Backend, path::Shape1D, profile::Shape1D, rotation, scaling, mat) =
+#  b_sweep(b, convert(Path, path), convert(Path, profile), rotation, scaling, mat)
+
+b_swept_surface(b::Backend, path::Path, profile::Region, rotation, scaling, mat) =
+  b_sweep(b, path, profile, rotation, scaling, mat)
+
+#b_swept_surface(b::Backend, path::Shape1D, profile::Shape2D, rotation, scaling, mat) =
+#  b_sweep(b, convert(Path, path), convert(Region, profile), rotation, scaling, mat)
 
 b_sweep(b::Backend, path, profile::Region, rotation, scaling, mat) =
   let outer = outer_path(profile),
@@ -527,6 +557,9 @@ b_sweep(b::Backend, path, profile::Region, rotation, scaling, mat) =
       profiles = map_division(s->scale(profile, s, u0()), 1, scaling, length(frames)-1)
     vcat(b_sweep(b, path, outer, rotation, scaling, mat),
          [b_sweep(b, path, inner, rotation, scaling, mat) for inner in inners]...,
+         # HACK
+         # If the final profile coincides with the first, then it doesn't make sense
+         # to create the closing surfaces
          b_surface(b, path_on(profiles[1], frames[1]), mat),
          b_surface(b, path_on(profiles[end], frames[end]), mat))
   end
@@ -653,7 +686,7 @@ b_united_solids(b::Backend, source, mask, mat) =
   
 b_united(b::Backend, source, mask, mat) =
   and_mark_deleted(b,
-    b_unite_refs(b, vcat(collect_ref(b, source), collect_ref(b, mask))),
+    b_unite_refs(b, vcat(ref_values(b, source), ref_values(b, mask))),
     [source, mask])
 
 b_slice(b::Backend, shape, p, v, mat) =
@@ -911,7 +944,7 @@ b_text_size(b::Backend, str, size, mat) =
 ##################################################################
 # Illustrations
 
-@bdef(b_labels(p, strs, mat))
+@bdef(b_labels(p, data, mat))
 @bdef(b_radii_illustration(c, rs, rs_txts, mat))
 @bdef(b_vectors_illustration(p, a, rs, rs_txts, mat))
 @bdef(b_angles_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mat))
@@ -965,10 +998,10 @@ convert the generic material parameters into specific model parameters.
 Utilities for interactive development
 =#
 
-@bdef(b_all_refs())
+@bdef(b_all_shape_refs())
 
-b_delete_all_refs(b::Backend) =
-  b_delete_refs(b, b_all_refs(b))
+b_delete_all_shape_refs(b::Backend) =
+  b_delete_refs(b, b_all_shape_refs(b))
 
 b_delete_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
   for r in rs
@@ -996,7 +1029,7 @@ b_unhighlight_ref(b::Backend{K,T}, r::T) where {K,T} =
   missing_specialization(b, :b_unhighlight_ref, r)
 
 b_unhighlight_all_refs(b::Backend) =
-  b_unhighlight_refs(b, b_all_refs(b))
+  b_unhighlight_refs(b, b_all_shape_refs(b))
 
 # BIM
 export b_slab, b_roof, b_beam, b_column, b_free_column, b_wall, b_curtain_wall
@@ -1081,7 +1114,7 @@ b_beam(b::Backend, c, h, angle, family) =
   let c = loc_from_o_phi(c, angle),
 	    mat = material_ref(b, family.material)
   	with_material_as_layer(b, family.material) do
-      b_extruded_surface(b, family_profile(b, family), vz(h, c.cs), c,	mat, mat, mat)
+      b_extruded_surface(b, region(family_profile(b, family)), vz(h, c.cs), c,	mat, mat, mat)
 	  end
   end
 
@@ -1610,22 +1643,6 @@ target(b::T) where T = target(target_type(T), b)
 target(::LocalTarget, b) = b.target
 target(::RemoteTarget, b) = b.connection()
 
-
-#=
-Backends might need to immediately realize a shape while supporting further modifications
-e.g., using boolean operations. Others, however, cannot do that and can only realize
-shapes by request, presumably, when they have complete information about them.
-A middle term might be a backend that supports both modes.
-=#
-export RealizationType, EagerRealization, LazyRealization
-abstract type RealizationType end
-struct EagerRealization <: RealizationType end
-struct LazyRealization <: RealizationType end
-
-# By default, we use eager realization
-realization_type(::Type{<:Backend}) = EagerRealization()
-maybe_realize(b::T, s) where T = maybe_realize(realization_type(T), b, s)
-
 #=
 Backends might not provide camera information. In that case
 we need to provide it in the frontend.
@@ -1705,3 +1722,5 @@ with_batch_processing(f) =
   finally
     foreach(b_stop_batch_processing, current_backends())
   end
+
+
