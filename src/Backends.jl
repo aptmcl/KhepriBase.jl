@@ -350,7 +350,7 @@ export action_handler, sequence_handler, wrapper_handler, update_parameter_handl
 action_handler(f) =
   (args...) -> f()
 
-sequence_handler(handler...) = 
+sequence_handler(handlers...) = 
   (args...) -> for handler in handlers
                   handler(args...)
                end
