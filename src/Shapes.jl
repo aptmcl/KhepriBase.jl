@@ -214,7 +214,7 @@ Even if a backend is eager, it might be necessary to temporarily delay the
 realization of shapes, particularly, when the construction is incremental.
 In that case, we collect all created shapes and then realize them at the end.
 =#
-
+# THIS IS OBSOLETE!!!
 with_transaction(fn) = 
   let all_bs = current_backends(),
       recur(bs) =
@@ -1608,7 +1608,7 @@ fill(path::Path;
 # GUI
 @defcb(gui_create(name))
 @defcb(gui_visible(gui, isvisible))
-@defcb(gui_add_folder(gui, name))
+@defcb(gui_add_folder(gui, name, closed=false))
 @defcb(gui_add_button(gui, name, handler))
 @defcb(gui_add_checkbox(gui, name, curr, handler))
 @defcb(gui_add_slider(gui, name, min, max, step, curr, handler))
