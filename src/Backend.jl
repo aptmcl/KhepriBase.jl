@@ -1257,6 +1257,17 @@ generate an exception if there is none.
 struct UndefinedBackendException <: Exception end
 showerror(io::IO, e::UndefinedBackendException) = print(io, "No current backend.")
 
+#=
+Moving Khepri to a multi-threaded model requires that each thread uses its own
+current backend.
+
+This means that current_backends should only be used to intentionally broadcast
+an operation to several backends at the same time. In all other cases, current_backend
+should be used to retrieve the backend for the current thread. 
+
+TO BE CONTINUED!
+=#
+
 # We can have several backends active at the same time
 const Backends = Tuple{Vararg{Backend}}
 const current_backends = Parameter{Backends}(())
@@ -1270,10 +1281,15 @@ delete_current_backend(b::Backend) =
  
 # but for backward compatibility reasons, we might also select just one.
 top_backend() =
-  let bs = current_backends()
-    isempty(bs) ?
-      throw(UndefinedBackendException()) :
-	    bs[1]
+  let bs = current_backends(),
+      i = 0
+    while isempty(bs) && i < 10
+      @info("Waiting for a backend to be available...")
+      sleep(5)
+      bs = current_backends()
+      i += 1
+    end
+    isempty(bs) ? throw(UndefinedBackendException()) : bs[1]
   end
 
 # The current_backend function is just an alias for current_backends
