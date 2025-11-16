@@ -165,27 +165,29 @@ Another option is simply to have a socket server running on the Julia side, that
 After connecting, we can expect a string that specifies the backend to instantiate and then we simply initialize it.
 =#
 
-const default_khepri_server_port = Parameter(12345)
-export default_khepri_server_port
-const khepri_server_task = Parameter{Union{Nothing,Task}}(nothing)
-
-export ensure_khepri_server_running
-ensure_khepri_server_running() =
-  if isnothing(khepri_server_task())
-    khepri_server_task(errormonitor(Threads.@spawn start_khepri_server()))
-  end
-
-
-const backend_init_map = Dict{String, Function}()
-add_client_backend_init_function(name, init_function) = begin
-  backend_init_map[name] = init_function
-  ensure_khepri_server_running()
+const socket_backend_init_map = Dict{String, Function}()
+add_socket_backend_init_function(name, init_function) = begin
+  socket_backend_init_map[name] = init_function
+  ensure_khepri_socket_server_running()
 end
-get_client_backend_init_function(name) =
-  get(backend_init_map, name) do 
-    error("Requested backend '$name' is not available!")
+get_socket_backend_init_function(name) =
+  get(socket_backend_init_map, name) do 
+    error("Requested socket backend '$name' is not available!")
   end
-export add_client_backend_init_function
+export add_socket_backend_init_function
+
+# The server code
+
+const default_khepri_socket_server_host = Parameter(ip"127.0.0.1")
+const default_khepri_socket_server_port = Parameter(12345)
+export default_khepri_socket_server_host, default_khepri_socket_server_port
+const khepri_socket_server_task = Parameter{Union{Nothing,Task}}(nothing)
+
+export ensure_khepri_socket_server_running
+ensure_khepri_socket_server_running() =
+  if isnothing(khepri_socket_server_task())
+    khepri_socket_server_task(errormonitor(Threads.@spawn run_khepri_socket_server()))
+  end
 
 #=
 Upon connection and initialization, it might be
@@ -195,18 +197,33 @@ To that end, we will use the main generic function,
 as a metaphor for the startup function that is the
 entry program of C, Java, etc, programs.
 =#
-export main
-main(b::Backend) = nothing
+export main, main_callback
+main_callback = Parameter{Function}((b)->nothing)
 
+#=
 
-export start_khepri_server
-start_khepri_server(port=default_khepri_server_port()) =
-  let server = listen(port)
-    #println("Listening on port $port")
+Khepri is not yet multithreaded, so we don't want multiple designs to be 
+generated simultaneously, as they depend on lots of global state, not only
+that of Khepri itself (e.g., current_cs, current_backends, etc) but also
+that of the user code.
+For the moment, we can process one client at a time, so we will use a global lock.
+=#
+const khepri_gil = ReentrantLock()
+
+main(b::Backend) = 
+  lock(khepri_gil) do
+    with(current_backends, (b,)) do
+      main_callback()(b)
+    end
+  end
+
+export run_khepri_socket_server
+run_khepri_socket_server(host=default_khepri_socket_server_host(), port=default_khepri_socket_server_port()) =
+  let server = listen(host, port)
     while true
-      println("Waiting for a new client")
+      println("Waiting for a connection")
       let conn = accept(server)
-        println("Client connected")
+        println("Connected!")
         let backend_name = decode(Val(:CS), Val(:string), conn),
             init_func = get_client_backend_init_function(backend_name),
             backend = invokelatest(init_func, conn)
@@ -220,117 +237,57 @@ start_khepri_server(port=default_khepri_server_port()) =
   end
 
 #=
-Another option is to use WebSockets.
+Another option is to use WebSockets. In this case, the backend is strictly a client.
+This also needs an HTTP server to handle the initial handshake and a few more features.
 =#
 
-struct WebSocketConnection <: IO
-  server::HTTP.Server
-  router::HTTP.Router
+struct WebSocketBackend{K,T} <: RemoteBackend{K,T}
+  name::String
   websocket::HTTP.WebSockets.WebSocket
   buffer::IOBuffer
-  WebSocketConnection(server, router, websocket) =
-    new(server, router, websocket, IOBuffer(UInt8[], read=true, write=true))
-end
-
-# Sending stuff is trivial.
-
-send(c::WebSocketConnection, buffer) = 
-  HTTP.WebSockets.send(c.websocket, take!(buffer))
-
-receive(c::WebSocketConnection) = 
-  let bytes = HTTP.WebSockets.receive(c.websocket)
-    #println("Received data of length $(length(bytes))")
-    take!(c.buffer) # Clear the buffer
-    write(c.buffer, bytes)
-    seekstart(c.buffer)
-    c.buffer
-  end
-
-# Finally, the backend itself:
-mutable struct WebSocketBackend{K,T} <: RemoteBackend{K,T}
-  name::String
-  host::String
-  port::Int
-  connection::Union{WebSocketConnection,Missing}
   static_remote::NamedTuple
   remote::NamedTuple
   transaction::Parameter{Transaction}
   refs::References{K,T}
   handlers::Vector{Function}
 
-  WebSocketBackend{K,T}(name, host, port, remote) where {K,T} =
-    new(name, host, port,
-        missing, remote, remote_functions(remote),
-        Parameter{Transaction}(AutoCommitTransaction()), References{K,T}(), Function[])
+  WebSocketBackend{K,T}(name, websocket, static_remote) where {K,T} =
+    new{K,T}(name, websocket, IOBuffer(UInt8[], read=true, write=true), 
+        static_remote, remote_functions(static_remote), 
+        Parameter{Transaction}(AutoCommitTransaction()), 
+        References{K,T}(), Function[])
 end
 
-#=
-Given that this is a server, we can also allow clients to make requests by using,
-e.g., the fetch API. To that end, we need to be able to add request handlers.
-Be careful about deadlocks and such.
-=#
-export register_handler, register_http_handler, register_websocket_handler
+# A WebSocketBackend is always connected
+connection(b::WebSocketBackend) = b
 
-const using_http_requests = Parameter(false)
+send(b::WebSocketBackend, buffer) = 
+  HTTP.WebSockets.send(b.websocket, take!(buffer))
 
-register_handler(c::WebSocketBackend{K,T}, target, handler) where {K,T} =
-  if using_http_requests()
-    let request_str = "/api/"*randstring()
-      register_http_handler(c, request_str, handler)
-      request_str
-    end
-  else
-    register_websocket_handler(c, target, handler)
+receive(b::WebSocketBackend) = 
+  let bytes = HTTP.WebSockets.receive(b.websocket)
+    take!(b.buffer) # Clear the buffer
+    write(b.buffer, bytes)
+    seekstart(b.buffer)
+    b.buffer
   end
 
-register_websocket_handler(c::WebSocketBackend{K,T}, target, handler) where {K,T} =
-  (push!(c.handlers, handler); length(c.handlers))
+# Finally, the server
+mutable struct WebSocketServer
+  server::HTTP.Server
+  router::HTTP.Router
+  handlers::Vector{Function}
 
-call_handler(c::WebSocketBackend{K,T}, target, args...) where {K,T} =
-  let handler = c.handlers[target]
-    handler(args...)
-  end
+  WebSocketServer(server, router) =
+    new(server, router, Function[])
+end
 
-export process_requests
-#=
-Note that we cannot process client requests while server requests are being processed.
-This means that the handler being called must do its job and return as soon as possible, 
-so that other requests can be processed.
-=#
-process_requests(c::WebSocketBackend{K,T}) where {K,T} =
-  let namespace = c.static_remote[1].namespace # An awful way of retrieving the namespace
-    while true
-      let buf = receive(c.connection),
-          target = decode(namespace, Val(:size), buf),
-          args_len = decode(namespace, Val(:size), buf),
-          args = Any[]
-        for i in 1:args_len
-          push!(args, decode(namespace, Val(:Any), buf))
-        end
-        println("Calling '$target' with $(args)")
-        let result_code = -1 # Default: no result
-          try
-            call_handler(c, target, args...)
-          catch e
-            println("Error occurred while processing request '$target': $e")
-            showerror(stdout, e, catch_backtrace())
-            result_code = -2 # Error
-          finally
-            # Signal that the request has been processed
-            let buf = IOBuffer()
-              encode(namespace, Val(:int), buf, result_code)
-              send(c.connection, buf)
-            end
-          end
-        end
-      end
-    end
-  end
-
-#=
-Another option is to use HTTP handlers.
-=#
 export register_http_handler
+register_http_handler(c::WebSocketServer, target, handler) =
+  let request_str = "/api/"*randstring()
+    HTTP.register!(c.connection.router, "GET", target, req -> (handler(request_parameters(req)...); HTTP.Response(200, "0")))
+    request_str
+  end
 
 # Backends encode the parameters as query parameters p0, p1, p2, ...
 # e.g., /api/handler?p0=val0&p1=val1&...
@@ -339,8 +296,161 @@ request_parameters(req) =
     map(i -> haskey(dict, "p$i") ? dict["p$i"] : error("Missing parameter p$i"), 0:(length(dict)-1))
   end
 
-register_http_handler(c::WebSocketBackend{K,T}, target, handler) where {K,T} =
-  HTTP.register!(c.connection.router, "GET", target, req -> (handler(request_parameters(req)...); HTTP.Response(200, "0")))
+const websocket_backend_init_map = Dict{String, Function}()
+add_websocket_backend_init_function(name, init_function) = begin
+  websocket_backend_init_map[name] = init_function
+end
+get_websocket_backend_init_function(name) =
+  get(websocket_backend_init_map, name) do 
+    error("Requested websocket backend '$name' is not available!")
+  end
+export add_websocket_backend_init_function
+
+const default_khepri_websocket_server_host = Parameter(ip"127.0.0.1")
+const default_khepri_websocket_server_port = Parameter(12346)
+export default_khepri_websocket_server_host, default_khepri_websocket_server_port
+
+run_khepri_websocket_server(host=default_khepri_websocket_server_host(), port=default_khepri_websocket_server_port()) =
+  let router = HTTP.Router(),
+      server = HTTP.listen!(host, port) do http
+                 if HTTP.WebSockets.isupgrade(http.message)
+                    @info("WebSocket connection request for $(http.message.target)")
+                    let backend_name = http.message.target[2:end] # Remove leading '/'
+                      HTTP.WebSockets.upgrade(http) do websocket
+                        let init_func = get_websocket_backend_init_function(backend_name),
+                            backend = invokelatest(init_func, websocket)
+                          invokelatest(before_connecting, backend)
+    	                    invokelatest(after_connecting, backend)
+                          add_current_backend(backend)
+                          invokelatest(main, backend)
+                        end
+                        wait()
+                      end
+                    end
+                 else
+                    @info("HTTP request for $(http.message.target)")
+                    HTTP.streamhandler(router)(http)
+                 end
+               end
+    @info("Khepri started on URL:http://$(host):$(port)")
+    khepri_websocket_server(WebSocketServer(server, router))
+  end
+
+export khepri_websocket_server
+const khepri_websocket_server = LazyParameter(run_khepri_websocket_server)
+
+#=
+Because this relies on HTTP, we can also serve files, such as HTML, JS, CSS, images, etc.
+=#
+
+const content_type_header = Dict(
+  "html"=>"text/html",
+  "js"  =>"application/javascript",
+  "css" =>"text/css",
+  "png" =>"image/png",
+  "jpg" =>"image/jpeg",
+  "jpeg"=>"image/jpeg",
+  "obj" =>"text/plain",
+  "mtl" =>"text/plain",
+  "hdr" =>"image/hdr",
+  "gltf"=>"model/gltf+json",
+  "glb" =>"model/gltf-binary",
+  "bin" =>"application/octet-stream",
+  )
+
+get_file_content_type(path) =
+  ["Content-Type" => content_type_header[splitext(path)[2][2:end]]] # splitext gives (root, .ext)
+
+export http_response_with_file, http_response_with_resource_file
+http_response_with_file(path) =
+  HTTP.Response(200, get_file_content_type(path), open(s -> read(s, String), path))
+
+#=
+We need to support a PATH-based approach to resources.
+=#
+export resources_folder, add_resource_folder!
+const resources_folder = [joinpath(@__DIR__, "..", "resources")]
+
+add_resource_folder!(path) =
+  pushfirst!(filter!(==(path), resources_folder), path)
+
+http_response_with_resource_file(filename) =
+  begin
+    for res_path in resources_folder
+      let full_path = joinpath(res_path, filename)
+        if isfile(full_path)
+          return http_response_with_file(full_path)
+        end
+      end
+    end
+    HTTP.Response(404, "File not found: $filename")
+  end
+
+#=
+Each backend can register handlers for client requests.
+=#
+export register_handler
+register_handler(c::WebSocketBackend{K,T}, target, handler) where {K,T} =
+  (push!(c.handlers, handler); length(c.handlers))
+
+call_handler(c::WebSocketBackend{K,T}, target, args...) where {K,T} =
+  let handler = c.handlers[target]
+    handler(args...)
+  end
+
+#=
+Note that we cannot process client requests while server requests are being processed.
+This means that the handler being called must do its job and return as soon as possible, 
+so that other requests can be processed.
+=#
+export process_requests
+process_requests(c::WebSocketBackend{K,T}) where {K,T} =
+  let namespace = c.static_remote[1].namespace # An awful way of retrieving the namespace
+    while true
+      let buf = try 
+                  receive(c) 
+                catch e
+                  if WebSockets.isok(e)
+                    @warn("Connection to backend '$(c.name)' lost.")
+                    delete_current_backend(c)
+                    break
+                  else
+                    rethrow(e)
+                  end
+                end,
+          target = decode(namespace, Val(:size), buf),
+          args_len = decode(namespace, Val(:size), buf),
+          args = Any[]
+        for i in 1:args_len
+          push!(args, decode(namespace, Val(:Any), buf))
+        end
+        @warn("Calling '$target' with $(args)")
+        let result_code = -1 # Default: no result
+          try
+            lock(khepri_gil) do
+              call_handler(c, target, args...)
+            end
+          catch e
+            @warn("Error occurred while processing request '$target': $e")
+            showerror(stdout, e, catch_backtrace())
+            result_code = -2 # Error
+          finally
+            # Signal that the request has been processed
+            let buf = IOBuffer()
+              encode(namespace, Val(:int), buf, result_code)
+              send(c, buf)
+            end
+          end
+        end
+      end
+    end
+  end
+
+export start_processing_requests
+start_processing_requests(c::WebSocketBackend{K,T}) where {K,T} = begin
+  @async process_requests(c)
+  c
+end
 
 #=
 It is going to be useful to have an algebra of handlers.
@@ -363,8 +473,8 @@ A particular case of handler is the one that updates a parameter.
 =#
 
 update_parameter_handler(parameter::Parameter{T}) where {T} = 
-  using_http_requests() ?
-    (str) -> parameter(parse(T, str)) :
+  #using_http_requests() ?
+  #  (str) -> parameter(parse(T, str)) :
     (val) -> parameter(convert(T, val))
 
 

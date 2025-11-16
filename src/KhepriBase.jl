@@ -92,11 +92,6 @@ include("Camera.jl")
 export khepribase_interface_file
 khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
 
-export resources_pathname, models_pathname, environments_pathname
-const resources_pathname = joinpath(@__DIR__, "..", "resources")
-const models_pathname = joinpath(resources_pathname, "models")
-const environments_pathname = joinpath(resources_pathname, "environments")
-
 # From ColorTypes
 export RGB, RGBA, rgb, rgba, red, green, blue, alpha
 
