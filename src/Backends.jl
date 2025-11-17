@@ -448,7 +448,7 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
 
 export start_processing_requests
 start_processing_requests(c::WebSocketBackend{K,T}) where {K,T} = begin
-  @async process_requests(c)
+  Threads.@spawn process_requests(c)
   c
 end
 
