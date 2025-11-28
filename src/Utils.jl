@@ -50,6 +50,10 @@ division(t0, t1, n::Int, include_last::Bool=true) =
     collect(include_last ? iter : take(iter, n))
   end
 
+# Support for ranges in tuples
+division((t0, t1)::Tuple, n::Int, include_last::Bool=true) = division(t0, t1, n, include_last)
+
+
 # Generic objects are processed using map_division
 division(obj::Any, n::Int) = map_division(identity, obj, n)
 
@@ -75,9 +79,8 @@ map_division(f, u0, u1, nu::Int, include_last_u::Bool, v0, v1, nv::Int, include_
 # Grasshopper compatibility
 
 export series, crossref, remap, cull
-
-series(start::Real, step::Real, count::Int) =
-  range(start, step=step, length=count)
+# series generation
+series(s, n, c) = collect(range(s, step=n, length=floor(Int, c)))
 
 export crossref_holistic
 crossref_holistic(arr1, arr2) =
@@ -91,6 +94,30 @@ remap(in, (min_in, max_in), (min_out, max_out)) =
 
 cull(template, as) =
   [a for (a, t) in zip(as, cycle(template)) if t]
+
+export map_longest, list_item, cull_pattern, shift_list, cull_index, repeat_data, duplicate_data, random_values, grid_rectangular
+# Helper for Grasshopper 'Longest List' behavior
+map_longest(f, args...) = begin
+    arrays = [x isa AbstractArray ? x : [x] for x in args]
+    lens = length.(arrays)
+    max_len = maximum(lens)
+    [f([arr[min(i, l)] for (arr, l) in zip(arrays, lens)]...) for i in 1:max_len]
+end
+
+# Sets / List Helpers
+list_item(L, i::Number) = L[mod(floor(Int, i), length(L)) + 1]
+list_item(L, I::AbstractArray) = list_item.(Ref(L), I)
+cull_pattern(L, P) = L[Bool.([P[mod(i-1, length(P))+1] for i in 1:length(L)])]
+shift_list(L, s) = circshift(L, -s)
+cull_index(L, I) = L[setdiff(1:length(L), mod.(floor.(Int, I), length(L)) .+ 1)]
+repeat_data(L, n) = [L[mod(i-1, length(L))+1] for i in 1:floor(Int, n)]
+duplicate_data(L, n) = collect(Iterators.flatten([fill(x, floor(Int, n)) for x in L]))
+random_values(d, n, s) = (rng = MersenneTwister(floor(Int, s)); d[1] .+ rand(rng, floor(Int, n)) .* (d[2] - d[1]))
+
+grid_rectangular(p, xn, yn, xs=1, ys=1) =
+  [p+vxy(xs*x, ys*y) for x in 0:xn-1, y in 0:yn-1]
+
+########################################
 
 # To create paths from paths
 export path_replace_suffix
