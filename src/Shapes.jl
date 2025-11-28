@@ -77,7 +77,7 @@ map_ref(f::Function, b::Backend{K,T}) where {K,T} = r -> map_ref(f, b, r)
 
 map_ref(f::Function, b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = f(r.value)
 map_ref(f::Function, b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = map(f, r.values)
-map_ref(f::Function, b::Backend, s::Proxy) = map_ref(b, f, ref(b, s))
+map_ref(f::Function, b::Backend, s::Proxy) = map_ref(f, b, ref(b, s))
 
 #=
 A Proxy can have subtypes whose realization might need separate reference storage 
@@ -88,7 +88,7 @@ This means that we need to retrieve the appropriate storage for each subtype.
 
 
 # This is so stupid. We need call-next-method.
-really_mark_deleted(b::Backend, s::Proxy) = (error("BREAK!"); delete!(refs_storage(b, s), s))
+really_mark_deleted(b::Backend, s::Proxy) = delete!(refs_storage(b, s), s)
 really_mark_deleted(b::Backend, s::Any) = nothing
 mark_deleted(b::Backend, s::Proxy) = really_mark_deleted(b, s)
 # We also need to propagate this to all dependencies
@@ -922,8 +922,9 @@ surface_boundary(s::Shape2D, backend::Backend=top_backend()) =
 
 curve_domain(s::Shape1D, backend::Backend=top_backend()) =
   backend_curve_domain(backend, s)
+# THIS SHOULD APPLY ONLY TO Shape1D but was generalized to Shape to apply to Move
 map_division(f::Function, s::Shape1D, n::Int) =
-  b_map_division(backend(s), f, s, n)
+  map_division(f, shape_path(s), n)
 
 surface_domain(s::Shape2D, backend::Backend=top_backend()) =
   backend_surface_domain(backend, s)
@@ -1186,16 +1187,21 @@ b_loft_surfaces(b::Backend, profiles, rails, ruled, closed, mat) =
      b_surface(b, paths[end], mat)]
   end
 
-@defproxy(move, Shape3D, shape::Shape=point(), v::Vec=vx())
-@defproxy(scale, Shape3D, shape::Shape=point(), s::Real=1, p::Loc=u0())
-@defproxy(rotate, Shape3D, shape::Shape=point(), angle::Real=0, p::Loc=u0(), v::Vec=vz(1,p.cs))
-@defproxy(transform, Shape3D, shape::Shape=point(), xform::Loc=u0())
-@defproxy(mirror, Shape3D, shape::Shape=point(), p::Loc=u0(), n::Vec=vx())
+# THIS SHOULD BE TYPE-PARAMETRIC. Moving a Shape0D should return a Shape0D, etc
+@defproxy(move, Shape1D, shape::Shape=point(), v::Vec=vx())
+@defproxy(scale, Shape1D, shape::Shape=point(), s::Real=1, p::Loc=u0())
+@defproxy(rotate, Shape1D, shape::Shape=point(), angle::Real=0, p::Loc=u0(), v::Vec=vz(1,p.cs))
+@defproxy(transform, Shape1D, shape::Shape=point(), xform::Loc=u0())
+@defproxy(mirror, Shape1D, shape::Shape=point(), p::Loc=u0(), n::Vec=vx())
 
 export union_mirror
 union_mirror(shape, p, v) =
   union(shape, mirror(shape, p, v))
 #####################################################################
+
+shape_path(s::Move) = translate(shape_path(s.shape), s.v)
+shape_region(s::Move) = translate(shape_region(s.shape), s.v)
+
 
 # We can also translate some shapes
 translate(s::Line, v::Vec) = line(map(p -> p+v, s.vertices))
