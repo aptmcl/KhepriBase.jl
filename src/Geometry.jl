@@ -116,6 +116,55 @@ inject_polygon_vertices_at_indexes(pts1, pts2, (i, j)) =
 
 export closest_vertices_indexes, inject_polygon_vertices_at_indexes, subtract_polygon_vertices
 
+polygon_centroid(pts) =
+  let pts = ensure_no_repeated_locations(pts),
+      p0 = pts[1],
+      cs = p0.cs, # Assume planar polygon defined by first point's CS or World if simpler
+      # For robustness, we should compute a best fit plane or use the normal if available.
+      # But sticking to existing CS is standard in Khepri.
+      # However, if the CS is world but the polygon is vertical, x/y projection fails.
+      # Let's project to the local CS of the first point if it's not World,
+      # or compute 3D centroid.
+      # 3D Centroid of a planar polygon is the weighted sum of triangle centroids.
+      centroid = vxyz(0, 0, 0, world_cs),
+      area_sum = 0.0,
+      n = length(pts)
+    for i in 2:n-1
+      let p1 = pts[i],
+          p2 = pts[i+1],
+          tri_center = (p0 + p1 + p2) / 3.0,
+          tri_area = triangle_area(distance(p0, p1), distance(p1, p2), distance(p2, p0)) # Approximate
+          # Better to use cross product area for signed area if normal is known,
+          # but for convex or simple polygons, sum of absolute areas from a vertex might fail for concave.
+          # The standard way is using cross products.
+          v1 = p1 - p0,
+          v2 = p2 - p0,
+          cross_prod = cross(v1, v2),
+          tri_area_vec = norm(cross_prod) / 2.0
+        centroid += (p0 + p1 + p2) * tri_area_vec / 3.0
+        area_sum += tri_area_vec
+      end
+    end
+    area_sum > 1e-9 ? centroid / area_sum : p0
+  end
+
+is_coplanar(pts::Locs, tol=1e-9) =
+  length(pts) <= 3 ||
+  let p0 = pts[1],
+      n = vz(0)
+    for i in 2:length(pts)-1
+      let v1 = pts[i] - p0,
+          v2 = pts[i+1] - p0,
+          cross_prod = cross(v1, v2)
+        if norm(cross_prod) > tol
+          n = unitized(cross_prod)
+          break
+        end
+      end
+    end
+    norm(n) < tol ? true : all(p -> abs(dot(p - p0, n)) < tol, pts)
+  end
+
 # Intersection
 
 segments_intersection(p0, p1, p2, p3) =
@@ -146,8 +195,63 @@ lines_intersection(p0, p1, p2, p3) =
     end
   end
 
-export epsilon, nearest_point_from_lines, circle_from_three_points
+export epsilon, nearest_point_from_lines, circle_from_three_points, incircle, fit_line, fit_circle, is_coplanar, polygon_centroid
 const epsilon = Parameter(1e-8)
+
+incircle(p1, p2, p3) =
+  let a = distance(p2, p3),
+      b = distance(p1, p3),
+      c = distance(p1, p2),
+      s = (a + b + c) / 2,
+      r = sqrt((s - a) * (s - b) * (s - c) / s),
+      center = (p1 * a + p2 * b + p3 * c) / (a + b + c)
+    (center, r)
+  end
+
+fit_line(pts::Locs) =
+  let n = length(pts),
+      mean_p = sum(pts) / n,
+      dx = sum(map(p -> (p.x - mean_p.x)^2, pts)),
+      dy = sum(map(p -> (p.y - mean_p.y)^2, pts))
+    if dx < 1e-9 # Vertical line
+      (Inf, mean_p.x)
+    else
+      let m = sum(map(p -> (p.x - mean_p.x) * (p.y - mean_p.y), pts)) / dx,
+          c = mean_p.y - m * mean_p.x
+        (m, c)
+      end
+    end
+  end
+
+fit_circle(pts::Locs) =
+  # Project points to 2D using the CS of the first point or a best fit plane
+  let cs = length(pts) >= 3 ?
+             cs_from_o_vx_vy(pts[1], pts[2]-pts[1], pts[3]-pts[1]) :
+             pts[1].cs,
+      pts_2d = [in_cs(p, cs) for p in pts],
+      n = length(pts),
+      sum_x = sum(p -> p.x, pts_2d),
+      sum_y = sum(p -> p.y, pts_2d),
+      sum_x2 = sum(p -> p.x^2, pts_2d),
+      sum_y2 = sum(p -> p.y^2, pts_2d),
+      sum_xy = sum(p -> p.x * p.y, pts_2d),
+      sum_x3 = sum(p -> p.x^3, pts_2d),
+      sum_y3 = sum(p -> p.y^3, pts_2d),
+      sum_xy2 = sum(p -> p.x * p.y^2, pts_2d),
+      sum_x2y = sum(p -> p.x^2 * p.y, pts_2d),
+      C = n * sum_x2 - sum_x^2,
+      D = n * sum_xy - sum_x * sum_y,
+      E = n * sum_x3 + n * sum_xy2 - (sum_x2 + sum_y2) * sum_x,
+      G = n * sum_y2 - sum_y^2,
+      H = n * sum_x2y + n * sum_y3 - (sum_x2 + sum_y2) * sum_y,
+      a = (H * D - E * G) / (C * G - D^2),
+      b = (H * C - E * D) / (D^2 - G * C),
+      c = -(a * sum_x + b * sum_y + sum_x2 + sum_y2) / n,
+      cx = -a / 2,
+      cy = -b / 2,
+      r = sqrt(max(0, cx^2 + cy^2 - c))
+    (in_cs(xy(cx, cy), cs), r)
+  end
 
 nearest_point_from_lines(l0p0::Loc, l0p1::Loc, l1p0::Loc, l1p1::Loc) =
   let u = l0p1-l0p0,
