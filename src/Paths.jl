@@ -65,7 +65,20 @@ export empty_path,
        path_tolerance,
        is_closed_path,
        is_smooth_path,
-       coincident_path_location
+       coincident_path_location,
+       path_tangent,
+       path_curvature,
+       path_torsion,
+       is_planar,
+       path_centroid,
+       point_in_path,
+       closest_point_at_path,
+       arc_3pt,
+       rectangle_3pt,
+       tween_path,
+       fillet_path,
+       shatter,
+       divide_path_by_length
 
 path_tolerance = Parameter(1e-10)
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < path_tolerance()
@@ -137,6 +150,27 @@ arc_path(center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=
   false ? #amplitude < 0 ?
     ArcPath(center, radius, start_angle + amplitude, - amplitude) :
     ArcPath(center, radius, start_angle, amplitude)
+
+arc_3pt(p1::Loc, p2::Loc, p3::Loc) =
+  let (c, r) = circle_from_three_points(p1, p2, p3),
+      a1 = pol_phi(p1 - c),
+      a2 = pol_phi(p2 - c),
+      a3 = pol_phi(p3 - c),
+      da = a3 - a1
+    # Check if a2 is strictly between a1 and a3
+    # Normalize angles relative to a1
+    let a2_rel = mod(a2 - a1, 2pi),
+        a3_rel = mod(a3 - a1, 2pi)
+      if a2_rel < a3_rel
+        # CCW direction is correct
+        arc_path(c, r, a1, a3_rel)
+      else
+        # CW direction, need to go the other way
+        arc_path(c, r, a1, a3_rel - 2pi)
+      end
+    end
+  end
+
 path_domain(path::ArcPath) = (0, path.amplitude)
 location_at(path::ArcPath, ϕ::Real) =
   let s = sign(path.amplitude*1.0), # just to circunvent a Julia bug https://github.com/JuliaLang/julia/issues/31949.
@@ -160,6 +194,8 @@ location_at(path::CircularPath, ϕ::Real) =
                    vpol(1, ϕ + π, path.center.cs),
                    vz(1, path.center.cs))
 planar_path_normal(path::CircularPath) = uvz(path.center.cs)
+path_centroid(path::CircularPath) = path.center
+is_planar(path::CircularPath) = true
 
 ## Elliptic path
 struct EllipticPath <: ClosedPath
@@ -175,6 +211,8 @@ location_at(path::EllipticPath, ϕ::Real) =
                    vxy(cos(ϕ + π), sin(ϕ + π), path.center.cs),
                    vz(1, path.center.cs))
 planar_path_normal(path::EllipticPath) = uvz(path.center.cs)
+path_centroid(path::EllipticPath) = path.center
+is_planar(path::EllipticPath) = true
 
 ## Rectangular path
 struct RectangularPath <: ClosedPath
@@ -186,9 +224,21 @@ rectangular_path(corner::Loc=u0(), dx::Real=1, dy::Real=1) =
   RectangularPath(corner, dx, dy)
 centered_rectangular_path(p, dx, dy) =
   rectangular_path(p-vxy(dx/2, dy/2), dx, dy)
+
+rectangle_3pt(p1::Loc, p2::Loc, p3::Loc) =
+  let v1 = p2 - p1,
+      v2 = p3 - p2,
+      w = norm(v1),
+      h = norm(v2),
+      angle = pol_phi(v1)
+    rotate(rectangular_path(p1, w, h), angle, p1)
+  end
+
 path_domain(path::RectangularPath) = (0, path_length(path))
 location_at(path::RectangularPath, d::Real) = location_at_length(path, d)
 planar_path_normal(path::RectangularPath) = uvz(path.corner.cs)
+path_centroid(path::RectangularPath) = path.corner + vxy(path.dx/2, path.dy/2)
+is_planar(path::RectangularPath) = true
 
 struct OpenPolygonalPath <: OpenPath
     vertices::Locs
@@ -222,6 +272,8 @@ path_end(path::ClosedPath) = path_start(path)
 path_domain(path::PolygonalPath) = (0, path_length(path))
 location_at(path::PolygonalPath, ϕ::Real) = location_at_length(path, ϕ)
 planar_path_normal(path::PolygonalPath) = vertices_normal(path_vertices(path))
+path_centroid(path::PolygonalPath) = polygon_centroid(path.vertices)
+is_planar(path::PolygonalPath) = is_coplanar(path.vertices)
 
 join_paths(p1::OpenPolygonalPath, p2::OpenPolygonalPath) =
     coincident_path_location(p1.vertices[end], p2.vertices[1]) ?
@@ -270,6 +322,36 @@ location_at(interpolator::ParametricSpline, ϕ) =
       n = vxyz(d2[1], d2[2], d2[3], world_cs)#,
     norm(n) <= 1e-9 ? loc_from_o_vz(p, t) : loc_from_o_vx_vy(p, n, cross(t, n))
   end
+
+path_tangent(path::Union{OpenSplinePath,ClosedSplinePath}, t::Real) =
+  let d1 = derivative(path.interpolator, t)
+    unitized(vxyz(d1[1], d1[2], d1[3], world_cs))
+  end
+
+path_curvature(path::Union{OpenSplinePath,ClosedSplinePath}, t::Real) =
+  let d1 = derivative(path.interpolator, t),
+      d2 = derivative(path.interpolator, t, nu=2),
+      v1 = vxyz(d1[1], d1[2], d1[3], world_cs),
+      v2 = vxyz(d2[1], d2[2], d2[3], world_cs),
+      c = cross(v1, v2)
+    norm(c) / norm(v1)^3
+  end
+
+path_torsion(path::Union{OpenSplinePath,ClosedSplinePath}, t::Real) =
+  let d1 = derivative(path.interpolator, t),
+      d2 = derivative(path.interpolator, t, nu=2),
+      d3 = derivative(path.interpolator, t, nu=3),
+      v1 = vxyz(d1[1], d1[2], d1[3], world_cs),
+      v2 = vxyz(d2[1], d2[2], d2[3], world_cs),
+      v3 = vxyz(d3[1], d3[2], d3[3], world_cs),
+      c = cross(v1, v2)
+    dot(c, v3) / norm(c)^2
+  end
+
+path_centroid(path::SplinePath) =
+  polygon_centroid(path.vertices) # Approximation
+
+is_planar(path::SplinePath) = is_coplanar(path.vertices)
 
 map_division(func::Function, path::OpenSplinePath, n::Integer) =
   let interpol = path.interpolator,
@@ -1133,6 +1215,49 @@ length_at_location(path::Path, p::Loc, t0=0, t1=path_length(path)) =
       length_at_location(path, p, ts[max(1, idx-1)], ts[min(length(ts), idx+1)])
     end
 
+closest_point_at_path(p::Loc, path::Path) =
+  location_at_length(path, length_at_location(path, p))
+
+point_in_path(p::Loc, path::Path) =
+  is_closed_path(path) &&
+  let cs = path.vertices[1].cs, # Use the coordinate system of the first vertex
+      p = in_cs(p, cs),
+      vs = in_cs(path_vertices(path), cs),
+      n = length(vs),
+      c = false
+    for i in 1:n
+      let p1 = vs[i],
+          p2 = vs[i%n+1]
+        if ((p1.y > p.y) != (p2.y > p.y)) &&
+           (p.x < (p2.x - p1.x) * (p.y - p1.y) / (p2.y - p1.y) + p1.x)
+          c = !c
+        end
+      end
+    end
+    c
+  end
+
+path_tangent(path::Path, t::Real) =
+  let p1 = location_at(path, t),
+      p2 = location_at(path, t + 1e-5)
+    unitized(p2 - p1)
+  end
+
+path_curvature(path::Path, t::Real) =
+  let p1 = location_at(path, t - 1e-5),
+      p2 = location_at(path, t),
+      p3 = location_at(path, t + 1e-5),
+      a = distance(p1, p2),
+      b = distance(p2, p3),
+      c = distance(p3, p1)
+    4 * triangle_area(a, b, c) / (a * b * c)
+  end
+
+path_torsion(path::Path, t::Real) = 0.0 # Default for planar curves
+
+is_planar(path::Path) = is_coplanar(path_vertices(path))
+path_centroid(path::Path) = polygon_centroid(path_vertices(path))
+
 export Grid, grid, grid_interpolator, location_at
 
 grid_interpolator(ptss) =
@@ -1183,6 +1308,58 @@ location_at(interpolator::Tuple{Spline2D,Spline2D,Spline2D}, u, v) =
   end
 location_at(grid::Grid, u, v) =
   location_at(grid.interpolator(), u, v)
+
+tween_path(path1::Path, path2::Path, t::Real) =
+  let pts1 = path_vertices(path1),
+      pts2 = path_vertices(path2),
+      n = max(length(pts1), length(pts2)),
+      pts1 = map_division(identity, path1, n),
+      pts2 = map_division(identity, path2, n)
+    spline_path(map((p1, p2) -> intermediate_loc(p1, p2, t), pts1, pts2))
+  end
+
+fillet_path(path::PolygonalPath, radius::Real) =
+  # NOTE: This implementation creates a chamfer (straight line connection) rather than a true circular arc fillet.
+  # This returns a PolygonalPath with increased vertex count. Future improvements should return a Path containing Arc segments.
+  let pts = path.vertices,
+      n = length(pts),
+      closed = is_closed_path(path),
+      new_pts = Loc[]
+    for i in 1:(closed ? n : n - 1)
+      let p0 = pts[i == 1 ? (closed ? n : 1) : i - 1],
+          p1 = pts[i],
+          p2 = pts[i == n ? (closed ? 1 : n) : i + 1],
+          v1 = unitized(p1 - p0),
+          v2 = unitized(p2 - p1),
+          angle = acos(dot(-v1, v2)),
+          d = radius / tan(angle / 2)
+        if d > distance(p0, p1) / 2 || d > distance(p1, p2) / 2
+          push!(new_pts, p1)
+        else
+          push!(new_pts, p1 - v1 * d)
+          push!(new_pts, p1 + v2 * d) # Should be an arc
+        end
+      end
+    end
+    if !closed
+      push!(new_pts, pts[end])
+    end
+    is_closed_path(path) ? closed_polygonal_path(new_pts) : open_polygonal_path(new_pts)
+  end
+
+shatter(path::Path, ts::Vector{<:Real}) =
+  let ts = sort(filter(t -> 0 < t < path_length(path), ts)),
+      starts = [0.0; ts],
+      ends = [ts; path_length(path)]
+    [subpath(path, s, e) for (s, e) in zip(starts, ends)]
+  end
+
+divide_path_by_length(path::Path, len::Real) =
+  let l = path_length(path),
+      n = floor(Int, l / len),
+      ts = [i * len for i in 1:n]
+    map(t -> location_at_length(path, t), ts)
+  end
 
 # We need to support convertion to OBJ format
 export write_obj
