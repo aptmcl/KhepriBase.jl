@@ -115,7 +115,7 @@ duplicate_data(L, n) = collect(Iterators.flatten([fill(x, floor(Int, n)) for x i
 random_values(d, n, s) = (rng = MersenneTwister(floor(Int, s)); d[1] .+ rand(rng, floor(Int, n)) .* (d[2] - d[1]))
 
 grid_rectangular(p, xn, yn, xs=1, ys=1) =
-  [p+vxy(xs*x, ys*y) for x in 0:xn-1, y in 0:yn-1]
+  [p+vxy(xs*x, ys*y) for x in -xn:xn for y in -yn:yn]
 
 ########################################
 
