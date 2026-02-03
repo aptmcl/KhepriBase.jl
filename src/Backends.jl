@@ -624,3 +624,18 @@ b_set_ground(b::IOBackend, level, mat) =
 	  b.ground_level=level
 	  b.ground_material=mat
   end
+
+###############################################################################
+# LazyBackend is for backends that delay shape realization by storing shapes
+# locally for later batch processing (e.g., structural analysis backends).
+# Unlike RemoteBackend which sends shapes to external applications, LazyBackend
+# collects shapes in memory and processes them later.
+
+export LazyBackend
+abstract type LazyBackend{K,T} <: Backend{K,T} end
+
+# LazyBackend stores shapes using save_shape! instead of immediately realizing them
+maybe_realize(b::LazyBackend, s) = save_shape!(b, s)
+
+# Default save_shape! for LazyBackend - backends should specialize this
+save_shape!(b::LazyBackend, s::Shape) = s
