@@ -48,6 +48,7 @@ export X, XY, XYZ, Pol, Pold, Cyl, Sph,
        norm,
        angle_between,
        rotate_vector,
+       world_raw,
        raw_point,
        raw_plane
 
@@ -263,14 +264,44 @@ end
 @coord_constructs(x(x), X(x), x, 0.0, 0.0)
 @coord_constructs(xy(x, y), XY(x, y), x, y, 0.0)
 @coord_constructs(y(y), XY(0, y), 0.0, y, 0.0)
-@coord_constructs(pol(ρ, ϕ), Pol(ρ, ϕ), ρ*cos(ϕ), ρ*sin(ϕ), 0.0)
-@coord_constructs(pold(ρ, ϕ), Pold(ρ, ϕ), ρ*cosd(ϕ), ρ*sind(ϕ), 0.0)
+pol(ρ::Real=0, ϕ::Real=0, cs::CS=current_cs()) =
+  let (s, c) = sincos(ϕ)
+    Pol(ρ, ϕ, cs, Vec4f(ρ*c, ρ*s, 0.0, 1.0))
+  end
+vpol(ρ::Real=1, ϕ::Real=1, cs::CS=current_cs()) =
+  let (s, c) = sincos(ϕ)
+    VPol(ρ, ϕ, cs, Vec4f(ρ*c, ρ*s, 0.0, 0.0))
+  end
+pold(ρ::Real=0, ϕ::Real=0, cs::CS=current_cs()) =
+  let (s, c) = sincosd(ϕ)
+    Pold(ρ, ϕ, cs, Vec4f(ρ*c, ρ*s, 0.0, 1.0))
+  end
+vpold(ρ::Real=1, ϕ::Real=1, cs::CS=current_cs()) =
+  let (s, c) = sincosd(ϕ)
+    VPold(ρ, ϕ, cs, Vec4f(ρ*c, ρ*s, 0.0, 0.0))
+  end
 @coord_constructs(xyz(x, y, z), XYZ(x, y, z), x, y, z)
 @coord_constructs(xz(x, z), XYZ(x, 0, z), x, 0.0, z)
 @coord_constructs(yz(y, z), XYZ(0, y, z), 0.0, y, z)
 @coord_constructs(z(z), XYZ(0, 0, z), 0.0, 0.0, z)
-@coord_constructs(cyl(ρ, ϕ, z), Cyl(ρ, ϕ, z), ρ*cos(ϕ), ρ*sin(ϕ), z)
-@coord_constructs(sph(ρ, ϕ, ψ), Sph(ρ, ϕ, ψ), ρ*cos(ϕ)*sin(ψ), ρ*sin(ϕ)*sin(ψ), ρ*cos(ψ))
+cyl(ρ::Real=0, ϕ::Real=0, z::Real=0, cs::CS=current_cs()) =
+  let (s, c) = sincos(ϕ)
+    Cyl(ρ, ϕ, z, cs, Vec4f(ρ*c, ρ*s, z, 1.0))
+  end
+vcyl(ρ::Real=1, ϕ::Real=1, z::Real=1, cs::CS=current_cs()) =
+  let (s, c) = sincos(ϕ)
+    VCyl(ρ, ϕ, z, cs, Vec4f(ρ*c, ρ*s, z, 0.0))
+  end
+sph(ρ::Real=0, ϕ::Real=0, ψ::Real=0, cs::CS=current_cs()) =
+  let (sϕ, cϕ) = sincos(ϕ),
+      (sψ, cψ) = sincos(ψ)
+    Sph(ρ, ϕ, ψ, cs, Vec4f(ρ*cϕ*sψ, ρ*sϕ*sψ, ρ*cψ, 1.0))
+  end
+vsph(ρ::Real=1, ϕ::Real=1, ψ::Real=1, cs::CS=current_cs()) =
+  let (sϕ, cϕ) = sincos(ϕ),
+      (sψ, cψ) = sincos(ψ)
+    VSph(ρ, ϕ, ψ, cs, Vec4f(ρ*cϕ*sψ, ρ*sϕ*sψ, ρ*cψ, 0.0))
+  end
 
 # Selectors
 
@@ -323,20 +354,26 @@ Base.getproperty(s::Union{XYZ,VXYZ}, sym::Symbol) =
     sym === :ψ ? (0 == s.x == s.y == s.z ? 0 : mod(atan(sqrt(s.x^2 + s.y^2), s.z), 2pi)) :
     getfield(s, sym)
 Base.getproperty(s::Union{Pol,VPol}, sym::Symbol) =
-    sym === :x ? s.ρ*cos(s.ϕ) :
-    sym === :y ? s.ρ*sin(s.ϕ) :
+    sym === :x ? getfield(s, :raw)[1] :
+    sym === :y ? getfield(s, :raw)[2] :
+    sym === :z ? 0 :
+    sym === :ψ ? 0 :
+    getfield(s, sym)
+Base.getproperty(s::Union{Pold,VPold}, sym::Symbol) =
+    sym === :x ? getfield(s, :raw)[1] :
+    sym === :y ? getfield(s, :raw)[2] :
     sym === :z ? 0 :
     sym === :ψ ? 0 :
     getfield(s, sym)
 Base.getproperty(s::Union{Cyl,VCyl}, sym::Symbol) =
-    sym === :x ? s.ρ*cos(s.ϕ) :
-    sym === :y ? s.ρ*sin(s.ϕ) :
+    sym === :x ? getfield(s, :raw)[1] :
+    sym === :y ? getfield(s, :raw)[2] :
     sym === :ψ ? 0 :
     getfield(s, sym)
 Base.getproperty(s::Union{Sph,VSph}, sym::Symbol) =
-    sym === :x ? s.ρ*cos(s.ϕ)*sin(s.ψ) :
-    sym === :y ? s.ρ*sin(s.ϕ)*sin(s.ψ) :
-    sym === :z ? s.ρ*cos(s.ψ) :
+    sym === :x ? getfield(s, :raw)[1] :
+    sym === :y ? getfield(s, :raw)[2] :
+    sym === :z ? getfield(s, :raw)[3] :
     getfield(s, sym)
 
 #=
@@ -351,7 +388,7 @@ gen_addition(C, c, Vc, vc) =
 (+)(p::Union{X,XY}, v::Union{VX,VXY,VPol,VPold}) =
     p.cs === v.cs ? xy(p.x + v.x, p.y + v.y, p.cs) : p + in_cs(v, p.cs)
 (+)(p::Union{X,XY,XYZ}, v::Union{VX,VXY,VPol,VPold,VXYZ,VCyl,VSph}) =
-    p.cs === v.cs ? xyz(p.x + v.x, p.y + v.y, p.z + v.z, p.cs) : p + in_cs(v, p.cs)
+    p.cs === v.cs ? xyz(getfield(p, :raw) + getfield(v, :raw), p.cs) : p + in_cs(v, p.cs)
 (+)(p::Pol, v::Union{VX,VXY,VPol,VPold}) =
     pol(xy(p) + v)
 (+)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
@@ -365,7 +402,7 @@ gen_addition(C, c, Vc, vc) =
 (-)(p::Union{X,XY}, v::Union{VX,VXY,VPol,VPold}) =
     p.cs === v.cs ? xy(p.x - v.x, p.y - v.y, p.cs) : p - in_cs(v, p.cs)
 (-)(p::Union{X,XY,XYZ}, v::Union{VX,VXY,VPol,VPold,VXYZ,VCyl,VSph}) =
-    p.cs === v.cs ? xyz(p.x - v.x, p.y - v.y, p.z - v.z, p.cs) : p - in_cs(v, p.cs)
+    p.cs === v.cs ? xyz(getfield(p, :raw) - getfield(v, :raw), p.cs) : p - in_cs(v, p.cs)
 (-)(p::Pol, v::Union{VX,VXY,VPol,VPold}) =
     pol(xy(p) - v)
 (-)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) =
@@ -377,7 +414,7 @@ gen_addition(C, c, Vc, vc) =
 (-)(p::Union{X,XY}, q::Union{X,XY,Pol,Pold}) =
     p.cs === q.cs ? vxy(p.x - q.x, p.y - q.y, p.cs) : p - in_cs(q, p.cs)
 (-)(p::Union{X,XY,XYZ}, q::Union{X,XY,XYZ,Pol,Pold,XYZ,Cyl,Sph}) =
-    p.cs === q.cs ? vxyz(p.x - q.x, p.y - q.y, p.z - q.z, p.cs) : p - in_cs(q, p.cs)
+    p.cs === q.cs ? vxyz(getfield(p, :raw) - getfield(q, :raw), p.cs) : p - in_cs(q, p.cs)
 (-)(p::Pol, v::Union{X,XY,Pol,Pold}) =
     vpol(xy(p) - v)
 (-)(p::Cyl, v::Union{X,XY,XYZ,Pol,Pold,Cyl,Sph}) =
@@ -437,7 +474,7 @@ vsph(v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) = vsph(v.ρ, v.ϕ, v.ψ, v.cs)
 (+)(p::Union{VX,VXY}, v::Union{VX,VXY,VPol,VPold}) =
     p.cs === v.cs ? vxy(p.x + v.x, p.y + v.y, p.cs) : p + in_cs(v, p.cs)
 (+)(p::Union{VX,VXY,VXYZ}, v::Union{VX,VXY,VPol,VPold,VXYZ,VCyl,VSph}) =
-    p.cs === v.cs ? vxyz(p.x + v.x, p.y + v.y, p.z + v.z, p.cs) : p + in_cs(v, p.cs)
+    p.cs === v.cs ? vxyz(getfield(p, :raw) + getfield(v, :raw), p.cs) : p + in_cs(v, p.cs)
 (+)(p::VPol, v::Union{VX,VXY,VPol,VPold}) =
     vpol(vxy(p) + v)
 (+)(p::VCyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) =
@@ -446,11 +483,11 @@ vsph(v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) = vsph(v.ρ, v.ϕ, v.ψ, v.cs)
     vsph(vxyz(p) + v)
 
 (-)(p::VX, v::VX) =
-    p.cs === v.cs ? vx(p.x - v.x, p.cs) : p + in_cs(v, p.cs)
+    p.cs === v.cs ? vx(p.x - v.x, p.cs) : p - in_cs(v, p.cs)
 (-)(p::Union{VX,VXY}, v::Union{VX,VXY,VPol,VPold}) =
-    p.cs === v.cs ? vxy(p.x - v.x, p.y - v.y, p.cs) : p + in_cs(v, p.cs)
+    p.cs === v.cs ? vxy(p.x - v.x, p.y - v.y, p.cs) : p - in_cs(v, p.cs)
 (-)(p::Union{VX,VXY,VXYZ}, v::Union{VX,VXY,VXYZ,VPol,VPold,VXYZ,VCyl,VSph}) =
-    p.cs === v.cs ? vxyz(p.x - v.x, p.y - v.y, p.z - v.z, p.cs) : p + in_cs(v, p.cs)
+    p.cs === v.cs ? vxyz(getfield(p, :raw) - getfield(v, :raw), p.cs) : p - in_cs(v, p.cs)
 (-)(p::VPol, v::Union{VX,VXY,VPol,VPold}) =
     vpol(vxy(p) - v)
 (-)(p::VCyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
@@ -925,9 +962,14 @@ perpendicular_point(p, n, q) =
 ################################################################################
 # To embed Khepri, it becomes useful to convert entities into 'raw' data
 
+world_raw(p::Union{Loc,Vec}) =
+  getfield(p, :cs) === world_cs ?
+    getfield(p, :raw) :
+    getfield(p, :cs).transform * getfield(p, :raw)
+
 raw_point(v::Union{Loc, Vec}) =
-  let o = in_world(v)
-    (float(o.x), float(o.y), float(o.z))
+  let r = world_raw(v)
+    (float(r[1]), float(r[2]), float(r[3]))
   end
 
 raw_plane(v::Loc) =
