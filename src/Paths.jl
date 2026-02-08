@@ -700,7 +700,7 @@ closed_path_sequence(paths...) =
   let start = path_start(paths[1]),
       finish = path_end(paths[end])
     start ≈ finish ?
-      ClosedPathSequence(ensure_connected_paths(paths)) :
+      ClosedPathSequence(ensure_connected_paths([paths...])) :
       ClosedPathSequence(ensure_connected_paths([paths..., open_polygonal_path([finish, start])]))
   end
 
@@ -1065,7 +1065,11 @@ path_on(path::PointPath, p) =
 path_on(path::CircularPath, p) =
   circular_path(on_cs(path.center, p), path.radius)
 path_on(path::EllipticPath, p) =
-  elliptic_path(on_cs(path.center, p), path.r1, path.r2)
+  let c = path.center
+    elliptic_path(
+      loc_from_o_vx_vy(on_cs(c, p), uvx(c.cs), uvy(c.cs)),
+      path.r1, path.r2)
+  end
 path_on(path::RectangularPath, p) =
   rectangular_path(on_cs(path.corner, p), path.dx, path.dy)
 path_on(path::OpenPolygonalPath, p) =

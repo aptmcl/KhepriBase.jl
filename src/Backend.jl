@@ -153,14 +153,96 @@ b_strip(b::Backend, path1::Region, path2::Region, mat) =
 
 ############################################################
 # Second tier: surfaces
-export b_surface_polygon, b_surface_polygon_with_holes, 
+export b_surface_polygon, b_surface_polygon_with_holes,
        b_surface_regular_polygon,
 	     b_surface_circle, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
 	     b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
 
+# Ear clipping triangulation for simple (possibly concave) polygons.
+# Takes a vector of 3D coordinates (anything indexable with [1],[2],[3])
+# and returns a vector of (i,j,k) index triples.
+export triangulate_polygon
+function triangulate_polygon(coords)
+  n = length(coords)
+  n < 3 && return Tuple{Int,Int,Int}[]
+  n == 3 && return [(1, 2, 3)]
+  # Project to 2D using the polygon normal (Newell's method)
+  nx, ny, nz = 0.0, 0.0, 0.0
+  for i in 1:n
+    j = mod(i, n) + 1
+    x1, y1, z1 = Float64(coords[i][1]), Float64(coords[i][2]), Float64(coords[i][3])
+    x2, y2, z2 = Float64(coords[j][1]), Float64(coords[j][2]), Float64(coords[j][3])
+    nx += (y1 - y2) * (z1 + z2)
+    ny += (z1 - z2) * (x1 + x2)
+    nz += (x1 - x2) * (y1 + y2)
+  end
+  ax, ay, az = abs(nx), abs(ny), abs(nz)
+  pts = if ax >= ay && ax >= az
+    [(Float64(c[2]), Float64(c[3])) for c in coords]
+  elseif ay >= ax && ay >= az
+    [(Float64(c[1]), Float64(c[3])) for c in coords]
+  else
+    [(Float64(c[1]), Float64(c[2])) for c in coords]
+  end
+  # Signed area determines winding
+  area = 0.0
+  for i in 1:n
+    j = mod(i, n) + 1
+    area += pts[i][1] * pts[j][2] - pts[j][1] * pts[i][2]
+  end
+  ccw = area > 0
+  # Ear clipping
+  idx = collect(1:n)
+  trigs = Tuple{Int,Int,Int}[]
+  sizehint!(trigs, n - 2)
+  while length(idx) > 3
+    m = length(idx)
+    found = false
+    for ii in 1:m
+      ia = idx[mod1(ii - 1, m)]
+      ib = idx[ii]
+      ic = idx[mod1(ii + 1, m)]
+      pa, pb, pc = pts[ia], pts[ib], pts[ic]
+      cross = (pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1])
+      (ccw ? cross > 0 : cross < 0) || continue
+      inside = false
+      for jj in 1:m
+        vi = idx[jj]
+        vi == ia || vi == ib || vi == ic || begin
+          pt = pts[vi]
+          d1 = (pt[1] - pb[1]) * (pa[2] - pb[2]) - (pa[1] - pb[1]) * (pt[2] - pb[2])
+          d2 = (pt[1] - pc[1]) * (pb[2] - pc[2]) - (pb[1] - pc[1]) * (pt[2] - pc[2])
+          d3 = (pt[1] - pa[1]) * (pc[2] - pa[2]) - (pc[1] - pa[1]) * (pt[2] - pa[2])
+          if !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))
+            inside = true
+          end
+          false
+        end
+        inside && break
+      end
+      if !inside
+        push!(trigs, (ia, ib, ic))
+        deleteat!(idx, ii)
+        found = true
+        break
+      end
+    end
+    if !found
+      # Degenerate polygon: fall back to fan triangulation
+      for i in 2:length(idx)-1
+        push!(trigs, (idx[1], idx[i], idx[i+1]))
+      end
+      break
+    end
+  end
+  length(idx) == 3 && push!(trigs, (idx[1], idx[2], idx[3]))
+  trigs
+end
+
 b_surface_polygon(b::Backend, ps, mat) =
-  # This only works for convex polygons
-  b_ngon(b, ps, trig_center(ps[1], ps[2], ps[3]), false, mat)
+  let trigs = triangulate_polygon([raw_point(p) for p in ps])
+    [b_trig(b, ps[i], ps[j], ps[k], mat) for (i, j, k) in trigs]
+  end
 
 b_surface_polygon_with_holes(b::Backend, ps, qss, mat) =
   # By default, we use half-edges
