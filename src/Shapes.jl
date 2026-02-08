@@ -64,11 +64,6 @@ ref_value(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = r.value
 ref_value(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
 ref_value(b::Backend{K,T}, r::LocalRef{K,T}) where {K,T} = r.value
 
-# Used in auto-generated realize methods to prepare field values.
-# Like ref_value, but preserves Shape proxies so that operations like
-# b_united/b_subtracted/b_intersected can call ref_values/map_ref/mark_deleted.
-realize_arg(b::Backend, s::Shape) = s
-realize_arg(b::Backend, v) = ref_value(b, v)
 
 # currying
 ref_values(b::Backend{K,T}) where {K,T} = (r::GenericRef{K,T}) -> ref_values(b, r)
@@ -538,7 +533,7 @@ macro defproxy(name_typename, parent, fields...)
     $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
           selector_names, field_names)...)
     KhepriBase.realize(b::Backend, s::$(abstract_name)) =
-      $(Symbol(:b_, name))(b, $(map(f->:(realize_arg(b, getproperty(s, $(QuoteNode(f))))), field_names)...))
+      $(Symbol(:b_, name))(b, $(map(f->:(ref_value(b, getproperty(s, $(QuoteNode(f))))), field_names)...))
     KhepriBase.mark_deleted(b::Backend, v::$(abstract_name)) =
       if ! marked_deleted(b, v)
         really_mark_deleted(b, v)
@@ -725,8 +720,8 @@ macro defshape(supertype, name_typename, fields...)
     error("Unknown supertype:", supertype)
   esc(quote
     @defproxy($(name_typename), $(supertype), $(fields...), material::Material=$(default_material)())
-    #realize(b::Backend, s::$(typename)) =
-    #  $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
+    KhepriBase.realize(b::Backend, s::$(typename)) =
+      $(Symbol(:b_, name))(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
   end)
 end
 
