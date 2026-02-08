@@ -53,6 +53,7 @@ ensure_ref(b::Backend{K,T}, r::Vector{Any}) where {K,T} = begin
   ensure_ref(b, T[r...])
 end
 =#
+ensure_ref(b::Backend{K,T}, r::GenericRef{K,T}) where {K,T} = r
 ensure_ref(b::Backend{K,T}, r::Any) where {K,T} =
   LocalRef{K,T}(r)
 
@@ -62,6 +63,12 @@ ref_value(b::Backend, s::Proxy) = ref_value(b, ref(b, s))
 ref_value(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = r.value
 ref_value(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
 ref_value(b::Backend{K,T}, r::LocalRef{K,T}) where {K,T} = r.value
+
+# Used in auto-generated realize methods to prepare field values.
+# Like ref_value, but preserves Shape proxies so that operations like
+# b_united/b_subtracted/b_intersected can call ref_values/map_ref/mark_deleted.
+realize_arg(b::Backend, s::Shape) = s
+realize_arg(b::Backend, v) = ref_value(b, v)
 
 # currying
 ref_values(b::Backend{K,T}) where {K,T} = (r::GenericRef{K,T}) -> ref_values(b, r)
@@ -449,9 +456,9 @@ delete_all_shapes()      # Deletes all shapes but not the underlying resources (
 delete_all()             # Deletes all shapes and the underlying resources (e.g., materials, layers, etc)
 =#
 
-@defcb delete_all_annotations()
-@defcb delete_all_shapes()
-@defcb delete_all()
+@defcbs delete_all_annotations()
+@defcbs delete_all_shapes()
+@defcbs delete_all()
 
 b_delete_all_annotations(b::Backend) =
   let refs = annotation_refs_storage(b)
@@ -531,7 +538,7 @@ macro defproxy(name_typename, parent, fields...)
     $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
           selector_names, field_names)...)
     KhepriBase.realize(b::Backend, s::$(abstract_name)) =
-      $(Symbol(:b_, name))(b, $(map(f->:(ref_value(b, getproperty(s, $(QuoteNode(f))))), field_names)...))
+      $(Symbol(:b_, name))(b, $(map(f->:(realize_arg(b, getproperty(s, $(QuoteNode(f))))), field_names)...))
     KhepriBase.mark_deleted(b::Backend, v::$(abstract_name)) =
       if ! marked_deleted(b, v)
         really_mark_deleted(b, v)
