@@ -477,10 +477,27 @@ b_delete_all_shapes(b::Backend) =
 
 
 @defcb all_shapes()
-b_all_shapes(b::Backend) =
-  Shape[get_or_create_shape_from_ref_value(b, r) for r in b_all_shape_refs(b)]
+b_all_shapes(b::T) where {T<:Backend} =
+  b_all_shapes(shape_storage_type(T), b)
+
+# Local: shapes are dict keys — O(n), no reconstruction
+b_all_shapes(::LocalShapeStorage, b) =
+  b_created_shapes(b)
+
+# Remote: reconstruct Shape wrappers from remote refs
+b_all_shapes(::RemoteShapeStorage, b) =
+  b_existing_shapes(b)
+
 @bdef(b_shape_from_ref(r))
 @bdef(b_create_shape_from_ref_value(r))
+
+export created_shapes, existing_shapes
+
+created_shapes(; backend::Backend=top_backend()) =
+  b_created_shapes(backend)
+
+existing_shapes(; backend::Backend=top_backend()) =
+  b_existing_shapes(backend)
 
 @defcbs set_length_unit(unit::String="")
 @defcb reset_backend()

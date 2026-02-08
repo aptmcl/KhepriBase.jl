@@ -263,7 +263,7 @@ export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
   	   b_cuboid,
   	   b_box,
   	   b_sphere,
-  	   b_cone,
+  	   b_cone_frustum, b_cone,
   	   b_torus,
        b_solidify
 
@@ -995,26 +995,78 @@ convert the generic material parameters into specific model parameters.
 @bdef b_mirror_material(b::Backend, name, color)
 
 #=
-Utilities for interactive development
+Backends might store shapes locally (in b.refs.shapes) or remotely
+(in the CAD application). Some backends support querying all shapes
+from the remote app (e.g., for processing existing DWG files).
 =#
+export ShapeStorageType, LocalShapeStorage, RemoteShapeStorage, shape_storage_type
+abstract type ShapeStorageType end
+struct LocalShapeStorage <: ShapeStorageType end
+struct RemoteShapeStorage <: ShapeStorageType end
 
-@bdef(b_all_shape_refs())
+shape_storage_type(::Type{<:Backend}) = LocalShapeStorage()
+
+# === Created shapes: always local, always from b.refs.shapes ===
+
+export b_all_shape_refs, b_created_shape_refs, b_created_shapes,
+       b_existing_shape_refs, b_existing_shapes
+
+b_created_shape_refs(b::Backend) =
+  collect(Iterators.flatten(ref_values(b, r) for r in values(b.refs.shapes)))
+
+b_created_shapes(b::Backend) =
+  collect(keys(b.refs.shapes))
+
+# === Existing shapes: dispatch on trait ===
+
+b_existing_shape_refs(b::T) where {T<:Backend} =
+  b_existing_shape_refs(shape_storage_type(T), b)
+
+b_existing_shape_refs(::LocalShapeStorage, b) =
+  b_created_shape_refs(b)
+
+b_existing_shape_refs(::RemoteShapeStorage, b) =
+  missing_specialization(b, :b_existing_shape_refs)
+
+b_existing_shapes(b::T) where {T<:Backend} =
+  b_existing_shapes(shape_storage_type(T), b)
+
+b_existing_shapes(::LocalShapeStorage, b) =
+  b_created_shapes(b)
+
+b_existing_shapes(::RemoteShapeStorage, b) =
+  Shape[get_or_create_shape_from_ref_value(b, r) for r in b_existing_shape_refs(b)]
+
+# === Combined: backward compatible ===
+
+b_all_shape_refs(b::T) where {T<:Backend} =
+  b_all_shape_refs(shape_storage_type(T), b)
+
+b_all_shape_refs(::LocalShapeStorage, b) =
+  b_created_shape_refs(b)
+
+# For remote: the remote query already returns the superset (created + pre-existing)
+b_all_shape_refs(::RemoteShapeStorage, b) =
+  b_existing_shape_refs(b)
+
+# === Deletion ===
 
 b_delete_all_shape_refs(b::Backend) =
   b_delete_refs(b, b_all_shape_refs(b))
 
 b_delete_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
   for r in rs
-	  b_delete_ref(b, r)
+    b_delete_ref(b, r)
   end
 
 b_delete_ref(b::Backend{K,T}, r::T) where {K,T} =
   missing_specialization(b, :b_delete_ref, r)
 
+# === Highlight/Unhighlight ===
 
 b_highlight_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
   for r in rs
- 	  b_highlight_ref(b, r)
+    b_highlight_ref(b, r)
   end
 
 b_highlight_ref(b::Backend{K,T}, r::T) where {K,T} =
@@ -1022,14 +1074,15 @@ b_highlight_ref(b::Backend{K,T}, r::T) where {K,T} =
 
 b_unhighlight_refs(b::Backend{K,T}, rs::Vector{T}) where {K,T} =
   for r in rs
-   	b_unhighlight_ref(b, r)
+    b_unhighlight_ref(b, r)
   end
 
 b_unhighlight_ref(b::Backend{K,T}, r::T) where {K,T} =
   missing_specialization(b, :b_unhighlight_ref, r)
 
+# Only unhighlight shapes Khepri created (not pre-existing shapes)
 b_unhighlight_all_refs(b::Backend) =
-  b_unhighlight_refs(b, b_all_shape_refs(b))
+  b_unhighlight_refs(b, b_created_shape_refs(b))
 
 # BIM
 export b_slab, b_roof, b_beam, b_column, b_free_column, b_wall, b_curtain_wall
