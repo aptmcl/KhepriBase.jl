@@ -376,7 +376,7 @@ Base.show(io::IO, ::MIME"image/png", f::PNGFile) =
 
 # Copyright TikzPictures
 #------------------------
-const tikz_id = Parameter{Int}(round(UInt64, time() * 1e6))
+const tikz_id = GlobalParameter{Int}(round(UInt64, time() * 1e6))
 
 #=
 Different tools generate different SVG files from the same TeX input
