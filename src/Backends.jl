@@ -23,6 +23,7 @@ struct References{K,T}
 end
 
 # Constraint: all backends must have a References field named refs
+export References
 export shape_refs_storage, material_refs_storage, layer_refs_storage, annotation_refs_storage, family_refs_storage, level_refs_storage, refs_storage
 shape_refs_storage(b::Backend) = b.refs.shapes
 material_refs_storage(b::Backend) = b.refs.materials
@@ -166,22 +167,27 @@ After connecting, we can expect a string that specifies the backend to instantia
 =#
 
 const socket_backend_init_map = Dict{String, Function}()
+const socket_backend_init_lock = ReentrantLock()
 add_socket_backend_init_function(name, init_function) = begin
-  socket_backend_init_map[name] = init_function
+  lock(socket_backend_init_lock) do
+    socket_backend_init_map[name] = init_function
+  end
   ensure_khepri_socket_server_running()
 end
 get_socket_backend_init_function(name) =
-  get(socket_backend_init_map, name) do 
-    error("Requested socket backend '$name' is not available!")
+  lock(socket_backend_init_lock) do
+    get(socket_backend_init_map, name) do
+      error("Requested socket backend '$name' is not available!")
+    end
   end
 export add_socket_backend_init_function
 
 # The server code
 
-const default_khepri_socket_server_host = Parameter(ip"127.0.0.1")
-const default_khepri_socket_server_port = Parameter(12345)
+const default_khepri_socket_server_host = GlobalParameter(ip"127.0.0.1")
+const default_khepri_socket_server_port = GlobalParameter(12345)
 export default_khepri_socket_server_host, default_khepri_socket_server_port
-const khepri_socket_server_task = Parameter{Union{Nothing,Task}}(nothing)
+const khepri_socket_server_task = GlobalParameter{Union{Nothing,Task}}(nothing)
 
 export ensure_khepri_socket_server_running
 ensure_khepri_socket_server_running() =
@@ -198,23 +204,20 @@ as a metaphor for the startup function that is the
 entry program of C, Java, etc, programs.
 =#
 export main, main_callback
-main_callback = Parameter{Function}((b)->nothing)
+main_callback = GlobalParameter{Function}((b)->nothing)
 
 #=
-
-Khepri is not yet multithreaded, so we don't want multiple designs to be 
-generated simultaneously, as they depend on lots of global state, not only
-that of Khepri itself (e.g., current_cs, current_backends, etc) but also
-that of the user code.
-For the moment, we can process one client at a time, so we will use a global lock.
+Parameter isolation across clients is handled by task-local storage: each
+@spawn-ed client task gets its own values for current_backends, current_cs,
+default_wall_family, user-defined Parameters, etc.
+Each client also gets its own backend struct, so refs, websocket I/O, and
+other backend-internal state are per-client with no sharing.
+No global lock is needed — clients run concurrently in separate tasks.
 =#
-const khepri_gil = ReentrantLock()
 
-main(b::Backend) = 
-  lock(khepri_gil) do
-    with(current_backends, (b,)) do
-      main_callback()(b)
-    end
+main(b::Backend) =
+  with(current_backends, (b,)) do
+    main_callback()(b)
   end
 
 export run_khepri_socket_server
@@ -225,11 +228,11 @@ run_khepri_socket_server(host=default_khepri_socket_server_host(), port=default_
       let conn = accept(server)
         println("Connected!")
         let backend_name = decode(Val(:CS), Val(:string), conn),
-            init_func = get_client_backend_init_function(backend_name),
+            init_func = get_socket_backend_init_function(backend_name),
             backend = invokelatest(init_func, conn)
           invokelatest(before_connecting, backend)
     	    invokelatest(after_connecting, backend)
-          add_current_backend(backend)
+          add_global_backend(backend)
           invokelatest(main, backend)
         end
       end
@@ -297,17 +300,22 @@ request_parameters(req) =
   end
 
 const websocket_backend_init_map = Dict{String, Function}()
+const websocket_backend_init_lock = ReentrantLock()
 add_websocket_backend_init_function(name, init_function) = begin
-  websocket_backend_init_map[name] = init_function
+  lock(websocket_backend_init_lock) do
+    websocket_backend_init_map[name] = init_function
+  end
 end
 get_websocket_backend_init_function(name) =
-  get(websocket_backend_init_map, name) do 
-    error("Requested websocket backend '$name' is not available!")
+  lock(websocket_backend_init_lock) do
+    get(websocket_backend_init_map, name) do
+      error("Requested websocket backend '$name' is not available!")
+    end
   end
 export add_websocket_backend_init_function
 
-const default_khepri_websocket_server_host = Parameter(ip"127.0.0.1")
-const default_khepri_websocket_server_port = Parameter(12346)
+const default_khepri_websocket_server_host = GlobalParameter(ip"127.0.0.1")
+const default_khepri_websocket_server_port = GlobalParameter(12346)
 export default_khepri_websocket_server_host, default_khepri_websocket_server_port
 
 run_khepri_websocket_server(host=default_khepri_websocket_server_host(), port=default_khepri_websocket_server_port()) =
@@ -321,7 +329,7 @@ run_khepri_websocket_server(host=default_khepri_websocket_server_host(), port=de
                             backend = invokelatest(init_func, websocket)
                           invokelatest(before_connecting, backend)
     	                    invokelatest(after_connecting, backend)
-                          add_current_backend(backend)
+                          add_global_backend(backend)
                           invokelatest(main, backend)
                         end
                         wait()
@@ -370,13 +378,18 @@ We need to support a PATH-based approach to resources.
 =#
 export resources_folder, add_resource_folder!
 const resources_folder = [joinpath(@__DIR__, "..", "resources")]
+const resources_folder_lock = ReentrantLock()
 
 add_resource_folder!(path) =
-  pushfirst!(filter!(==(path), resources_folder), path)
+  lock(resources_folder_lock) do
+    pushfirst!(filter!(==(path), resources_folder), path)
+  end
 
 http_response_with_resource_file(filename) =
-  begin
-    for res_path in resources_folder
+  let folders = lock(resources_folder_lock) do
+                  copy(resources_folder)
+                end
+    for res_path in folders
       let full_path = joinpath(res_path, filename)
         if isfile(full_path)
           return http_response_with_file(full_path)
@@ -412,7 +425,7 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
                 catch e
                   if WebSockets.isok(e)
                     @warn("Connection to backend '$(c.name)' lost.")
-                    delete_current_backend(c)
+                    delete_global_backend(c)
                     break
                   else
                     rethrow(e)
@@ -427,7 +440,7 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
         @warn("Calling '$target' with $(args)")
         let result_code = -1 # Default: no result
           try
-            lock(khepri_gil) do
+            with(current_backends, (c,)) do
               call_handler(c, target, args...)
             end
           catch e
@@ -448,7 +461,11 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
 
 export start_processing_requests
 start_processing_requests(c::WebSocketBackend{K,T}) where {K,T} = begin
-  Threads.@spawn process_requests(c)
+  parent_tls = copy(task_local_storage())
+  Threads.@spawn begin
+    merge!(task_local_storage(), parent_tls)
+    process_requests(c)
+  end
   c
 end
 
