@@ -17,7 +17,7 @@ Essential operations for backend functionality.
 | `b_delete_all_shape_refs` | Delete all shape references |
 | `b_delete_refs` | Delete specific references |
 | `b_delete_ref` | Delete a single reference |
-| `b_all_shapes` | Get all shapes |
+| `b_all_shape_refs` | Get all shape references |
 | `b_delete_all_annotations` | Delete all annotations |
 
 ### Tier 1: Basic Curves (17 operations)
@@ -109,8 +109,10 @@ CSG operations.
 
 | Operation | Description |
 |-----------|-------------|
-| `b_unite_ref` | Unite references |
+| `b_unite_ref` | Unite two references |
 | `b_unite_refs` | Unite multiple references |
+| `b_subtract_ref` | Subtract two references |
+| `b_intersect_ref` | Intersect two references |
 | `b_subtracted_surfaces` | Subtract surfaces |
 | `b_subtracted_solids` | Subtract solids |
 | `b_subtracted` | General subtraction |
@@ -248,17 +250,25 @@ Light sources.
 
 ## Backend Coverage Summary
 
-| Backend | Total Ops | Coverage | Curves | Surfaces | Solids | Boolean | BIM | Selection | Rendering |
-|---------|-----------|----------|--------|----------|--------|---------|-----|-----------|-----------|
-| **Rhino** | 84 | 65% | 94% | 83% | 93% | 38% | 0% | 100% | 62% |
-| **AutoCAD** | 58 | 45% | 94% | 75% | 87% | 62% | 0% | 100% | 46% |
-| **Blender** | 44 | 34% | 65% | 42% | 53% | 23% | 0% | 0% | 46% |
-| **Unity** | 33 | 25% | 65% | 33% | 40% | 0% | 0% | 0% | 0% |
-| **Three.js** | 29 | 22% | 65% | 42% | 47% | 0% | 0% | 0% | 15% |
-| **Revit** | 24 | 18% | 0% | 0% | 40% | 0% | 71% | 0% | 31% |
-| **TikZ** | 24 | 18% | 53% | 33% | 0% | 0% | 0% | 0% | 0% |
-| **POVRay** | 20 | 15% | 0% | 0% | 40% | 0% | 0% | 0% | 15% |
-| **Radiance** | 8 | 6% | 0% | 8% | 20% | 0% | 0% | 0% | 8% |
+| Backend | Type | Curves | Surfaces | Solids | Boolean | BIM | Selection | Rendering | Materials |
+|---------|------|--------|----------|--------|---------|-----|-----------|-----------|-----------|
+| **Rhino** | Socket/C# | Full | Full | Full | Partial | No | Full | Yes | Yes |
+| **AutoCAD** | Socket/C# | Full | Full | Full | Full | Yes | Full | Yes | Yes |
+| **Blender** | Socket/Python | Good | Good | Good | Good | No | No | Yes | Yes |
+| **GL** | Local | Full | Full | Full | No-op | No | No | Yes | Yes |
+| **Thebes** | Local | Full | Full | Full | No-op | No | No | Yes | Yes |
+| **Makie** | Local | Good | Good | Good | No | No | No | Yes | Yes |
+| **MeshCat** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes |
+| **Unity** | Socket/C# | Good | Good | Good | Yes | No | No | Yes | Yes |
+| **Revit** | Socket/C# | No | Partial | Partial | Yes | Full | No | Yes | Read-only |
+| **Three.js** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes |
+| **Xeokit** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes |
+| **TikZ** | IO/file | Good | Good | No | No | No | No | No | No |
+| **POVRay** | IO/file | No | Partial | Good | No | No | No | Yes | Yes |
+| **Radiance** | IO/file | No | Partial | Partial | No | No | No | Yes | Yes |
+| **FreeCAD** | Socket/Python | Good | Good | Good | Good | No | No | No | Yes |
+| **Unreal** | Socket/C++ | Good | Good | Good | No | No | No | Yes | Yes |
+| **3dsMax** | Socket | Good | Good | Good | No | No | No | No | Yes |
 
 ---
 
@@ -266,67 +276,83 @@ Light sources.
 
 ### Rhino (RH) - General Purpose CAD
 **Best for:** General 3D modeling, interactive selection, curve/surface work
-
-- **Strengths:** Most comprehensive implementation, excellent curve/surface support, full selection
-- **Weaknesses:** No BIM operations
-- **Total:** ~84 operations
+- Socket backend (C#), right-handed Z-up
+- Most comprehensive implementation with full selection API
 
 ### AutoCAD (ACAD) - CAD/Drafting
-**Best for:** 2D/3D CAD, technical drawings, interactive workflows
-
-- **Strengths:** Strong curve/solid support, full selection, good boolean ops
-- **Weaknesses:** Limited advanced modeling (sweep/loft)
-- **Total:** ~58 operations
+**Best for:** 2D/3D CAD, technical drawings, BIM, interactive workflows
+- Socket backend (C#), right-handed Z-up
+- Strong curve/solid support, full selection, BIM operations
 
 ### Blender (BLR) - 3D Graphics
 **Best for:** Rendering, visualization, material-heavy scenes
+- Socket backend (Python)
+- Full lighting, materials, and rendering pipeline
 
-- **Strengths:** Full lighting support, good material system, rendering
-- **Weaknesses:** No selection, limited boolean ops
-- **Total:** ~44 operations
+### GL - OpenGL Visualization
+**Best for:** Local 3D visualization, rapid prototyping
+- Local backend (Julia), right-handed Z-up
+- Immediate-mode rendering, good for quick preview
+
+### Thebes - Software 3D Renderer
+**Best for:** Offline rendering without external dependencies
+- Local backend (Julia), right-handed Z-up
+- Pure Julia renderer with material support
+
+### Makie - Julia Visualization
+**Best for:** Scientific visualization, Julia ecosystem integration
+- Local backend (Julia)
+- Leverages Makie.jl for interactive plotting
+
+### MeshCat - Web Visualization
+**Best for:** Browser-based 3D preview
+- WebSocket backend
+- Lightweight web viewer via MeshCat.jl
 
 ### Unity - Game Engine
 **Best for:** Real-time visualization, game development
-
-- **Strengths:** Real-time rendering, game integration
-- **Weaknesses:** Limited geometry ops, no selection/BIM
-- **Note:** Y-Z axis swap for Unity coordinate system
-- **Total:** ~33 operations
-
-### Three.js (THR) - Web Graphics
-**Best for:** Web-based 3D visualization
-
-- **Strengths:** Browser-based, lightweight
-- **Weaknesses:** Limited advanced modeling
-- **Total:** ~29 operations
+- Socket backend (C#), **left-handed Y-up** (Y-Z axis swap)
+- Real-time rendering and game integration
 
 ### Revit (RVT) - BIM
 **Best for:** Building design, BIM workflows
+- Socket backend (C#), right-handed Z-up
+- Best BIM support (walls, slabs, roofs, columns, beams)
 
-- **Strengths:** Best BIM support (71%), architectural elements
-- **Weaknesses:** Limited basic geometry, no selection
-- **Total:** ~24 operations
+### Three.js (THR) - Web Graphics
+**Best for:** Web-based 3D visualization
+- WebSocket backend (TypeScript)
+- Browser-based, lightweight
 
-### TikZ - 2D Vector Graphics
+### Xeokit (XEO) - Web BIM Viewer
+**Best for:** Web-based BIM visualization
+- WebSocket backend
+- IFC/BIM model viewing in browser
+
+### TikZ - 2D/3D Vector Graphics
 **Best for:** Technical documentation, LaTeX integration
-
-- **Strengths:** Excellent annotation support (89%), 2D graphics
-- **Weaknesses:** No 3D support
-- **Total:** ~24 operations
+- IO backend (file output)
+- Excellent annotation support, 2D/3D graphics to LaTeX
 
 ### POVRay - Ray Tracing
-**Best for:** High-quality renders, ray-traced images
-
-- **Strengths:** Ray-tracing quality
-- **Weaknesses:** Highly specialized, limited geometry
-- **Total:** ~20 operations
+**Best for:** High-quality ray-traced renders
+- IO backend (file output)
+- Scene description for POV-Ray renderer
 
 ### Radiance - Lighting Simulation
 **Best for:** Lighting analysis, daylighting studies
+- IO backend (file output)
+- Accurate lighting simulation, specialized geometry
 
-- **Strengths:** Accurate lighting simulation
-- **Weaknesses:** Very specialized, minimal geometry
-- **Total:** ~8 operations
+### FreeCAD - Open Source CAD
+**Best for:** Open-source 3D modeling
+- Socket backend (Python)
+- Parametric modeling with boolean operations
+
+### Unreal - Game Engine
+**Best for:** High-fidelity real-time visualization
+- Socket backend (C++)
+- Unreal Engine integration
 
 ---
 
@@ -334,15 +360,17 @@ Light sources.
 
 | Use Case | Recommended Backend |
 |----------|---------------------|
-| General 3D modeling | Rhino |
-| Technical CAD drawings | AutoCAD |
+| General 3D modeling | Rhino, AutoCAD |
 | Architectural BIM | Revit |
 | High-quality renders | Blender, POVRay |
-| Web visualization | Three.js |
-| Game integration | Unity |
+| Web visualization | Three.js, Xeokit, MeshCat |
+| Real-time / Game | Unity, Unreal |
+| Local preview (no deps) | GL, Thebes |
+| Julia ecosystem | Makie |
 | Documentation figures | TikZ |
 | Lighting analysis | Radiance |
 | Interactive selection | Rhino, AutoCAD |
+| Open-source CAD | FreeCAD |
 
 ---
 
@@ -353,14 +381,20 @@ Light sources.
 - **Unity** swaps Y and Z axes to match its Y-up convention
 
 ### Reference Types
-Different backends use different reference types based on their native APIs:
-- `Int64`: AutoCAD
-- `Int32`: Blender, Unity, Three.js, FreeCAD, 3dsMax
+Different backends use different reference types (`T` in `Backend{K,T}`):
+- `Int64`: AutoCAD, GL, Revit, Robot, Frame3DD
+- `Int32`: Blender, Unity, Three.js, FreeCAD, 3dsMax, Unreal
 - `UInt128` (GUID): Rhino
-- `Any`: Makie, TikZ (local backends)
+- `String`: MeshCat, Xeokit
+- `Nothing`: Makie, Thebes, TikZ (local backends use `nothing` as void)
+- `Int`: POVRay, Radiance
+
+The `void_ref` function returns a raw value of type `T` (not wrapped in `NativeRef`).
+The `ensure_ref` function in KhepriBase wraps raw `T` values into `NativeRef{K,T}`.
 
 ### Encoding Protocols
 - `CS`: C# backends (AutoCAD, Revit, Rhino, Unity)
 - `PY`: Python backends (Blender, FreeCAD)
-- `TS`: TypeScript backends (Three.js)
-- None: Local backends (Makie, TikZ, POVRay, Radiance)
+- `CPP`: C++ backends (Unreal)
+- `TS`/`WS`: TypeScript/WebSocket backends (Three.js, Xeokit, MeshCat)
+- None: Local backends (GL, Makie, Thebes, TikZ, POVRay, Radiance)
