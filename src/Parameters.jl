@@ -1,11 +1,17 @@
-export with, Parameter, OptionParameter, LazyParameter, ThreadLocalParameter
+export with, Parameter, OptionParameter, LazyParameter, ThreadLocalParameter, GlobalParameter
 
+#=
+Parameter uses task-local storage so that each @spawn-ed task (e.g., each
+WebSocket client handler) gets its own value, preventing cross-client
+contamination.  The `value` field serves as the global default, returned
+when the current task has not set a task-local override.
+=#
 mutable struct Parameter{T}
   value::T
 end
 
-(p::Parameter{T})() where T = p.value::T
-(p::Parameter{T})(newvalue::T) where T = p.value = newvalue::T
+(p::Parameter{T})() where T = get(task_local_storage(), p, p.value)::T
+(p::Parameter{T})(newvalue::T) where T = task_local_storage(p, newvalue)::T
 
 function with(f, p, newvalue)
   oldvalue = p()
@@ -23,7 +29,21 @@ with(f, p, newvalue, others...) =
   end
 
 #=
+A GlobalParameter has the old Parameter semantics: a single mutable value
+shared across all tasks.  Use this for infrastructure state that is set once
+(e.g., server host/port) or that must be visible across tasks (e.g.,
+main_callback set in the REPL and read by server tasks).
+=#
+mutable struct GlobalParameter{T}
+  value::T
+end
+
+(p::GlobalParameter{T})() where T = p.value::T
+(p::GlobalParameter{T})(newvalue::T) where T = p.value = newvalue::T
+
+#=
 An OptionParameter is one which can be missing. Retrieving the value of a missing OptionParameter triggers an error.
+Uses task-local storage like Parameter.
 =#
 mutable struct OptionParameter{T}
   value::Union{Missing,T}
@@ -33,13 +53,17 @@ mutable struct OptionParameter{T}
 end
 
 (p::OptionParameter{T})() where T =
-  ismissing(p.value) ?
-    error("Parameter was not initialized with value of type $T") :
-    p.value::T
-(p::OptionParameter{T})(newvalue::T) where T = p.value = newvalue
+  let v = get(task_local_storage(), p, p.value)
+    ismissing(v) ?
+      error("Parameter was not initialized with value of type $T") :
+      v::T
+  end
+(p::OptionParameter{T})(newvalue::T) where T = task_local_storage(p, newvalue)::T
 
 #=
 A LazyParameter is one which is initialized only when first requested.
+LazyParameter remains global (not task-local) — it is used for singletons
+like the WebSocket server instance.
 =#
 
 mutable struct LazyParameter{T,F<:Function}
@@ -55,18 +79,7 @@ end
 Base.reset(p::LazyParameter{T,F}) where {T,F} = p.value = nothing
 
 #=
-Khepri is becoming multithreaded. This means that Parameters are no longer a good idea,
-as different threads might interfere, where one changes, e.g., the current_cs and another
-becomes affected. Moreover, if both try to change it, read-modify-write problems might occur.
-
-To solve this problem, a ThreadLocalParameter is a variant of a Parameter that operates
-as a thread-aware dynamic variable. There is a global value, which can be consulted and/or
-updated on each thread, without interfeering with other threads.
+ThreadLocalParameter is now equivalent to Parameter (which uses task-local
+storage).  Kept as an alias for backwards compatibility.
 =#
-
-struct ThreadLocalParameter{T}
-  value::T
-end
-
-(p::ThreadLocalParameter{T})() where T = get(task_local_storage(), p, p.value)::T
-(p::ThreadLocalParameter{T})(newvalue::T) where T = task_local_storage(p, newvalue)::T
+const ThreadLocalParameter = Parameter
