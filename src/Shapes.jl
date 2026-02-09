@@ -4,6 +4,7 @@ export GenericRef,
        void_ref,
        ensure_ref,
        map_ref,
+       ref_value,
        ref_values
 export Shape,
        Shapes,
