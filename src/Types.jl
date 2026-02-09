@@ -119,6 +119,7 @@ const Shapes1D = Vector{<:Any}
 const Shapes2D = Vector{<:Any}
 
 # Materials
+export Material, Materials
 
 abstract type Material <: UniqueProxy end
 const Materials = Vector{<:Material}
