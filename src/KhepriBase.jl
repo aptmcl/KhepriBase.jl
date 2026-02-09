@@ -88,6 +88,7 @@ include("Backends.jl")
 #include("Materials.jl")
 include("Primitives.jl")
 include("Camera.jl")
+include("Simulation.jl")
 
 export khepribase_interface_file
 khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
@@ -97,7 +98,7 @@ export RGB, RGBA, rgb, rgba, red, green, blue, alpha
 
 
 export and_mark_deleted,
-       @remote_functions,
+       @remote_api,
        parse_signature,
        encode,
        decode,
