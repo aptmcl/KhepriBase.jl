@@ -68,19 +68,70 @@ b_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
   b_polygon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), mat)
 
 b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat) =
-  closed ?
-  	b_polygon(b, ps, mat) :
-  	b_line(b, ps, mat)
+  # Sample the curve at many points for a visually smooth polyline
+  let ci = curve_interpolator(ps, closed),
+      n = max(length(ps) * 16, 64),
+      sampled = [location_at(ci, t) for t in division(0, 1, n, !closed)]
+    closed ?
+      b_polygon(b, sampled, mat) :
+      b_line(b, sampled, mat)
+  end
 
 b_spline(b::Backend, ps, mat) =
   b_spline(b, ps, false, false, mat)
 
-b_spline(b::Backend, ps, v1, v2, mat) =
-  let ci = curve_interpolator(ps, false),
-      cps = curve_control_points(ci),
-      n = length(cps),
-      knots = curve_knots(ci)
-    b_nurbs_curve(b, ps, 5, cps, knots, fill(1.0, n), false, mat)
+b_spline(b::Backend, ps, v0, v1, mat) =
+  if !(v0 isa Vec) && !(v1 isa Vec)
+    let ci = curve_interpolator(ps, false),
+        cps = curve_control_points(ci),
+        n = length(cps),
+        knots = curve_knots(ci)
+      b_nurbs_curve(b, ps, 5, cps, knots, fill(1.0, n), false, mat)
+    end
+  else
+    # Cubic Hermite spline with endpoint tangent constraints
+    let coords = [raw_point(p) for p in ps],
+        n = length(coords),
+        # Compute tangents: Catmull-Rom for interior, user-specified for endpoints
+        tangents = [
+          (v0 isa Vec ?
+            let v = raw_point(in_world(v0)),
+                d = sqrt(sum((coords[2][j] - coords[1][j])^2 for j in 1:3))
+              (v[1]*d, v[2]*d, v[3]*d) end :
+            ((coords[2][j] - coords[1][j]) for j in 1:3) |> Tuple);
+          [((coords[i+1][j] - coords[i-1][j]) / 2 for j in 1:3) |> Tuple
+           for i in 2:n-1];
+          (v1 isa Vec ?
+            let v = raw_point(in_world(v1)),
+                d = sqrt(sum((coords[n][j] - coords[n-1][j])^2 for j in 1:3))
+              (v[1]*d, v[2]*d, v[3]*d) end :
+            ((coords[n][j] - coords[n-1][j]) for j in 1:3) |> Tuple)],
+        # Sample segments proportionally to chord length
+        seg_lengths = [sqrt(sum((coords[i+1][j] - coords[i][j])^2 for j in 1:3)) for i in 1:n-1],
+        total_length = sum(seg_lengths),
+        n_total = max(n * 16, 64),
+        sampled = let result = [xyz(coords[1]..., world_cs)]
+          for seg in 1:n-1
+            n_seg = max(round(Int, n_total * seg_lengths[seg] / total_length), 2)
+            p0, p1 = coords[seg], coords[seg+1]
+            m0, m1 = tangents[seg], tangents[seg+1]
+            for k in 1:n_seg
+              t = k / n_seg
+              h00 = 2t^3 - 3t^2 + 1
+              h10 = t^3 - 2t^2 + t
+              h01 = -2t^3 + 3t^2
+              h11 = t^3 - t^2
+              push!(result, xyz(
+                h00*p0[1] + h10*m0[1] + h01*p1[1] + h11*m1[1],
+                h00*p0[2] + h10*m0[2] + h01*p1[2] + h11*m1[2],
+                h00*p0[3] + h10*m0[3] + h01*p1[3] + h11*m1[3],
+                world_cs))
+            end
+          end
+          result
+        end
+      b_line(b, sampled, mat)
+    end
   end
 
 b_closed_spline(b::Backend, ps, mat) =
@@ -1413,6 +1464,20 @@ add_current_backend(b::Backend) =
   current_backends(tuple(b, current_backends()...))
 delete_current_backend(b::Backend) =
   current_backends(filter(!=(b), current_backends()))
+
+# Global variants: update the shared default so that tasks without
+# a task-local override (e.g. the user's main REPL task) can see
+# backends that connected via the socket/websocket server.
+const global_backends_lock = ReentrantLock()
+export add_global_backend, delete_global_backend
+add_global_backend(b::Backend) =
+  lock(global_backends_lock) do
+    current_backends.value = tuple(b, current_backends.value...)
+  end
+delete_global_backend(b::Backend) =
+  lock(global_backends_lock) do
+    current_backends.value = Tuple(filter(!=(b), collect(current_backends.value)))
+  end
  
 # but for backward compatibility reasons, we might also select just one.
 top_backend() =
