@@ -22,6 +22,17 @@ struct References{K,T}
              Dict{Level,GenericRef{K,T}}())
 end
 
+Base.empty!(r::References) =
+  begin
+    empty!(r.shapes)
+    empty!(r.materials)
+    empty!(r.layers)
+    empty!(r.annotations)
+    empty!(r.families)
+    empty!(r.levels)
+    r
+  end
+
 # Constraint: all backends must have a References field named refs
 export References
 export shape_refs_storage, material_refs_storage, layer_refs_storage, annotation_refs_storage, family_refs_storage, level_refs_storage, refs_storage
