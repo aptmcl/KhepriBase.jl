@@ -4,7 +4,7 @@ This document provides a comprehensive overview of which `b_` operations each Kh
 
 ## Operations Inventory
 
-KhepriBase defines **130+ operations** organized into functional tiers.
+KhepriBase defines **136+ operations** organized into functional tiers.
 
 ## Tier Definitions
 
@@ -125,19 +125,25 @@ CSG operations.
 | `b_slice` | Slice geometry |
 | `b_slice_ref` | Slice reference |
 
-### Tier 6: BIM Operations (14 operations)
+### Tier 6: BIM Operations (20 operations)
 Building Information Modeling.
 
 | Operation | Description |
 |-----------|-------------|
 | `b_slab` | Create a slab/floor |
 | `b_roof` | Create a roof |
+| `b_ceiling` | Create a ceiling |
 | `b_beam` | Create a beam |
 | `b_column` | Create a column |
 | `b_free_column` | Create a free-standing column |
 | `b_wall` | Create a wall |
 | `b_curtain_wall` | Create a curtain wall |
 | `b_curtain_wall_element` | Curtain wall element |
+| `b_railing` | Create a railing |
+| `b_ramp` | Create a ramp |
+| `b_stair` | Create a straight stair |
+| `b_spiral_stair` | Create a spiral stair |
+| `b_stair_landing` | Create a stair landing |
 | `b_toilet` | Place a toilet |
 | `b_sink` | Place a sink |
 | `b_closet` | Place a closet |
@@ -382,15 +388,21 @@ Light sources.
 
 ### Reference Types
 Different backends use different reference types (`T` in `Backend{K,T}`):
-- `Int64`: AutoCAD, GL, Revit, Robot, Frame3DD
-- `Int32`: Blender, Unity, Three.js, FreeCAD, 3dsMax, Unreal
+- `Int64`: AutoCAD, Revit, Robot, Frame3DD
+- `Int32`: Unity, Three.js, FreeCAD, 3dsMax, Unreal
+- `Int`: GL
 - `UInt128` (GUID): Rhino
-- `String`: MeshCat, Xeokit
-- `Nothing`: Makie, Thebes, TikZ (local backends use `nothing` as void)
-- `Int`: POVRay, Radiance
+- `Union{Int32, String}`: Blender (shapes are Int32, layers are strings)
+- `Union{String, NamedTuple}`: MeshCat
+- `String`: Xeokit
+- `Union{Nothing, RGBA}`: Thebes (nothing for shapes, RGBA for materials)
+- `Any`: Makie, TikZ, POVRay, Radiance (IOBackend-based backends use `Any`)
 
 The `void_ref` function returns a raw value of type `T` (not wrapped in `NativeRef`).
 The `ensure_ref` function in KhepriBase wraps raw `T` values into `NativeRef{K,T}`.
+
+For a detailed explanation of the realize/ref protocol, reference types, and the
+lazy proxy pattern, see [realize_and_ref.md](realize_and_ref.md).
 
 ### Encoding Protocols
 - `CS`: C# backends (AutoCAD, Revit, Rhino, Unity)

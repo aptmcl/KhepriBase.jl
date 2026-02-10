@@ -605,7 +605,7 @@ current_layer(backends::Backends=current_backends()) =
   let b1 = first(backends),
       layer = get_or_create_layer_from_ref_value(b1, b_current_layer_ref(b1))
     for b in Base.tail(backends)
-      set_realization!(b, layer, b_current_layer_ref(b))
+      ref!(b, layer, b_current_layer_ref(b))
     end
     layer
   end
