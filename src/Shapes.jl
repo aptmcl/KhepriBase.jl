@@ -228,9 +228,11 @@ with_transaction(fn) =
             end
           end
         else
-          with(b.delayed_realizations, []) do
-            with(b.delaying_realize, true) do
-              recur(bs)
+          let b = first(bs)
+            with(b.delayed_realizations, []) do
+              with(b.delaying_realize, true) do
+                recur(rest(bs))
+              end
             end
           end
         end

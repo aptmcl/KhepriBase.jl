@@ -160,6 +160,8 @@ save_film_frame(obj::Any=true; backend=top_backend()) =
         b_render_view(backend, frame_filename(film_filename(), film_frame()))
         film_frame(film_frame() + 1)
       end
+    else
+      sleep(0.1)
     end
     obj
   end

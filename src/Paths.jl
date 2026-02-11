@@ -65,7 +65,9 @@ export empty_path,
        path_tolerance,
        is_closed_path,
        is_smooth_path,
-       coincident_path_location
+       coincident_path_location,
+       closed_offsetted_path,
+       closed_path_for_height
 
 path_tolerance = Parameter(1e-10)
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < path_tolerance()
@@ -791,6 +793,7 @@ end
 path_set(paths...) =
   PathSet([paths...])
 
+export region
 region(outer, inners...) =
   Region([convert(ClosedPath, outer), convert.(ClosedPath, inners)...])
 outer_path(region::Region) = region.paths[1]
@@ -1007,6 +1010,14 @@ subtract_paths(path1::ClosedPolygonalPath, path2::ClosedPolygonalPath) =
     subtract_polygon_vertices(
       path_vertices(path1),
       path_vertices(path2)))
+
+closed_offsetted_path(path, v) =
+  let ps = path_vertices(path)
+    closed_polygonal_path([ps..., reverse(map(p -> p+v, ps))...])
+  end
+
+closed_path_for_height(path, h) =
+  closed_offsetted_path(path, vz(h))
 
 ## Smoothnesss
 # A smooth curve means that the curve is differentiable up to an intended order

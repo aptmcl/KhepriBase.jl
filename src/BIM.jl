@@ -354,6 +354,7 @@ specific building elements and even, when possible, default implementations.
   top_material::Material=material_concrete,
   side_material::Material=material_concrete)
 
+export slab_family_thickness
 slab_family_elevation(b::Backend, family::SlabFamily) =
   family.coating_thickness - family.thickness
 slab_family_thickness(b::Backend, family::SlabFamily) =
@@ -411,6 +412,26 @@ used_materials(f::RoofFamily) = (f.bottom_material, f.top_material, f.side_mater
           level::Level=default_level(), family::RoofFamily=default_roof_family())
 realize(b::Backend, s::Roof) =
   b_roof(b, s.region, s.level, s.family)
+
+# Ceiling
+
+@deffamily(ceiling_family, Family,
+  thickness::Real=0.02,
+  coating_thickness::Real=0.0,
+  bottom_material::Material=material_plaster,
+  top_material::Material=material_concrete,
+  side_material::Material=material_plaster)
+
+ceiling_family_elevation(b::Backend, family::CeilingFamily) = 0
+ceiling_family_thickness(b::Backend, family::CeilingFamily) =
+  family.coating_thickness + family.thickness
+
+used_materials(f::CeilingFamily) = (f.bottom_material, f.top_material, f.side_material)
+
+@defproxy(ceiling, BIMShape, region::Region=rectangular_path(),
+          level::Level=default_level(), family::CeilingFamily=default_ceiling_family())
+realize(b::Backend, s::Ceiling) =
+  b_ceiling(b, s.region, s.level, s.family)
 
 # Panel
 
@@ -482,10 +503,8 @@ realize(::HasBooleanOps{true}, b::Backend, w::Wall) =
 realize_wall_no_openings(b::Backend, w::Wall) =
   let w_base_height = w.bottom_level.height,
       w_height = w.top_level.height - w_base_height,
-      w_path = translate(w.path, vz(w_base_height)),
-      r_thickness = r_thickness(w),
-      l_thickness = l_thickness(w)
-    ensure_ref(b, backend_wall(b, w_path, w_height, l_thickness, r_thickness, w.family))
+      w_path = translate(w.path, vz(w_base_height))
+    ensure_ref(b, b_wall(b, w_path, w_height, w.family, w.offset, WallOpening[]))
   end
 
 realize_wall_openings(b::Backend, w::Wall, w_ref, openings) =
@@ -505,7 +524,7 @@ realize_wall_opening(b::Backend, w_ref, w_path, l_thickness, r_thickness, op, fa
   let op_base_height = op.loc.y,
       op_height = op.family.height,
       op_path = translate(subpath(w_path, op.loc.x, op.loc.x + op.family.width), vz(op_base_height)),
-      op_ref = ensure_ref(b, backend_wall(b, op_path, op_height, l_thickness+0.1, r_thickness+0.1, family))
+      op_ref = ensure_ref(b, b_wall_no_openings(b, op_path, op_height, l_thickness+0.1, r_thickness+0.1, family))
     ensure_ref(b, subtract_ref(b, w_ref, op_ref))
   end
 
@@ -514,76 +533,12 @@ realize_wall_opening(b::Backend, w_ref, w_path, l_thickness, r_thickness, op, fa
 realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
   let w_base_height = w.bottom_level.height,
       w_height = w.top_level.height - w_base_height,
-      r_thickness = r_thickness(w),
-      l_thickness = l_thickness(w),
       w_path = translate(w.path, vz(w_base_height)),
-      w_paths = subpaths(w_path),
-      r_w_paths = subpaths(offset(w_path, -r_thickness)),
-      l_w_paths = subpaths(offset(w_path, l_thickness)),
-      openings = [w.doors..., w.windows...],
-      prevlength = 0,
-      matright = w.family.right_material,
-      matleft = w.family.left_material,
-      matside = w.family.side_material,
-      refs = new_refs(b)
-    for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
-      let currlength = prevlength + path_length(w_seg_path),
-          c_r_w_path = closed_path_for_height(r_w_path, w_height),
-          c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        append!(refs, materialize_path(b, c_r_w_path, c_l_w_path, matside))
-        openings = filter(openings) do op
-          if prevlength <= op.loc.x < currlength ||
-             prevlength <= op.loc.x + op.family.width <= currlength # contained (at least, partially)
-            let op_height = op.family.height,
-                op_at_start = op.loc.x <= prevlength,
-                op_at_end = op.loc.x + op.family.width >= currlength,
-                op_path = subpath(w_path,
-                                  max(prevlength, op.loc.x),
-                                  min(currlength, op.loc.x + op.family.width)),
-                r_op_path = offset(op_path, -r_thickness),
-                l_op_path = offset(op_path,  l_thickness),
-                fixed_r_op_path =
-                  open_polygonal_path([path_start(op_at_start ? r_w_path : r_op_path),
-                                       path_end(op_at_end ? r_w_path : r_op_path)]),
-                fixed_l_op_path =
-                  open_polygonal_path([path_start(op_at_start ? l_w_path : l_op_path),
-                                       path_end(op_at_end ? l_w_path : l_op_path)]),
-                c_r_op_path = closed_path_for_height(translate(fixed_r_op_path, vz(op.loc.y)), op_height),
-                c_l_op_path = closed_path_for_height(translate(fixed_l_op_path, vz(op.loc.y)), op_height)
-              append!(refs, materialize_path(b, reverse(c_r_op_path), reverse(c_l_op_path), matside))
-              c_r_w_path, c_l_w_path = subtract_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
-              # preserve if not totally contained
-              ! (op.loc.x >= prevlength && op.loc.x + op.family.width <= currlength)
-            end
-          else
-            true
-          end
-        end
-        prevlength = currlength
-        append!(refs, materialize_path(b, reverse(c_l_w_path), matleft))
-        append!(refs, materialize_path(b, c_r_w_path, matright))
-      end
-    end
-    refs
+      openings = [WallOpening(op.loc.x, op.loc.y, op.family.width, op.family.height)
+                  for op in [w.doors..., w.windows...]]
+    b_wall(b, w_path, w_height, w.family, w.offset, openings)
   end
 
-closed_offsetted_path(path, v) =
-  let ps = path_vertices(path)
-    closed_polygonal_path([ps..., reverse(map(p -> p+v, ps))...])
-  end
-
-closed_path_for_height(path, h) =
-  closed_offsetted_path(path, vz(h))
-
-subtract_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
-  region(c_r_w_path, c_r_op_path), region(c_l_w_path, c_l_op_path)
-  #=
-  let idxs = closest_vertices_indexes(path_vertices(c_r_w_path), path_vertices(c_r_op_path))
-    closed_polygonal_path(
-      inject_polygon_vertices_at_indexes(path_vertices(c_r_w_path), path_vertices(c_r_op_path), idxs)),
-    closed_polygonal_path(
-      inject_polygon_vertices_at_indexes(path_vertices(c_l_w_path), path_vertices(c_l_op_path), idxs))
-  end=#
 
 #=
 Walls can be joined. That is very important because the wall needs to have
@@ -683,7 +638,7 @@ realize(b::Backend, s::Union{Door, Window}) =
       r_thickness = r_thickness(s.wall),
       l_thickness = l_thickness(s.wall),
       thickness = s.family.thickness
-    vcat(b_wall(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family),
+    vcat(b_wall_no_openings(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family),
          b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, ref_value(b, s.family.frame.material))
     )
   end
@@ -788,6 +743,111 @@ meta_program(w::Wall) =
         end
     end
 =#
+
+# Railing
+
+@deffamily(railing_family, Family,
+  height::Real=0.9,
+  post_spacing::Real=1.0,
+  material::Material=material_metal)
+
+used_materials(f::RailingFamily) = (f.material, )
+
+@defproxy(railing, BIMShape,
+  path::Path=open_polygonal_path([u0(), ux()]),
+  level::Level=default_level(),
+  host::Union{BIMShape, Nothing}=nothing,
+  family::RailingFamily=default_railing_family())
+
+realize(b::Backend, s::Railing) =
+  b_railing(b, s.path, s.level, s.host, s.family)
+
+# Ramp
+
+@deffamily(ramp_family, Family,
+  width::Real=1.2,
+  thickness::Real=0.2,
+  bottom_material::Material=material_concrete,
+  top_material::Material=material_concrete,
+  side_material::Material=material_concrete)
+
+used_materials(f::RampFamily) = (f.bottom_material, f.top_material, f.side_material)
+
+@defproxy(ramp, BIMShape,
+  path::Path=open_polygonal_path([u0(), ux()]),
+  bottom_level::Level=default_level(),
+  top_level::Level=upper_level(convert(Level, bottom_level)),
+  family::RampFamily=default_ramp_family())
+
+ramp(p0::Loc, p1::Loc;
+     bottom_level::Level=default_level(),
+     top_level::Level=upper_level(bottom_level),
+     family::RampFamily=default_ramp_family()) =
+  ramp(open_polygonal_path([p0, p1]), bottom_level, top_level, family)
+
+realize(b::Backend, s::Ramp) =
+  b_ramp(b, s.path, s.bottom_level, s.top_level, s.family)
+
+# Stair
+
+@deffamily(stair_family, Family,
+  width::Real=1.0,
+  riser_height::Real=0.18,
+  tread_depth::Real=0.28,
+  thickness::Real=0.15,
+  has_risers::Bool=true,
+  tread_material::Material=material_concrete,
+  riser_material::Material=material_concrete,
+  stringer_material::Material=material_concrete)
+
+used_materials(f::StairFamily) = (f.tread_material, f.riser_material, f.stringer_material)
+
+@defproxy(stair, BIMShape,
+  base_point::Loc=u0(),
+  direction::Vec=vy(1),
+  bottom_level::Level=default_level(),
+  top_level::Level=upper_level(convert(Level, bottom_level)),
+  family::StairFamily=default_stair_family())
+
+realize(b::Backend, s::Stair) =
+  b_stair(b, s.base_point, s.direction, s.bottom_level, s.top_level, s.family)
+
+# Spiral Stair
+
+@defproxy(spiral_stair, BIMShape,
+  center::Loc=u0(),
+  radius::Real=2.0,
+  start_angle::Real=0,
+  included_angle::Real=2*pi,
+  clockwise::Bool=true,
+  bottom_level::Level=default_level(),
+  top_level::Level=upper_level(convert(Level, bottom_level)),
+  family::StairFamily=default_stair_family())
+
+realize(b::Backend, s::SpiralStair) =
+  b_spiral_stair(b, s.center, s.radius, s.start_angle, s.included_angle,
+                 s.clockwise, s.bottom_level, s.top_level, s.family)
+
+# Stair Landing
+
+@deffamily(stair_landing_family, Family,
+  thickness::Real=0.2,
+  top_material::Material=material_concrete,
+  bottom_material::Material=material_concrete,
+  side_material::Material=material_concrete)
+
+slab_family_elevation(b::Backend, family::StairLandingFamily) = 0
+slab_family_thickness(b::Backend, family::StairLandingFamily) = family.thickness
+
+used_materials(f::StairLandingFamily) = (f.top_material, f.bottom_material, f.side_material)
+
+@defproxy(stair_landing, BIMShape,
+  region::Region=rectangular_path(),
+  level::Level=default_level(),
+  family::StairLandingFamily=default_stair_landing_family())
+
+realize(b::Backend, s::StairLanding) =
+  b_stair_landing(b, s.region, s.level, s.family)
 
 # Beam
 # Beams are mainly horizontal elements. By default, a beam is aligned along its top axis
@@ -1271,5 +1331,6 @@ end
 =#
 
 
+export family_profile
 family_profile(b::Backend, family) =
   family.profile

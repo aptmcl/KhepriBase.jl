@@ -1218,7 +1218,9 @@ b_unhighlight_all_refs(b::Backend) =
   b_unhighlight_refs(b, b_created_shape_refs(b))
 
 # BIM
-export b_slab, b_roof, b_beam, b_column, b_free_column, b_wall, b_curtain_wall
+export b_slab, b_roof, b_ceiling, b_beam, b_column, b_free_column, b_wall, b_curtain_wall,
+       b_railing, b_ramp, b_stair, b_spiral_stair, b_stair_landing,
+       b_wall_no_openings, b_wall_with_openings, WallOpening
 
 #=
 BIM operations require some extra support from the backends.
@@ -1278,6 +1280,119 @@ b_slab(b::Backend, profile, level, family) =
 b_roof(b::Backend, region, level, family) =
   b_slab(b, region, level, family)
 
+b_ceiling(b::Backend, profile, level, family) =
+  let tmat = material_ref(b, family.top_material),
+      bmat = material_ref(b, family.bottom_material),
+      smat = material_ref(b, family.side_material),
+      th = ceiling_family_thickness(b, family)
+    b_extruded_surface(b, profile, vz(th),
+      z(level_height(b, level) - th + ceiling_family_elevation(b, family)),
+      bmat, tmat, smat)
+  end
+
+b_railing(b::Backend, path, level, host, family) =
+  let h = family.height,
+      base = level_height(b, level),
+      mat = material_ref(b, family.material),
+      len = path_length(path),
+      n_posts = max(2, Int(ceil(len / family.post_spacing)) + 1),
+      post_locs = [location_at_length(path, t)
+                   for t in division(0, len, n_posts - 1)]
+    with_material_as_layer(b, family.material) do
+      vcat(
+        b_sweep(b, translate(path, vz(base + h)),
+                rectangular_profile(0.05, 0.05), 0, 1, mat),
+        [b_cylinder(b, add_z(in_world(pt), base), 0.025, h, mat, mat, mat)
+         for pt in post_locs]...)
+    end
+  end
+
+b_ramp(b::Backend, path, bottom_level, top_level, family) =
+  let bottom_h = level_height(b, bottom_level),
+      top_h = level_height(b, top_level),
+      w = family.width,
+      th = family.thickness,
+      tmat = material_ref(b, family.top_material),
+      bmat = material_ref(b, family.bottom_material),
+      smat = material_ref(b, family.side_material),
+      p0 = in_world(path_start(path)),
+      p1 = in_world(path_end(path)),
+      dir = unitized(p1 - p0),
+      perp = cross(dir, vz(1))
+    b_pyramid_frustum(b,
+      [p0 + perp*(w/2) + vz(bottom_h),
+       p0 - perp*(w/2) + vz(bottom_h),
+       p0 - perp*(w/2) + vz(bottom_h - th),
+       p0 + perp*(w/2) + vz(bottom_h - th)],
+      [p1 + perp*(w/2) + vz(top_h),
+       p1 - perp*(w/2) + vz(top_h),
+       p1 - perp*(w/2) + vz(top_h - th),
+       p1 + perp*(w/2) + vz(top_h - th)],
+      bmat, tmat, smat)
+  end
+
+b_stair(b::Backend, base_point, direction, bottom_level, top_level, family) =
+  let bottom_h = level_height(b, bottom_level),
+      top_h = level_height(b, top_level),
+      total_h = top_h - bottom_h,
+      n_steps = Int(round(total_h / family.riser_height)),
+      riser_h = total_h / n_steps,
+      tread_d = family.tread_depth,
+      w = family.width,
+      dir = unitized(direction),
+      perp = cross(vz(1), dir),
+      tmat = material_ref(b, family.tread_material),
+      rmat = material_ref(b, family.riser_material),
+      refs = new_refs(b)
+    for i in 0:(n_steps - 1)
+      let base = in_world(base_point) + dir * (i * tread_d) + vz(bottom_h + i * riser_h),
+          tread = [base + vz(riser_h),
+                   base + perp * w + vz(riser_h),
+                   base + dir * tread_d + perp * w + vz(riser_h),
+                   base + dir * tread_d + vz(riser_h)]
+        append!(refs, b_surface_polygon(b, tread, tmat))
+        if family.has_risers
+          riser = [base, base + perp * w,
+                   base + perp * w + vz(riser_h), base + vz(riser_h)]
+          append!(refs, b_surface_polygon(b, riser, rmat))
+        end
+      end
+    end
+    refs
+  end
+
+b_spiral_stair(b::Backend, center, radius, start_angle, included_angle,
+               clockwise, bottom_level, top_level, family) =
+  let bottom_h = level_height(b, bottom_level),
+      top_h = level_height(b, top_level),
+      total_h = top_h - bottom_h,
+      n_steps = Int(round(total_h / family.riser_height)),
+      riser_h = total_h / n_steps,
+      sign = clockwise ? -1 : 1,
+      angle_step = sign * included_angle / n_steps,
+      w = family.width,
+      r_inner = radius - w/2,
+      r_outer = radius + w/2,
+      tmat = material_ref(b, family.tread_material),
+      c = in_world(center),
+      refs = new_refs(b)
+    for i in 0:(n_steps - 1)
+      let a0 = start_angle + i * angle_step,
+          a1 = a0 + angle_step,
+          h = bottom_h + (i + 1) * riser_h,
+          tread = [c + vpol(r_inner, a0) + vz(h),
+                   c + vpol(r_outer, a0) + vz(h),
+                   c + vpol(r_outer, a1) + vz(h),
+                   c + vpol(r_inner, a1) + vz(h)]
+        append!(refs, b_surface_polygon(b, tread, tmat))
+      end
+    end
+    refs
+  end
+
+b_stair_landing(b::Backend, region, level, family) =
+  b_slab(b, region, level, family)
+
 # b_panel(b::Backend, region, family) =
 #   let th = family.thickness,
 # 	    v = planar_path_normal(region),
@@ -1313,29 +1428,114 @@ b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
 b_free_column(b::Backend, cb, h, angle, family) =
   b_beam(b, cb, h, angle, family)
 
-b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
+struct WallOpening
+  path_position::Real
+  base_height::Real
+  width::Real
+  height::Real
+end
+
+# Whole-path wall geometry: 4 quad strips + 2 end caps (open paths) = 4-6 calls total
+b_wall_no_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lmat, rmat, smat) =
   path_length(w_path) < path_tolerance() ?
-  	void_ref(b) :
+    void_ref(b) :
+    let r_path = offset(w_path, -r_thickness),
+        l_path = offset(w_path, l_thickness),
+        w_height = w_height * wall_z_fighting_factor,
+        r_vs = path_vertices(r_path),
+        l_vs = path_vertices(l_path),
+        r_top = map(p -> p + vz(w_height), r_vs),
+        l_top = map(p -> p + vz(w_height), l_vs),
+        closed = is_closed_path(w_path),
+        strip = closed ? b_quad_strip_closed : b_quad_strip,
+        refs = new_refs(b)
+      with_material_as_layer(b, rmat) do
+        append!(refs, strip(b, r_top, r_vs, false, material_ref(b, rmat)))
+      end
+      with_material_as_layer(b, lmat) do
+        append!(refs, strip(b, l_vs, l_top, false, material_ref(b, lmat)))
+      end
+      with_material_as_layer(b, smat) do
+        let smat_ref = material_ref(b, smat)
+          append!(refs, strip(b, r_top, l_top, false, smat_ref))
+          append!(refs, strip(b, l_vs, r_vs, false, smat_ref))
+          if !closed
+            append!(refs, b_surface_polygon(b, [l_vs[1], l_top[1], r_top[1], r_vs[1]], smat_ref))
+            append!(refs, b_surface_polygon(b, [r_vs[end], r_top[end], l_top[end], l_vs[end]], smat_ref))
+          end
+        end
+      end
+      refs
+    end
+
+b_wall_no_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
+  b_wall_no_openings(b, w_path, w_height, l_thickness, r_thickness,
+                     family.left_material, family.right_material, family.side_material)
+
+# Per-segment wall geometry with inline hole punching for backends without boolean ops
+subtract_wall_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
+  region(c_r_w_path, c_r_op_path), region(c_l_w_path, c_l_op_path)
+
+b_wall_with_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lmat, rmat, smat, openings) =
+  path_length(w_path) < path_tolerance() ?
+    void_ref(b) :
     let w_paths = subpaths(w_path),
         r_w_paths = subpaths(offset(w_path, -r_thickness)),
         l_w_paths = subpaths(offset(w_path, l_thickness)),
-        w_height = w_height*wall_z_fighting_factor,
-  	    (lmat, rmat, smat) = (family.left_material, family.right_material, family.side_material),
+        w_height = w_height * wall_z_fighting_factor,
         prevlength = 0,
         refs = new_refs(b)
       for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
         let currlength = prevlength + path_length(w_seg_path),
             c_r_w_path = closed_path_for_height(r_w_path, w_height),
             c_l_w_path = closed_path_for_height(l_w_path, w_height)
-          #append!(refs, b_pyramid_frustum(b, path_vertices(c_r_w_path), path_vertices(c_l_w_path), rmat, lmat, smat))
           append!(refs, materialize_path(b, c_r_w_path, c_l_w_path, smat))
-          push!(refs, materialize_path(b, reverse(c_l_w_path), lmat))
-          push!(refs, materialize_path(b, c_r_w_path, rmat))
+          openings = filter(openings) do op
+            if prevlength <= op.path_position < currlength ||
+               prevlength <= op.path_position + op.width <= currlength
+              let op_height = op.height,
+                  op_at_start = op.path_position <= prevlength,
+                  op_at_end = op.path_position + op.width >= currlength,
+                  op_path = subpath(w_path,
+                                    max(prevlength, op.path_position),
+                                    min(currlength, op.path_position + op.width)),
+                  r_op_path = offset(op_path, -r_thickness),
+                  l_op_path = offset(op_path,  l_thickness),
+                  fixed_r_op_path =
+                    open_polygonal_path([path_start(op_at_start ? r_w_path : r_op_path),
+                                         path_end(op_at_end ? r_w_path : r_op_path)]),
+                  fixed_l_op_path =
+                    open_polygonal_path([path_start(op_at_start ? l_w_path : l_op_path),
+                                         path_end(op_at_end ? l_w_path : l_op_path)]),
+                  c_r_op_path = closed_path_for_height(translate(fixed_r_op_path, vz(op.base_height)), op_height),
+                  c_l_op_path = closed_path_for_height(translate(fixed_l_op_path, vz(op.base_height)), op_height)
+                append!(refs, materialize_path(b, reverse(c_r_op_path), reverse(c_l_op_path), smat))
+                c_r_w_path, c_l_w_path = subtract_wall_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
+                !(op.path_position >= prevlength && op.path_position + op.width <= currlength)
+              end
+            else
+              true
+            end
+          end
           prevlength = currlength
+          append!(refs, materialize_path(b, reverse(c_l_w_path), lmat))
+          append!(refs, materialize_path(b, c_r_w_path, rmat))
         end
       end
       refs
     end
+
+# Main b_wall dispatcher: family + offset → decompose and dispatch
+b_wall(b::Backend, w_path, w_height, family, offset, openings) =
+  let l_th = (1/2 + offset) * (family.thickness + family.left_coating_thickness),
+      r_th = (1/2 - offset) * (family.thickness + family.right_coating_thickness),
+      lmat = family.left_material,
+      rmat = family.right_material,
+      smat = family.side_material
+    isempty(openings) ?
+      b_wall_no_openings(b, w_path, w_height, l_th, r_th, lmat, rmat, smat) :
+      b_wall_with_openings(b, w_path, w_height, l_th, r_th, lmat, rmat, smat, openings)
+  end
 
 b_curtain_wall(b::Backend, path, bottom_level, top_level, family, offset) =
   let th = family.panel.thickness,
@@ -1380,9 +1580,6 @@ curtain_wall_panel_path(b::Backend, path, family) =
                 division(0, path_length, x_panels))
     polygonal_path(pts)
   end
-
-#AML TO BE CONTINUED!!!
-#b_wall(b::Backend, w_path, w_openings, l_thickness, r_thickness, family) =
 
 export b_toilet, b_sink, b_closet
 b_toilet(b::Backend, c, host, family) =
@@ -1659,7 +1856,7 @@ b_table_and_chairs(b::Backend, p, table::Function, chair::Function,
   end
 
 b_curtain_wall_element(b::Backend, path, bottom, height, l_thickness, r_thickness, family) =
-  b_wall(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, family)
+  b_wall_no_openings(b, translate(path, vz(bottom)), height, l_thickness, r_thickness, family)
 
 #@bdef curtain_wall(s, path, bottom, height, thickness, kind)
 
@@ -1792,37 +1989,12 @@ backend_stroke_op(b::Backend, op::ArcOp, start::Loc, curr::Loc, refs) =
 #@bdef wall(path, height, l_thickness, r_thickness, family)
 
 # A poor's man approach to deal with Z-fighting
+export support_z_fighting_factor, wall_z_fighting_factor
 const support_z_fighting_factor = 0.999
 const wall_z_fighting_factor = 0.998
 
-backend_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
-  path_length(w_path) < path_tolerance() ?
-    realize(b, empty_shape()) : # not beautiful
-    let (matright, matleft) = wall_materials(b, family_ref(b, family))
-      backend_wall_with_materials(b, w_path, w_height, l_thickness, r_thickness, matright, matleft)
-    end
-
 @bdef wall_path(path::OpenPolygonalPath, height, l_thickness, r_thickness)
 @bdef wall_path(path::Path, height, l_thickness, r_thickness)
-
-#@bdef wall_with_materials(w_path, w_height, l_thickness, r_thickness, matright, matleft)
-backend_wall_with_materials(b::Backend, w_path, w_height, l_thickness, r_thickness, matright, matleft) =
-  let w_paths = subpaths(w_path),
-      r_w_paths = subpaths(offset(w_path, -r_thickness)),
-      l_w_paths = subpaths(offset(w_path, l_thickness)),
-      w_height = w_height*wall_z_fighting_factor,
-      prevlength = 0,
-      refs = new_refs(b)
-    for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
-      let currlength = prevlength + path_length(w_seg_path),
-          c_r_w_path = closed_path_for_height(r_w_path, w_height),
-          c_l_w_path = closed_path_for_height(l_w_path, w_height)
-        push!(refs, realize_pyramid_frustum(b, matright, matleft, matleft, c_l_w_path, c_r_w_path))
-        prevlength = currlength
-      end
-    end
-    refs
-  end
 
 # Select things from a backend
 @bdef(b_select_position(prompt))

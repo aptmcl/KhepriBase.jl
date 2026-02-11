@@ -404,6 +404,25 @@ The `ensure_ref` function in KhepriBase wraps raw `T` values into `NativeRef{K,T
 For a detailed explanation of the realize/ref protocol, reference types, and the
 lazy proxy pattern, see [realize_and_ref.md](realize_and_ref.md).
 
+### BIM Family Support
+
+Backends handle BIM families (wall, slab, beam, column, etc.) in three ways:
+
+| Pattern | Backends | How families are used |
+|---------|----------|----------------------|
+| **Native families** | Revit | `set_backend_family` maps to `RevitSystemFamily`/`RevitFileFamily`; `backend_get_family_ref` creates native Revit family types via `@remote` |
+| **Resource families** | Unity | `set_backend_family` maps to `UnityMaterialFamily`/`UnityResourceFamily`; loads materials/prefabs by name |
+| **Geometric fallback** | AutoCAD, Blender, FreeCAD, Rhino, GL, Thebes, Makie, MeshCat, Three.js, Xeokit, TikZ, POVRay, Radiance, Unreal, 3dsMax | Default `b_*` operations access family fields directly (thickness, materials); no `set_backend_family` needed |
+
+**Wall dispatch** — backends with `HasBooleanOps{true}` (Revit, Blender,
+FreeCAD) use CSG subtraction for door/window openings. All others construct
+walls as polygonal surfaces with geometric cutouts. Revit overrides
+`realize_wall_no_openings` entirely to create native Revit walls.
+
+For a detailed explanation of BIM family realization, caching, and the
+`HasBooleanOps` dispatch pattern, see
+[realize_and_ref.md](realize_and_ref.md) sections 11–15.
+
 ### Encoding Protocols
 - `CS`: C# backends (AutoCAD, Revit, Rhino, Unity)
 - `PY`: Python backends (Blender, FreeCAD)

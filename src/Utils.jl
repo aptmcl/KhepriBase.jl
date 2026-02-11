@@ -445,3 +445,17 @@ Base.show(io::IO, ::MIME"image/svg+xml", f::DVIFile) =
     end
     write(io, read(svgpath, String))
   end
+
+# Conditional evaluation of expressions, useful for backends that don't support all features
+export @ifbackend
+macro ifbackend(mod, body)
+  let mod_sym = QuoteNode(mod),
+      m = __module__
+    quote
+      if isdefined($m, $mod_sym)
+        $(esc(body))
+      end
+    end
+  end
+end
+
