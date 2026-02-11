@@ -688,6 +688,7 @@ const set_material = set_on!
 # To facilitate accessing the material reference that is provided to the backends:
 material_ref(b::Backend, m::Material) = ref_value(b, m)
 material_ref(b::Backend, s::Shape) = material_ref(b, s.material)
+material_ref(b::Backend, s::Annotation) = material_ref(b, s.material)
 
 # These are pre-defined materials that need to be specified by each backend.
 export material_point, material_curve, material_surface,
