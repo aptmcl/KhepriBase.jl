@@ -1450,18 +1450,18 @@ b_wall_no_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lmat,
         strip = closed ? b_quad_strip_closed : b_quad_strip,
         refs = new_refs(b)
       with_material_as_layer(b, rmat) do
-        append!(refs, strip(b, r_top, r_vs, false, material_ref(b, rmat)))
+        append!(refs, strip(b, r_vs, r_top, false, material_ref(b, rmat)))
       end
       with_material_as_layer(b, lmat) do
-        append!(refs, strip(b, l_vs, l_top, false, material_ref(b, lmat)))
+        append!(refs, strip(b, l_top, l_vs, false, material_ref(b, lmat)))
       end
       with_material_as_layer(b, smat) do
         let smat_ref = material_ref(b, smat)
           append!(refs, strip(b, r_top, l_top, false, smat_ref))
           append!(refs, strip(b, l_vs, r_vs, false, smat_ref))
           if !closed
-            append!(refs, b_surface_polygon(b, [l_vs[1], l_top[1], r_top[1], r_vs[1]], smat_ref))
-            append!(refs, b_surface_polygon(b, [r_vs[end], r_top[end], l_top[end], l_vs[end]], smat_ref))
+            append!(refs, b_surface_polygon(b, [r_vs[1], r_top[1], l_top[1], l_vs[1]], smat_ref))
+            append!(refs, b_surface_polygon(b, [l_vs[end], l_top[end], r_top[end], r_vs[end]], smat_ref))
           end
         end
       end
@@ -1489,7 +1489,21 @@ b_wall_with_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lma
         let currlength = prevlength + path_length(w_seg_path),
             c_r_w_path = closed_path_for_height(r_w_path, w_height),
             c_l_w_path = closed_path_for_height(l_w_path, w_height)
-          append!(refs, materialize_path(b, c_r_w_path, c_l_w_path, smat))
+          # Render top edge and end caps only (omit bottom face to avoid
+          # sliver across door openings at floor level)
+          with_material_as_layer(b, smat) do
+            let smat_ref = material_ref(b, smat),
+                r_vs = path_vertices(r_w_path),
+                l_vs = path_vertices(l_w_path),
+                r_top = map(p -> p + vz(w_height), r_vs),
+                l_top = map(p -> p + vz(w_height), l_vs)
+              append!(refs, b_quad_strip(b, r_top, l_top, false, smat_ref))
+              if !is_closed_path(w_path)
+                append!(refs, b_surface_polygon(b, [r_vs[1], r_top[1], l_top[1], l_vs[1]], smat_ref))
+                append!(refs, b_surface_polygon(b, [l_vs[end], l_top[end], r_top[end], r_vs[end]], smat_ref))
+              end
+            end
+          end
           openings = filter(openings) do op
             if prevlength <= op.path_position < currlength ||
                prevlength <= op.path_position + op.width <= currlength
@@ -1507,9 +1521,20 @@ b_wall_with_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lma
                   fixed_l_op_path =
                     open_polygonal_path([path_start(op_at_start ? l_w_path : l_op_path),
                                          path_end(op_at_end ? l_w_path : l_op_path)]),
-                  c_r_op_path = closed_path_for_height(translate(fixed_r_op_path, vz(op.base_height)), op_height),
-                  c_l_op_path = closed_path_for_height(translate(fixed_l_op_path, vz(op.base_height)), op_height)
-                append!(refs, materialize_path(b, reverse(c_r_op_path), reverse(c_l_op_path), smat))
+                  r_op_translated = translate(fixed_r_op_path, vz(op.base_height)),
+                  l_op_translated = translate(fixed_l_op_path, vz(op.base_height)),
+                  c_r_op_path = closed_path_for_height(r_op_translated, op_height),
+                  c_l_op_path = closed_path_for_height(l_op_translated, op_height),
+                  # Jacket: open U-shape (no sill) for floor-level openings, full closed for elevated
+                  r_jacket = op.base_height < path_tolerance() ?
+                    let ps = path_vertices(r_op_translated)
+                      open_polygonal_path([ps[1], ps[1]+vz(op_height), ps[end]+vz(op_height), ps[end]])
+                    end : c_r_op_path,
+                  l_jacket = op.base_height < path_tolerance() ?
+                    let ps = path_vertices(l_op_translated)
+                      open_polygonal_path([ps[1], ps[1]+vz(op_height), ps[end]+vz(op_height), ps[end]])
+                    end : c_l_op_path
+                append!(refs, materialize_path(b, reverse(r_jacket), reverse(l_jacket), smat))
                 c_r_w_path, c_l_w_path = subtract_wall_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
                 !(op.path_position >= prevlength && op.path_position + op.width <= currlength)
               end
@@ -1518,6 +1543,7 @@ b_wall_with_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lma
             end
           end
           prevlength = currlength
+          # Render wall faces (with openings subtracted as holes in the surfaces)
           append!(refs, materialize_path(b, reverse(c_l_w_path), lmat))
           append!(refs, materialize_path(b, c_r_w_path, rmat))
         end
