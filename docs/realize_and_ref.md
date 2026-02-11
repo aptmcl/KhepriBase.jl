@@ -539,3 +539,319 @@ individual shape references since their output is a complete file.
 
 The `realize_shapes` function re-realizes all shapes from scratch each time
 the output file is regenerated, so reference identity is irrelevant.
+
+---
+
+## 11. BIM Families (`@deffamily`)
+
+**Defined in**: `BIM.jl:242-296`
+
+BIM families are a specialized kind of proxy that describe reusable parametric
+building components (e.g., wall thickness, slab materials, beam profiles). They
+are created with the `@deffamily` macro, which generates a struct, constructor,
+default parameter, and helper functions.
+
+### What `@deffamily` generates
+
+Given:
+
+```julia
+@deffamily(wall_family, Family,
+  thickness::Real=0.2,
+  right_material::Material=material_plaster,
+  left_material::Material=material_plaster,
+  side_material::Material=material_plaster)
+```
+
+The macro generates:
+
+1. **Struct** `WallFamily <: Family` with the declared fields plus four
+   system fields:
+   - `based_on::Union{Family, Nothing}` — parent family for delegation
+   - `implemented_as::IdDict{<:Backend, <:Family}` — backend-specific overrides
+   - `ref::IdDict{<:Backend, Any}` — per-backend cached realization
+   - `data::BackendParameter` — backend-specific extra data
+
+2. **Constructor** `wall_family(...)` with keyword arguments for all fields
+
+3. **Element constructor** `wall_family_element(family; ...)` — creates a
+   derived family instance that delegates to `family` for unspecified fields
+
+4. **Default parameter** `default_wall_family = Parameter{WallFamily}(wall_family())`
+
+5. **Predicate** `is_wall_family(v)` — returns `true` for `WallFamily` instances
+
+6. **`with_wall_family(f; ...)`** — scoped default override
+
+### Family reference caching: `family_ref` vs `ref`
+
+Families use a **private cache** (`f.ref::IdDict{<:Backend, Any}`) that is
+separate from the standard `b.refs.families` dictionary.
+
+```julia
+# BIM.jl:214-217
+family_ref(b::Backend, f::Family) =
+  get!(f.ref, b) do
+    realize(b, f)
+  end
+```
+
+This is a deliberate design choice:
+
+- **`family_ref(b, f)`** caches in `f.ref` — the family owns its own cache
+- **`ref(b, f)`** would cache in `b.refs.families` — the backend owns the cache
+
+The `f.ref` approach means families **persist across `delete_all_refs()`**.
+When a user calls `delete_all_refs()` to clear a scene, families should not be
+deleted because they describe parametric types, not instantiated geometry.
+The standard `ref(b, f)` path through `b.refs.families` is never populated by
+the BIM flow.
+
+### Correct function for call sites
+
+**`family_ref(b, f)`** is the only correct function for obtaining a family's
+backend reference at call sites (e.g., inside `b_beam`, `b_column`, `@remote`
+calls). It caches in `f.ref`, which `set_backend_family` properly invalidates.
+
+**`realize(b, f::Family)`** must NOT be used at call sites. It performs the
+same work as `family_ref` but skips the cache, causing redundant backend calls
+on every invocation. For `RevitFileFamily`, this reloads the `.rfa` file each
+time. `realize(b, f)` should only appear in two places:
+- Inside `family_ref`'s cache-miss path (the `get!` block above)
+- Inside `realize` method bodies for composite families (e.g.,
+  `realize(b::ACAD, f::TableChairFamily)` calling `family_ref(b, f.table_family)`)
+
+**`ref(b, f)` / `ref_value(b, f)`** must NOT be used for families. They cache
+in `b.refs.families`, which `set_backend_family` does NOT invalidate (it only
+clears `f.ref`). This leads to stale references after a family override.
+
+### Backend family dispatch: `set_backend_family` and `backend_family`
+
+Each family can have **backend-specific implementations** stored in its
+`implemented_as` dictionary:
+
+```julia
+# User code
+set_backend_family(default_wall_family(), revit,
+  revit_systems_family("Basic Wall", "Width" => wall_family_thickness))
+```
+
+When a family needs to be realized, the dispatch chain is:
+
+```
+realize(b, f::Family)
+  → backend_get_family_ref(b, f, backend_family(b, f))
+```
+
+Where `backend_family(b, f)` looks up `f.implemented_as[b]`, falling back to
+`f.based_on` if not found:
+
+```julia
+# BIM.jl:322-327
+backend_family(b::Backend, family::Family) =
+  get(family.implemented_as, b) do
+    isnothing(family.based_on) ?
+      error("Family $(family) is missing the implementation for backend $(b)") :
+      backend_family(b, family.based_on)
+  end
+```
+
+The default `backend_get_family_ref` simply returns the backend family object
+as-is. BIM backends override it to create native family objects:
+
+- **Revit**: `RevitSystemFamily` → queries/creates Revit family types via
+  `@remote`; `RevitFileFamily` → loads `.rfa` files
+- **Unity**: `UnityMaterialFamily` → `@remote(b, LoadMaterial(name))`;
+  `UnityResourceFamily` → `@remote(b, LoadResource(name))`
+- **LayerFamily** → `b_layer(b, name, true, color)` (for CAD backends with
+  layer support)
+
+### Backends that don't use `set_backend_family`
+
+Geometry-only backends (AutoCAD, Blender, FreeCAD, TikZ, POVRay, GL, Thebes,
+Makie, etc.) do not call `set_backend_family`. Their `b_*` BIM operations
+receive the raw family object and access its fields directly (e.g.,
+`family.thickness`, `family.left_material`). The `backend_family` lookup is
+never triggered because BIM shapes pass raw families to `b_*` operations (see
+Section 12).
+
+---
+
+## 12. BIM Shape Realization
+
+**Defined in**: `BIM.jl:365-710`
+
+### Manual `realize` overrides
+
+All BIM shapes (Slab, Roof, Ceiling, Wall, Panel, Beam, Column, Door, Window,
+etc.) are defined with `@defproxy` but **manually override** the generated
+`realize` method. The `@defproxy`-generated version wraps each field in
+`ref_value`:
+
+```julia
+# Generated by @defproxy (effectively dead code for BIM shapes):
+realize(b::Backend, s::AbstractSlab) =
+  b_slab(b, ref_value(b, s.region), ref_value(b, s.level), ref_value(b, s.family))
+```
+
+The manual override passes raw field values instead:
+
+```julia
+# BIM.jl:369 (actual override):
+realize(b::Backend, s::Slab) =
+  b_slab(b, s.region, s.level, s.family)
+```
+
+This is intentional. Default `b_*` operations access family fields directly
+(e.g., `family.top_material`, `family.thickness`). BIM backends (Revit) override
+the `b_*` operations to call `realize(b, family)` and `ref(b, level)` themselves
+when they need native backend references.
+
+### The `HasBooleanOps` wall dispatch
+
+Walls have a special two-path dispatch based on backend capabilities:
+
+```julia
+# BIM.jl:496-497
+realize(b::B, w::Wall) where B<:Backend =
+  realize(has_boolean_ops(B), b, w)
+```
+
+**`HasBooleanOps{true}`** (Revit, Blender, FreeCAD):
+- Creates a solid wall via `b_wall`, then subtracts door/window openings using
+  `subtract_ref`
+- Revit overrides `realize_wall_no_openings` entirely to create native Revit
+  walls
+
+**`HasBooleanOps{false}`** (default — AutoCAD, GL, Thebes, TikZ, POVRay, etc.):
+- Constructs wall geometry as polygonal surfaces, computing door/window cutouts
+  geometrically rather than via CSG subtraction
+- Accesses `family.right_material`, `family.left_material`, `family.side_material`
+  directly
+
+### Door and Window realization
+
+Doors and windows share a single `realize` method (BIM.jl:697) that calls
+`b_wall` to create the door/window panel geometry and `b_sweep` for the frame.
+They receive the opening's own family (not the wall's), so material properties
+come from `DoorFamily` / `WindowFamily`.
+
+---
+
+## 13. Levels
+
+**Defined in**: `BIM.jl:26`
+
+```julia
+@defproxy(level, UniqueProxy, height::Real=0, elements::BIMElements=BIMElement[])
+```
+
+Levels are `UniqueProxy` instances — the `after_init` deduplication ensures that
+`level(3.0)` always returns the same object regardless of how many times it is
+called with the same height.
+
+### Default realization
+
+```julia
+b_level(b::Backend, h, elements) = h
+```
+
+For geometry-only backends, a level is just its height value. BIM backends
+(Revit) override `b_level` to create native level objects and return backend
+references.
+
+### `level_height`
+
+```julia
+level_height(b::Backend, level) = level.height
+```
+
+Geometry backends use this to extract the numeric height from a Level proxy. It
+is used throughout BIM operations to compute absolute Z positions (e.g.,
+`w_base_height = w.bottom_level.height`).
+
+BIM backends that need native level references use `ref(b, level)` instead,
+which triggers realization through the standard `ref` → `realize` → `b_level`
+path.
+
+---
+
+## 14. Backend Family Patterns
+
+Different backends handle BIM families in fundamentally different ways:
+
+### Native family support (Revit)
+
+Revit maps Khepri families to native Revit family types via
+`set_backend_family`:
+
+```julia
+set_backend_family(default_wall_family(), revit,
+  revit_systems_family("Basic Wall", "Width" => wall_family_thickness))
+```
+
+`RevitSystemFamily` and `RevitFileFamily` override `backend_get_family_ref` to
+load/query Revit families via `@remote` calls. They have internal caching
+(`instance_ref` parameter) separate from `f.ref`.
+
+In Revit's `b_*` operations (e.g., `b_beam`, `b_column`), the family is
+resolved via `family_ref(b, family)`, which caches in `f.ref` and delegates to
+`backend_get_family_ref` on cache miss. `RevitSystemFamily`/`RevitFileFamily`
+have additional internal caching (`instance_ref` parameter) for the Revit-side
+family type lookup.
+
+### Resource-based (Unity)
+
+Unity maps families to named materials or prefab resources:
+
+```julia
+set_backend_family(default_wall_family(), unity,
+  unity_material_family("Default/Materials/Plaster"))
+```
+
+`backend_get_family_ref` loads the resource via `@remote(b, LoadMaterial(name))`
+or `@remote(b, LoadResource(name))`.
+
+### Geometric fallback (most backends)
+
+Backends without native BIM support (AutoCAD, Blender, FreeCAD, GL, Thebes,
+TikZ, POVRay, Makie, etc.) never call `set_backend_family`. Their default `b_*`
+operations receive the raw Khepri family struct and access its geometric
+properties directly:
+
+```julia
+# Backend.jl b_wall default — accesses family fields directly
+b_wall(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
+  let (lmat, rmat, smat) = (family.left_material, family.right_material, family.side_material),
+      ...
+```
+
+This means the family is never "realized" in the backend — its fields are used
+as parameters for constructing geometry from primitives.
+
+---
+
+## 15. Design Notes for BIM Families
+
+### `b.refs.families` is not used by the BIM flow
+
+Although `References{K,T}` includes a `families` dictionary, and
+`refs_storage(b, f::Family)` dispatches to it, the BIM flow never populates it.
+All family caching goes through `f.ref` via `family_ref`. The `b.refs.families`
+dictionary exists for potential use by non-BIM family-like proxies but is
+currently unused.
+
+### `@defproxy`-generated `realize` for BIM shapes is dead code
+
+The `realize(b::Backend, s::AbstractSlab)` generated by `@defproxy` is
+shadowed by the manual `realize(b::Backend, s::Slab)` override. The generated
+method is unreachable because `Slab` is more specific than `AbstractSlab` in
+dispatch. This is true for all BIM shapes.
+
+### Materials in BIM families vs shape materials
+
+BIM shapes do **not** use the `@defshape` macro (they use `@defproxy`), so they
+do not get the automatic `material` field added by `@defshape`. Instead, BIM
+shapes carry materials through their **family**: `family.left_material`,
+`family.top_material`, etc. The `used_materials(s::BIMShape)` function delegates
+to `used_materials(s.family)` to enumerate materials for pre-realization.
