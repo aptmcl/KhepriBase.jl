@@ -4,7 +4,11 @@ CurrentModule = KhepriBase
 
 # KhepriBase
 
-KhepriBase is the core library of the [Khepri](https://github.com/aptmcl/Khepri) algorithmic design framework. It defines the portable abstractions — shapes, BIM elements, materials, levels, families, and backend operations — that allow the same design script to produce equivalent geometry across AutoCAD, Revit, Blender, Rhino, TikZ, and many other backends.
+KhepriBase is the core library of the [Khepri](https://github.com/aptmcl/Khepri) algorithmic design framework. It defines the portable abstractions -- shapes, BIM elements, materials, levels, families, and backend operations -- that allow the same design script to produce equivalent geometry across AutoCAD, Revit, Blender, Rhino, TikZ, and many other backends.
+
+## What is Khepri?
+
+Khepri is a Julia-based algorithmic design system built around one principle: **the same script produces equivalent designs in every backend**. You write your design once using KhepriBase's abstractions, then switch between 16+ backends by changing a single `using` line. KhepriBase provides the shapes, coordinates, paths, BIM elements, materials, and rendering operations; each backend translates those into native geometry.
 
 ## Architecture
 
@@ -44,23 +48,75 @@ add_window(w, xy(4, 1.0), window_family(width=1.5, height=1.2))
 render_view("simple_room")
 ```
 
+## Reading Roadmap
+
+### New to Khepri?
+
+Start here for a ground-up introduction:
+
+1. [Installation and Setup](getting_started/installation.md) -- install KhepriBase and a backend, run your first shape
+2. [Coordinates and Vectors](getting_started/coordinates.md) -- locations, vectors, coordinate systems
+3. [Paths](getting_started/paths.md) -- open/closed paths, regions, profiles
+4. [Shapes](concepts/shapes.md) -- the shape catalog (points, curves, surfaces, solids, CSG)
+5. [Levels, Families, and Materials](concepts/levels_and_families.md) -- BIM foundations
+
+### BIM User?
+
+Jump into building design:
+
+1. [Levels, Families, and Materials](concepts/levels_and_families.md) -- levels, families, standard materials
+2. [Horizontal Elements](bim/horizontal_elements.md) -- slabs, roofs, ceilings, panels
+3. [Vertical Elements](bim/vertical_elements.md) -- walls, doors, windows, curtain walls
+4. [Structural Elements](bim/structural_elements.md) -- beams, columns, trusses
+5. [Circulation](bim/circulation.md) -- stairs, ramps, railings
+6. [Furnishings and Lights](bim/furnishings_and_lights.md) -- tables, chairs, lights
+7. [Spaces](bim/spaces.md) -- space-first layout design
+8. [Building a Complete Building](tutorials/building_tutorial.md) -- end-to-end tutorial
+
+### Backend Developer?
+
+Implement a new Khepri backend:
+
+1. [Backends](concepts/backends.md) -- `Backend{K,T}`, dispatch, fallback chain
+2. [Parameters](concepts/parameters.md) -- the parameter system
+3. [Realize & Ref Protocol](reference/realize_and_ref.md) -- the lazy proxy realization system
+4. [Implementing a Backend](reference/implementing_backend.md) -- step-by-step backend guide
+5. [Backend Operations Matrix](reference/backend_operations.md) -- which `b_*` operations to implement
+
 ## Documentation Guide
 
-### [Levels, Families, and Materials](concepts/levels_and_families.md)
-Foundational abstractions — levels, the family system, materials, and the proxy pattern.
+### Getting Started
+- **[Installation and Setup](getting_started/installation.md)** -- Install, configure, hello-sphere
+- **[Coordinates and Vectors](getting_started/coordinates.md)** -- `Loc` vs `Vec`, constructors, coordinate spaces, arithmetic
+- **[Paths](getting_started/paths.md)** -- Open/closed paths, regions, profiles, path operations
+
+### Concepts
+- **[Levels, Families, and Materials](concepts/levels_and_families.md)** -- Levels, the family system, standard materials, the proxy pattern
+- **[Shapes](concepts/shapes.md)** -- Shape proxy system, dimensionality hierarchy, CSG operations
+- **[Parameters](concepts/parameters.md)** -- `Parameter`, `GlobalParameter`, `OptionParameter`, `LazyParameter`, `with` scoping
+- **[Backends](concepts/backends.md)** -- `Backend{K,T}`, backend types, multi-backend mode, `b_*` dispatch
 
 ### BIM Elements
-- **[Horizontal Elements](bim/horizontal_elements.md)** — Slab, Roof, Ceiling, Panel
-- **[Vertical Elements](bim/vertical_elements.md)** — Wall, Door, Window, Curtain Wall
-- **[Structural Elements](bim/structural_elements.md)** — Beam, Column, Free Column, Trusses
-- **[Circulation](bim/circulation.md)** — Stair, Spiral Stair, Stair Landing, Ramp, Railing
-- **[Furnishings and Lights](bim/furnishings_and_lights.md)** — Table, Chair, Fixtures, Point/Spot/IES Lights
+- **[Horizontal Elements](bim/horizontal_elements.md)** -- Slab, Roof, Ceiling, Panel
+- **[Vertical Elements](bim/vertical_elements.md)** -- Wall, Door, Window, Curtain Wall
+- **[Structural Elements](bim/structural_elements.md)** -- Beam, Column, Free Column, Trusses
+- **[Circulation](bim/circulation.md)** -- Stair, Spiral Stair, Stair Landing, Ramp, Railing
+- **[Furnishings and Lights](bim/furnishings_and_lights.md)** -- Table, Chair, Fixtures, Point/Spot/IES Lights
+- **[Spaces](bim/spaces.md)** -- Space, FloorPlan, BuildResult, validation rules
 
-### [Building a Complete Building](tutorials/building_tutorial.md)
-End-to-end tutorial: a 2-story office building from levels to render.
+### Tutorials
+- **[Building a Complete Building](tutorials/building_tutorial.md)** -- End-to-end: a 2-story office building from levels to render
+- **[Space-First Layout Design](tutorials/spaces_tutorial.md)** -- Define rooms and connections, auto-generate walls
+- **[Rendering and Animation](tutorials/rendering_tutorial.md)** -- Camera, render settings, film workflow
+- **[Algorithmic Design](tutorials/algorithmic_tutorial.md)** -- Parametric patterns, subdivision, recursive structures
 
-### [Backend Operations Matrix](reference/backend_operations.md)
-Complete reference of all `b_*` operations and which backends implement them.
+### Reference
+- **[Shapes and Geometry](reference/shapes_geometry.md)** -- Complete API tables for all shapes, CSG, geometric utilities
+- **[Utilities](reference/utilities.md)** -- `division`, `map_division`, Grasshopper-compat functions, random, color
+- **[Camera and Rendering](reference/camera_rendering.md)** -- Render parameters, film parameters, camera functions
+- **[Backend Operations Matrix](reference/backend_operations.md)** -- All `b_*` operations and which backends implement them
+- **[Realize and Ref Protocol](reference/realize_and_ref.md)** -- The lazy proxy realization system in detail
+- **[Implementing a Backend](reference/implementing_backend.md)** -- Backend developer guide: struct, void_ref, operations, checklist
 
 ## API Index
 

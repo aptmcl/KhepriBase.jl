@@ -135,16 +135,24 @@ Each backend interprets these properties using the best available shading model 
 
 ## The BIM Proxy Pattern
 
-All BIM elements in KhepriBase are defined using the `@defproxy` macro. A proxy is a lightweight Julia struct that stores the element's parameters without immediately creating geometry. Geometry is only generated ("realized") when the element is sent to a backend.
+All BIM elements in KhepriBase are defined using the `@defproxy` macro. A proxy is a lightweight Julia struct that stores the element's parameters without immediately creating geometry. Geometry is only generated ("realized") when the element is sent to a backend. For a detailed treatment of shapes and the `@defshape` macro (which extends `@defproxy` with material defaults), see [Shapes](shapes.md).
 
 The realization pipeline:
 
-1. **User calls** `slab(region, level, family)` — creates a `Slab` proxy struct
-2. **Backend dispatch** calls `realize(backend, slab)` — invoked lazily
-3. **`realize` calls** `b_slab(backend, region, level, family)` — the backend-specific operation
+1. **User calls** `slab(region, level, family)` -- creates a `Slab` proxy struct
+2. **Backend dispatch** calls `realize(backend, slab)` -- invoked lazily
+3. **`realize` calls** `b_slab(backend, region, level, family)` -- the backend-specific operation
 4. **Backend returns** a reference (or set of references) to the created geometry
 
 This two-phase approach means:
 - The same `Slab` object can be realized in multiple backends
 - Elements can be modified before realization
 - Backend-specific details are isolated in `b_*` implementations
+
+For the full details of the realize/ref protocol, including reference types, transaction modes, and storage, see [Realize & Ref Protocol](../reference/realize_and_ref.md).
+
+## See Also
+
+- [Shapes](shapes.md) -- The shape catalog and `@defshape` macro
+- [Parameters](parameters.md) -- The parameter system used by `default_level`, `default_wall_family`, and other BIM defaults
+- [Backends](backends.md) -- How backends implement `b_*` operations and the fallback chain

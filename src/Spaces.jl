@@ -5,17 +5,27 @@
 # windows, arches), not individual walls. This module lets users define
 # spaces as closed paths and connections between them, then automatically
 # generates walls, doors, windows, and slabs via build().
+#
+# Inspired by IFC's IfcSpace / IfcRelSpaceBoundary model: build()
+# produces a descriptive BuildResult that persists space-to-element
+# boundary relationships, enabling introspection and rule validation.
 
-export Space, SpaceConnection, FloorPlan,
-       floor_plan, add_space, add_arch,
-       build,
-       shared_boundary, exterior_edges, neighbors
+export Space, SpaceConnection, SpaceBoundary, SpaceRule, BuildResult, FloorPlan,
+       floor_plan, add_space, add_arch, add_rule,
+       build, validate,
+       space_area, space_perimeter,
+       shared_boundary, exterior_edges, neighbors,
+       space_boundaries, space_walls, space_doors, space_windows,
+       bounding_spaces, adjacent_spaces,
+       min_area_rule, max_area_rule, has_door_rule, has_connection_rule
 
 #=== Data Structures ===#
 
-# A named bounded area on a floor plan
+# A named bounded area on a floor plan (cf. IFC IfcSpace).
+# kind classifies the space's function, similar to IfcSpaceTypeEnum.
 struct Space
   name::String
+  kind::Symbol      # :space, :room, :wc, :kitchen, :corridor, :office, :bedroom, :parking, ...
   boundary::ClosedPath
 end
 
@@ -28,7 +38,26 @@ struct SpaceConnection
   loc::Union{Loc, Nothing}        # World-space point on the boundary edge
 end
 
-# A floor plan holds spaces and connections at a given level
+# A relationship between a space and a bounding element (cf. IFC IfcRelSpaceBoundary).
+# Persists after build() to enable introspection: which elements bound a space,
+# which spaces does an element separate, etc.
+struct SpaceBoundary
+  space::Space
+  element               # Wall, Door, Window, or nothing (for arches)
+  kind::Symbol          # :physical (wall), :virtual (opening/arch)
+  side::Symbol          # :interior, :exterior
+  related_space::Union{Space, Nothing}  # space on the other side (cf. 2nd level boundary)
+  p1::Loc               # boundary segment start
+  p2::Loc               # boundary segment end
+end
+
+# A validation rule that can be checked against spaces after build().
+struct SpaceRule
+  name::String
+  check               # (Space, BuildResult) → Union{Nothing, String}
+end
+
+# A floor plan holds spaces, connections, and validation rules at a given level.
 mutable struct FloorPlan
   spaces::Vector{Space}
   connections::Vector{SpaceConnection}
@@ -37,7 +66,32 @@ mutable struct FloorPlan
   wall_family::WallFamily
   slab_family::SlabFamily
   generate_slabs::Bool
+  rules::Vector{SpaceRule}
 end
+
+# The result of build(): BIM elements plus the descriptive boundary model.
+# Supports tuple destructuring: walls, doors, windows, slabs = build(plan)
+struct BuildResult
+  plan::FloorPlan
+  walls::Vector
+  doors::Vector
+  windows::Vector
+  slabs::Vector
+  boundaries::Vector{SpaceBoundary}
+end
+
+Base.iterate(r::BuildResult, state=1) =
+  state == 1 ? (r.walls, 2) :
+  state == 2 ? (r.doors, 3) :
+  state == 3 ? (r.windows, 4) :
+  state == 4 ? (r.slabs, 5) :
+  nothing
+Base.length(::BuildResult) = 4
+
+Base.show(io::IO, r::BuildResult) =
+  print(io, "BuildResult($(length(r.plan.spaces)) spaces, $(length(r.walls)) walls, ",
+            "$(length(r.doors)) doors, $(length(r.windows)) windows, ",
+            "$(length(r.slabs)) slabs, $(length(r.boundaries)) boundaries)")
 
 #=== Constructor Functions ===#
 
@@ -45,12 +99,13 @@ floor_plan(; level=default_level(),
              height=default_level_to_level_height(),
              wall_family=default_wall_family(),
              slab_family=default_slab_family(),
-             generate_slabs=true) =
+             generate_slabs=true,
+             rules=SpaceRule[]) =
   FloorPlan(Space[], SpaceConnection[], level, height,
-            wall_family, slab_family, generate_slabs)
+            wall_family, slab_family, generate_slabs, rules)
 
-add_space(plan::FloorPlan, name, boundary) =
-  let s = Space(name, boundary)
+add_space(plan::FloorPlan, name, boundary; kind=:space) =
+  let s = Space(name, kind, boundary)
     push!(plan.spaces, s)
     s
   end
@@ -75,13 +130,26 @@ add_arch(plan::FloorPlan, space_a::Space, space_b::Space) =
     c
   end
 
+add_rule(plan::FloorPlan, rule::SpaceRule) =
+  let _ = push!(plan.rules, rule)
+    rule
+  end
+
 #=== Geometry Helpers ===#
 
 # Extract directed edge segments from vertices of a closed polygon.
-# Returns [(v1, v2), (v2, v3), ..., (vn, v1)].
 polygon_edges(vertices) =
   let n = length(vertices)
     [(vertices[i], vertices[mod1(i + 1, n)]) for i in 1:n]
+  end
+
+# Polygon area via the shoelace formula (2D, using world xy coordinates).
+polygon_area(vertices) =
+  let n = length(vertices),
+      ws = [in_world(v) for v in vertices]
+    abs(sum(cx(ws[i]) * cy(ws[mod1(i + 1, n)]) -
+            cx(ws[mod1(i + 1, n)]) * cy(ws[i])
+            for i in 1:n)) / 2
   end
 
 # Find collinear overlap between directed segments (a1→a2) and (b1→b2).
@@ -100,6 +168,16 @@ collinear_overlap(a1, a2, b1, b2, tol=collinearity_tolerance()) =
     end
   end
 
+#=== Computed Properties ===#
+
+space_area(space::Space) = polygon_area(path_vertices(space.boundary))
+
+space_perimeter(space::Space) =
+  let vs = path_vertices(space.boundary),
+      n = length(vs)
+    sum(distance(vs[i], vs[mod1(i + 1, n)]) for i in 1:n)
+  end
+
 #=== Edge Classification ===#
 
 # Classify a single directed edge against edges from other spaces.
@@ -109,7 +187,6 @@ function classify_edge(a1, a2, space, other_edges, tol)
   edge_len = distance(a1, a2)
   edge_len < tol && return []
   d = unitized(a2 - a1)
-  # Collect overlap intervals along this edge
   overlaps = []
   for (b1, b2, other_space) in other_edges
     ov = collinear_overlap(a1, a2, b1, b2, tol)
@@ -118,7 +195,6 @@ function classify_edge(a1, a2, space, other_edges, tol)
     end
   end
   sort!(overlaps, by=first)
-  # Split the edge into classified segments
   segments = []
   cursor = 0.0
   for (t_start, t_end, other_space) in overlaps
@@ -147,7 +223,6 @@ function classify_all_edges(plan, tol)
       for seg in classify_edge(a1, a2, space, other_edges, tol)
         _, _, kind, sp_a, sp_b = seg
         if kind == :interior
-          # Emit shared wall only once: from the space with smaller objectid
           objectid(sp_a) < objectid(sp_b) && push!(segments, seg)
         else
           push!(segments, seg)
@@ -161,7 +236,6 @@ end
 #=== Query Helpers ===#
 
 # Find shared boundary segments between two spaces.
-# Returns list of (p_start, p_end) tuples in world coordinates.
 shared_boundary(space_a::Space, space_b::Space, tol=collinearity_tolerance()) =
   let edges_a = polygon_edges(path_vertices(space_a.boundary)),
       edges_b = polygon_edges(path_vertices(space_b.boundary)),
@@ -179,7 +253,6 @@ shared_boundary(space_a::Space, space_b::Space, tol=collinearity_tolerance()) =
   end
 
 # Find all exterior edges of a space within a plan.
-# Returns list of (p_start, p_end) tuples.
 exterior_edges(plan::FloorPlan, space::Space, tol=collinearity_tolerance()) =
   let edges = polygon_edges(path_vertices(space.boundary)),
       other_edges = [(b1, b2, s)
@@ -198,8 +271,8 @@ neighbors(plan::FloorPlan, space::Space) =
 
 #=== Builder ===#
 
-# Generate all BIM elements (walls, doors, windows, slabs) from a floor plan.
-# Returns (walls, doors, windows, slabs).
+# Generate all BIM elements from a floor plan and return a descriptive BuildResult.
+# The result persists space-to-element boundary relationships for introspection.
 function build(plan::FloorPlan)
   tol = collinearity_tolerance()
   top = upper_level(plan.level, plan.height)
@@ -214,20 +287,38 @@ function build(plan::FloorPlan)
     !(kind == :interior && !isnothing(sp_b) &&
       minmax(objectid(sp_a), objectid(sp_b)) in arch_pairs)
   end
-  # Create walls (one per classified edge segment)
-  walls = [wall(open_polygonal_path([p1, p2]),
-                bottom_level=plan.level, top_level=top,
-                family=plan.wall_family)
-           for (p1, p2, _, _, _) in segments]
-  # Place doors and windows on their corresponding walls
+  # Create walls and record wall boundaries
+  walls = []
+  boundaries = SpaceBoundary[]
+  for (p1, p2, kind, sp_a, sp_b) in segments
+    w = wall(open_polygonal_path([p1, p2]),
+             bottom_level=plan.level, top_level=top,
+             family=plan.wall_family)
+    push!(walls, w)
+    push!(boundaries, SpaceBoundary(sp_a, w, :physical,
+          kind == :interior ? :interior : :exterior, sp_b, p1, p2))
+    if kind == :interior && !isnothing(sp_b)
+      push!(boundaries, SpaceBoundary(sp_b, w, :physical, :interior, sp_a, p1, p2))
+    end
+  end
+  # Record arch boundaries (virtual, no element)
+  for conn in plan.connections
+    if conn.kind == :arch && conn.space_b isa Space
+      for (p1, p2) in shared_boundary(conn.space_a, conn.space_b)
+        push!(boundaries, SpaceBoundary(conn.space_a, nothing, :virtual, :interior, conn.space_b, p1, p2))
+        push!(boundaries, SpaceBoundary(conn.space_b, nothing, :virtual, :interior, conn.space_a, p1, p2))
+      end
+    end
+  end
+  # Place doors and windows, recording their boundaries
   doors = []
   windows = []
   for conn in plan.connections
     conn.kind == :arch && continue
     if conn.space_b isa Space
-      place_interior_connection!(conn, segments, walls, doors, windows)
+      place_interior_connection!(conn, segments, walls, doors, windows, boundaries)
     elseif !isnothing(conn.loc)
-      place_exterior_connection!(conn, segments, walls, doors, windows)
+      place_exterior_connection!(conn, segments, walls, doors, windows, boundaries)
     else
       error("Exterior connections require a loc parameter")
     end
@@ -236,11 +327,10 @@ function build(plan::FloorPlan)
   slabs = plan.generate_slabs ?
     [slab(s.boundary, level=plan.level, family=plan.slab_family)
      for s in plan.spaces] : []
-  (walls, doors, windows, slabs)
+  BuildResult(plan, walls, doors, windows, slabs, boundaries)
 end
 
-# Place a door or window on the shared interior wall between two spaces.
-function place_interior_connection!(conn, segments, walls, doors, windows)
+function place_interior_connection!(conn, segments, walls, doors, windows, boundaries)
   target = minmax(objectid(conn.space_a), objectid(conn.space_b))
   for (i, seg) in enumerate(segments)
     _, _, kind, sp_a, sp_b = seg
@@ -258,21 +348,31 @@ function place_interior_connection!(conn, segments, walls, doors, windows)
         dot(conn.loc - p1, d) - opening_width / 2
       end
     end
+    d = unitized(p2 - p1)
+    op_start = p1 + d * wall_x
+    op_end = p1 + d * (wall_x + opening_width)
     wall_loc = xy(wall_x, 0)
     if conn.kind == :door
       add_door(w, wall_loc, conn.family)
       push!(doors, w.doors[end])
+      let el = w.doors[end]
+        push!(boundaries, SpaceBoundary(conn.space_a, el, :virtual, :interior, conn.space_b, op_start, op_end))
+        push!(boundaries, SpaceBoundary(conn.space_b, el, :virtual, :interior, conn.space_a, op_start, op_end))
+      end
     else
       add_window(w, wall_loc, conn.family)
       push!(windows, w.windows[end])
+      let el = w.windows[end]
+        push!(boundaries, SpaceBoundary(conn.space_a, el, :virtual, :interior, conn.space_b, op_start, op_end))
+        push!(boundaries, SpaceBoundary(conn.space_b, el, :virtual, :interior, conn.space_a, op_start, op_end))
+      end
     end
     return
   end
   error("No shared wall found between '$(conn.space_a.name)' and '$(conn.space_b.name)'")
 end
 
-# Place a door or window on the exterior wall closest to conn.loc.
-function place_exterior_connection!(conn, segments, walls, doors, windows)
+function place_exterior_connection!(conn, segments, walls, doors, windows, boundaries)
   best_idx = 0
   best_t = 0.0
   best_dist = Inf
@@ -293,14 +393,123 @@ function place_exterior_connection!(conn, segments, walls, doors, windows)
   end
   best_idx == 0 &&
     error("No exterior wall found for '$(conn.space_a.name)' near $(conn.loc)")
+  p1, p2 = segments[best_idx][1], segments[best_idx][2]
+  d = unitized(p2 - p1)
   w = walls[best_idx]
   opening_width = conn.family.width
-  wall_loc = xy(best_t - opening_width / 2, 0)
+  wall_x = best_t - opening_width / 2
+  op_start = p1 + d * wall_x
+  op_end = p1 + d * (wall_x + opening_width)
+  wall_loc = xy(wall_x, 0)
   if conn.kind == :door
     add_door(w, wall_loc, conn.family)
     push!(doors, w.doors[end])
+    let el = w.doors[end]
+      push!(boundaries, SpaceBoundary(conn.space_a, el, :virtual, :exterior, nothing, op_start, op_end))
+    end
   else
     add_window(w, wall_loc, conn.family)
     push!(windows, w.windows[end])
+    let el = w.windows[end]
+      push!(boundaries, SpaceBoundary(conn.space_a, el, :virtual, :exterior, nothing, op_start, op_end))
+    end
   end
 end
+
+#=== BuildResult Queries ===#
+
+# All boundaries for a given space (cf. IfcSpace.BoundedBy)
+space_boundaries(result::BuildResult, space::Space) =
+  [b for b in result.boundaries if b.space === space]
+
+# Walls bounding a space
+space_walls(result::BuildResult, space::Space) =
+  unique([b.element for b in result.boundaries
+          if b.space === space && b.kind == :physical])
+
+# Doors accessible from a space
+space_doors(result::BuildResult, space::Space) =
+  unique([b.element for b in result.boundaries
+          if b.space === space && !isnothing(b.element) && b.element isa Door])
+
+# Windows on a space
+space_windows(result::BuildResult, space::Space) =
+  unique([b.element for b in result.boundaries
+          if b.space === space && !isnothing(b.element) && b.element isa Window])
+
+# Spaces bounded by a given element
+bounding_spaces(result::BuildResult, element) =
+  unique([b.space for b in result.boundaries if b.element === element])
+
+# Spaces adjacent to a given space (connected through any boundary)
+adjacent_spaces(result::BuildResult, space::Space) =
+  unique(filter(!isnothing,
+    [b.related_space for b in result.boundaries if b.space === space]))
+
+#=== Predefined Rules ===#
+
+# Minimum area for all spaces
+min_area_rule(area::Real) = SpaceRule(
+  "Minimum area: $(area)m\u00b2",
+  (space, result) ->
+    space_area(space) < area ?
+      "$(space.name): area $(round(space_area(space), digits=2))m\u00b2 < minimum $(area)m\u00b2" :
+      nothing)
+
+# Minimum area for spaces of a given kind
+min_area_rule(kind::Symbol, area::Real) = SpaceRule(
+  "Minimum $(kind) area: $(area)m\u00b2",
+  (space, result) ->
+    space.kind == kind && space_area(space) < area ?
+      "$(space.name) ($(kind)): area $(round(space_area(space), digits=2))m\u00b2 < minimum $(area)m\u00b2" :
+      nothing)
+
+# Maximum area for spaces of a given kind
+max_area_rule(kind::Symbol, area::Real) = SpaceRule(
+  "Maximum $(kind) area: $(area)m\u00b2",
+  (space, result) ->
+    space.kind == kind && space_area(space) > area ?
+      "$(space.name) ($(kind)): area $(round(space_area(space), digits=2))m\u00b2 > maximum $(area)m\u00b2" :
+      nothing)
+
+# Every space of a given kind must have at least one door
+has_door_rule(kind::Symbol) = SpaceRule(
+  "$(kind) must have a door",
+  (space, result) ->
+    space.kind == kind && isempty(space_doors(result, space)) ?
+      "$(space.name) ($(kind)): has no door" :
+      nothing)
+
+# Every space must have at least one door
+has_door_rule() = SpaceRule(
+  "Every space must have a door",
+  (space, result) ->
+    isempty(space_doors(result, space)) ?
+      "$(space.name): has no door" :
+      nothing)
+
+# Every space must have at least one connection (door, window, or arch)
+has_connection_rule() = SpaceRule(
+  "Every space must have a connection",
+  (space, result) ->
+    let conns = [c for c in result.plan.connections
+                 if c.space_a === space || c.space_b === space]
+      isempty(conns) ?
+        "$(space.name): has no connections" :
+        nothing
+    end)
+
+#=== Validation ===#
+
+# Validate all rules on the plan. Returns a list of violation messages (empty = all pass).
+validate(result::BuildResult) = validate(result, result.plan.rules)
+
+validate(result::BuildResult, rules) =
+  let violations = String[]
+    for rule in rules, space in result.plan.spaces
+      let msg = rule.check(space, result)
+        !isnothing(msg) && push!(violations, msg)
+      end
+    end
+    violations
+  end
