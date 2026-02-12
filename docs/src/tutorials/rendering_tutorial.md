@@ -117,9 +117,11 @@ backend's initial setup routine.
 
 ### Producing a Render
 
-Call `render_view` to produce the image:
+Call `render_view` to produce the image (always set the view first so the
+camera points at the relevant geometry):
 
 ```julia
+set_view(xyz(20, 20, 15), xyz(0, 0, 0))
 render_view("my_render")
 ```
 
