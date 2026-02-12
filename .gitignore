@@ -3,3 +3,8 @@
 *.jl.mem
 /Manifest.toml
 /docs/build/
+
+# Editor backups
+*~
+*.bak
+*.tmp
