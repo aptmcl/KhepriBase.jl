@@ -51,4 +51,5 @@ makedocs(;
 
 deploydocs(;
     repo="github.com/aptmcl/KhepriBase.jl",
+    devbranch="master",
 )
