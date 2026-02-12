@@ -20,8 +20,7 @@ before the design is sent to a backend for visualization.
 ## Setup
 
 ```julia
-using KhepriAutoCAD   # or any Khepri backend
-using KhepriBase
+using KhepriAutoCAD   # or any Khepri backend (re-exports KhepriBase)
 
 backend(autocad)
 delete_all_shapes()

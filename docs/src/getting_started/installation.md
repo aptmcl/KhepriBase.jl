@@ -1,6 +1,6 @@
 # Installation and Setup
 
-KhepriBase is the core library of the Khepri algorithmic design framework. You do not typically use KhepriBase alone -- instead, you install a **backend package** that re-exports everything from KhepriBase and adds the ability to produce geometry in a specific target application or format.
+KhepriBase is the core library of the Khepri algorithmic design framework. You never need to install or import KhepriBase directly -- instead, you install a **backend package** that depends on KhepriBase and re-exports all of its symbols. A single `using KhepriThebes` (or any other backend) gives you every function documented here.
 
 ## Prerequisites
 
@@ -14,14 +14,12 @@ The simplest backend to start with is **KhepriThebes**, a lightweight local rend
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/aptmcl/KhepriBase.jl")
 Pkg.add(url="https://github.com/aptmcl/KhepriThebes.jl")
 ```
 
-Other backends follow the same pattern. For example, to use AutoCAD:
+This automatically installs KhepriBase as a dependency. Other backends follow the same pattern:
 
 ```julia
-Pkg.add(url="https://github.com/aptmcl/KhepriBase.jl")
 Pkg.add(url="https://github.com/aptmcl/KhepriAutoCAD.jl")
 ```
 

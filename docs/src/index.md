@@ -24,8 +24,7 @@ KhepriBase is organized around four layers:
 Create a simple room with a floor slab and four walls:
 
 ```julia
-using KhepriThebes   # or any Khepri backend
-using KhepriBase
+using KhepriThebes   # or any Khepri backend (re-exports KhepriBase)
 
 backend(thebes)
 
@@ -54,7 +53,7 @@ render_view("simple_room")
 
 Start here for a ground-up introduction:
 
-1. [Installation and Setup](getting_started/installation.md) -- install KhepriBase and a backend, run your first shape
+1. [Installation and Setup](getting_started/installation.md) -- install a backend, run your first shape
 2. [Coordinates and Vectors](getting_started/coordinates.md) -- locations, vectors, coordinate systems
 3. [Paths](getting_started/paths.md) -- open/closed paths, regions, profiles
 4. [Shapes](concepts/shapes.md) -- the shape catalog (points, curves, surfaces, solids, CSG)

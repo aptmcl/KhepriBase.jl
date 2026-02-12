@@ -1,12 +1,11 @@
 # Building a Complete Building
 
-This tutorial walks through the creation of a 2-story office building using KhepriBase's BIM operations. The code is backend-portable — change the `using` line and backend call to switch between any Khepri backend.
+This tutorial walks through the creation of a 2-story office building using Khepri's BIM operations. The code is backend-portable -- change the `using` line and backend call to switch between any Khepri backend.
 
 ## Setup
 
 ```julia
 using KhepriThebes   # or KhepriAutoCAD, KhepriRevit, KhepriTikZ, etc.
-using KhepriBase
 
 backend(thebes)      # or autocad, revit, tikz, etc.
 delete_all_shapes()
