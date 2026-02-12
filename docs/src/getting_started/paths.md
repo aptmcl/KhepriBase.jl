@@ -41,7 +41,7 @@ All constructors use lowercase names and return immutable path structs.
 
 ```julia
 arc_path(u0(), 5, 0, pi/2)      # center, radius, start angle, amplitude (OpenPath)
-circular_path(xyz(0, 0, 0), 3)  # center, radius -- full circle (ClosedPath)
+circular_path(xy(0, 0), 3)     # center, radius -- full circle (ClosedPath)
 elliptic_path(u0(), 4, 2)       # center, semi-axis r1, semi-axis r2 (ClosedPath)
 ```
 
@@ -51,16 +51,16 @@ domain `(0, 2pi)`.
 ### Rectangles
 
 ```julia
-rectangular_path(xyz(0, 0, 0), 10, 5)  # corner, dx, dy
+rectangular_path(xy(0, 0), 10, 5)      # corner, dx, dy
 centered_rectangular_path(u0(), 10, 5)  # center, dx, dy (offsets corner by -dx/2, -dy/2)
 ```
 
 ### Polygonal Paths
 
 ```julia
-open_polygonal_path([xyz(0,0,0), xyz(5,0,0), xyz(5,5,0)])    # open polyline
-closed_polygonal_path([xyz(0,0,0), xyz(5,0,0), xyz(5,5,0)])  # closed polygon
-polygonal_path([xyz(0,0,0), xyz(5,0,0), xyz(5,5,0), xyz(0,0,0)])  # auto-detect
+open_polygonal_path([xy(0,0), xy(5,0), xy(5,5)])    # open polyline
+closed_polygonal_path([xy(0,0), xy(5,0), xy(5,5)])  # closed polygon
+polygonal_path([xy(0,0), xy(5,0), xy(5,5), xy(0,0)])  # auto-detect
 ```
 
 `closed_polygonal_path` requires that first and last vertices are not coincident.
@@ -69,10 +69,10 @@ polygonal_path([xyz(0,0,0), xyz(5,0,0), xyz(5,5,0), xyz(0,0,0)])  # auto-detect
 ### Spline Paths
 
 ```julia
-open_spline_path([xyz(0,0,0), xyz(3,2,0), xyz(6,0,0), xyz(9,2,0)])
-open_spline_path([xyz(0,0,0), xyz(3,2,0), xyz(6,0,0)], vx(), vx())  # with tangents
-closed_spline_path([xyz(0,0,0), xyz(3,2,0), xyz(6,0,0), xyz(9,2,0)])
-spline_path([xyz(0,0,0), xyz(3,2,0), xyz(6,0,0)])                    # auto-detect
+open_spline_path([xy(0,0), xy(3,2), xy(6,0), xy(9,2)])
+open_spline_path([xy(0,0), xy(3,2), xy(6,0)], vx(), vx())  # with tangents
+closed_spline_path([xy(0,0), xy(3,2), xy(6,0), xy(9,2)])
+spline_path([xy(0,0), xy(3,2), xy(6,0)])                    # auto-detect
 ```
 
 Splines use parametric cubic interpolation (Dierckx) with domain `(0, 1)`.
@@ -84,12 +84,12 @@ derivatives.
 ```julia
 # Connected sequence (end of each sub-path meets start of next)
 open_path_sequence(arc_path(u0(), 5, 0, pi/2),
-  open_polygonal_path([xyz(0, 5, 0), xyz(-3, 5, 0)]))
+  open_polygonal_path([xy(0, 5), xy(-3, 5)]))
 closed_path_sequence(arc_path(u0(), 5, 0, pi),
-  open_polygonal_path([xyz(-5, 0, 0), xyz(5, 0, 0)]))
+  open_polygonal_path([xy(-5, 0), xy(5, 0)]))
 path_sequence(...)  # auto-detects open vs closed
 
-path_set(circular_path(u0(), 3), circular_path(xyz(10, 0, 0), 2))  # independent paths
+path_set(circular_path(u0(), 3), circular_path(xy(10, 0), 2))  # independent paths
 open_path_ops(u0(), LineOp(vx(5)), ArcOp(2, 0, pi/2), LineOp(vy(3)))  # from operations
 ```
 
@@ -98,11 +98,11 @@ open_path_ops(u0(), LineOp(vx(5)), ArcOp(2, 0, pi/2), LineOp(vy(3)))  # from ope
 ### Length, Domain, and Endpoints
 
 ```julia
-path = open_polygonal_path([u0(), xyz(3, 0, 0), xyz(3, 4, 0)])
+path = open_polygonal_path([u0(), xy(3, 0), xy(3, 4)])
 path_length(path)    # => 7.0
 path_domain(path)    # => (0, 7.0)
 path_start(path)     # => u0()
-path_end(path)       # => xyz(3, 4, 0)
+path_end(path)       # => xy(3, 4)
 ```
 
 The domain varies by type: splines use `(0, 1)`, arcs use `(0, amplitude)`, circles
@@ -113,7 +113,7 @@ paths, `path_end` returns the same location as `path_start`.
 
 ```julia
 location_at(circular_path(u0(), 5), pi/2)                           # at parameter
-location_at_length(open_polygonal_path([u0(), xyz(10, 0, 0)]), 3.0)  # at arc-length
+location_at_length(open_polygonal_path([u0(), xy(10, 0)]), 3.0)  # at arc-length
 ```
 
 Both return a full location with an oriented coordinate system. Paths also support
@@ -135,7 +135,7 @@ join_paths(p1, p2)               # concatenate two open paths end-to-end
 
 translate(path, vz(3))           # shift by vector
 scale(path, 2.0)                 # scale around origin
-scale(path, 0.5, xyz(5, 0, 0))  # scale around a point
+scale(path, 0.5, xy(5, 0))  # scale around a point
 reverse(path)                    # reverse traversal direction
 ```
 
@@ -149,7 +149,7 @@ start of the second.
 Both accept optional `material` and `backend` keyword arguments.
 
 ```julia
-stroke(open_polygonal_path([u0(), xyz(5, 3, 0), xyz(10, 0, 0)]))
+stroke(open_polygonal_path([u0(), xy(5, 3), xy(10, 0)]))
 fill(circular_path(u0(), 5), material=my_material)
 ```
 
@@ -163,8 +163,8 @@ surfaces, and extrusions.
 
 ```julia
 outer = rectangular_path(u0(), 20, 15)
-hole1 = circular_path(xyz(5, 5, 0), 2)
-hole2 = circular_path(xyz(15, 10, 0), 1.5)
+hole1 = circular_path(xy(5, 5), 2)
+hole2 = circular_path(xy(15, 10), 1.5)
 r = region(outer, hole1, hole2)
 
 outer_path(r)    # => the rectangular outer boundary
@@ -199,7 +199,7 @@ map_division(circular_path(u0(), 10), 12) do loc
 end
 
 # Place columns along a wall path
-wall_path = open_polygonal_path([xyz(0,0,0), xyz(20,0,0), xyz(20,15,0)])
+wall_path = open_polygonal_path([xy(0,0), xy(20,0), xy(20,15)])
 map_division(wall_path, 8) do frame
   cylinder(frame, 0.3, 4)
 end

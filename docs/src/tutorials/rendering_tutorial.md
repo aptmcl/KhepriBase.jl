@@ -52,6 +52,7 @@ You can temporarily override several parameters at once using `rendering_with`:
 
 ```julia
 rendering_with(width=1920, height=1080, quality=0.8) do
+  set_view(xyz(30, 30, 20), xyz(0, 0, 0))
   render_view("high_res_render")
 end
 ```
@@ -133,6 +134,7 @@ function to create new geometry, and then renders:
 to_render("scene_01") do
   sphere(xyz(0, 0, 1), 2)
   box(xyz(5, 0, 0), 3, 3, 3)
+  set_view(xyz(15, -10, 8), xyz(2, 0, 1))
 end
 ```
 

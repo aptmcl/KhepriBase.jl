@@ -69,12 +69,12 @@ ground = level(0)
 first_floor = level(3.5)
 
 # Column at a specific location
-column(xyz(5, 5, 0), 0, ground, first_floor)
+column(xy(5, 5), 0, ground, first_floor)
 
 # Circular column profile
 round_col = column_family(
   profile=circular_profile(0.15))
-column(xyz(5, 5, 0), 0, ground, first_floor, round_col)
+column(xy(5, 5), 0, ground, first_floor, round_col)
 ```
 
 ## Free Column
@@ -97,10 +97,10 @@ free_column(cb::Loc, ct::Loc, angle::Real=0,
 
 ```julia
 # 4-meter tall column
-free_column(xyz(0, 0, 0), 4.0)
+free_column(xy(0, 0), 4.0)
 
 # Column defined by two endpoints
-free_column(xyz(0, 0, 0), xyz(0, 0, 3.5))
+free_column(xy(0, 0), xyz(0, 0, 3.5))
 ```
 
 ## Trusses
@@ -156,12 +156,12 @@ truss_bar(p0::Loc=u0(), p1::Loc=u0(), angle::Real=0,
 
 ```julia
 # Create multiple nodes at once
-nodes = truss_nodes([xyz(0,0,0), xyz(1,0,0), xyz(2,0,0)])
+nodes = truss_nodes([xy(0,0), xy(1,0), xy(2,0)])
 
 # Create bars connecting pairs of points
 bars = truss_bars(
-  [xyz(0,0,0), xyz(1,0,0)],   # start points
-  [xyz(1,0,0), xyz(2,0,0)])   # end points
+  [xy(0,0), xy(1,0)],   # start points
+  [xy(1,0), xy(2,0)])   # end points
 ```
 
 ### Node and Bar Merging
@@ -177,8 +177,8 @@ coincident_truss_nodes_distance(1e-4) # change tolerance
 
 ```julia
 # 1. Build the truss
-n1 = truss_node(xyz(0, 0, 0), fixed_truss_node_family)
-n2 = truss_node(xyz(3, 0, 0), fixed_truss_node_family)
+n1 = truss_node(xy(0, 0), fixed_truss_node_family)
+n2 = truss_node(xy(3, 0), fixed_truss_node_family)
 n3 = truss_node(xyz(1.5, 0, 1.5))
 truss_bar(n1.p, n3.p)
 truss_bar(n3.p, n2.p)
@@ -202,9 +202,9 @@ first_floor = level(4.0)
 
 # 4x6 grid at 5m spacing
 for x in 0:5:15, y in 0:5:25
-  column(xyz(x, y, 0), 0, ground, first_floor)
+  column(xy(x, y), 0, ground, first_floor)
 end
 
 # Floor slab above
-slab(rectangular_path(xyz(0, 0, 0), 15, 25), first_floor)
+slab(rectangular_path(xy(0, 0), 15, 25), first_floor)
 ```

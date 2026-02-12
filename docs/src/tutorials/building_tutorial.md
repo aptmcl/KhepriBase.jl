@@ -51,7 +51,7 @@ office_stair = stair_family(width=1.2, riser_height=0.175, tread_depth=0.28)
 
 ```julia
 # Building footprint: 16m x 12m
-building_region = rectangular_path(xyz(0, 0, 0), 16, 12)
+building_region = rectangular_path(xy(0, 0), 16, 12)
 slab(building_region, ground)
 ```
 
@@ -62,7 +62,7 @@ Use a closed path for the building perimeter. The offset defaults to `1/2` for c
 ```julia
 exterior = wall(
   closed_polygonal_path([
-    xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0), xyz(0, 12, 0)]),
+    xy(0, 0), xy(16, 0), xy(16, 12), xy(0, 12)]),
   ground, first_floor, ext_wall)
 ```
 
@@ -95,11 +95,11 @@ add_window(exterior, xy(45, 1.0), tall_window)
 ```julia
 # Corridor wall dividing the floor at y=6
 corridor_wall = wall(
-  open_polygonal_path([xyz(0.3, 6, 0), xyz(15.7, 6, 0)]),
+  open_polygonal_path([xy(0.3, 6), xy(15.7, 6)]),
   ground, first_floor, int_wall)
 
 # Office dividers on south side
-wall(open_polygonal_path([xyz(8, 0.3, 0), xyz(8, 5.85, 0)]),
+wall(open_polygonal_path([xy(8, 0.3), xy(8, 5.85)]),
      ground, first_floor, int_wall)
 
 # Office doors
@@ -113,7 +113,7 @@ add_door(corridor_wall, xy(10, 0), office_door)  # right office
 # Columns at 8m spacing along the corridor
 for x in [0.15, 8, 15.85]
   for y in [0.15, 6, 11.85]
-    column(xyz(x, y, 0), 0, ground, first_floor, col_family)
+    column(xy(x, y), 0, ground, first_floor, col_family)
   end
 end
 ```
@@ -122,11 +122,11 @@ end
 
 ```julia
 # Stair in the northeast corner
-stair(xyz(13, 8, 0), vy(1), ground, first_floor, office_stair)
+stair(xy(13, 8), vy(1), ground, first_floor, office_stair)
 
 # Railings along the stair
-railing(open_polygonal_path([xyz(13, 8, 0), xyz(13, 13.5, 3.5)]), ground)
-railing(open_polygonal_path([xyz(14.2, 8, 0), xyz(14.2, 13.5, 3.5)]), ground)
+railing(open_polygonal_path([xy(13, 8), xyz(13, 13.5, 3.5)]), ground)
+railing(open_polygonal_path([xy(14.2, 8), xyz(14.2, 13.5, 3.5)]), ground)
 ```
 
 ## Step 4: First Floor
@@ -146,7 +146,7 @@ The first floor has a similar layout. We repeat the pattern:
 # Exterior walls
 exterior_1f = wall(
   closed_polygonal_path([
-    xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0), xyz(0, 12, 0)]),
+    xy(0, 0), xy(16, 0), xy(16, 12), xy(0, 12)]),
   first_floor, roof_level, ext_wall)
 
 # Windows on all facades (same pattern as ground floor)
@@ -167,7 +167,7 @@ add_window(exterior_1f, xy(45, 1.0), tall_window)
 
 # Interior partitions
 corridor_1f = wall(
-  open_polygonal_path([xyz(0.3, 6, 0), xyz(15.7, 6, 0)]),
+  open_polygonal_path([xy(0.3, 6), xy(15.7, 6)]),
   first_floor, roof_level, int_wall)
 add_door(corridor_1f, xy(3, 0), office_door)
 add_door(corridor_1f, xy(10, 0), office_door)
@@ -175,7 +175,7 @@ add_door(corridor_1f, xy(10, 0), office_door)
 # Columns
 for x in [0.15, 8, 15.85]
   for y in [0.15, 6, 11.85]
-    column(xyz(x, y, 0), 0, first_floor, roof_level, col_family)
+    column(xy(x, y), 0, first_floor, roof_level, col_family)
   end
 end
 ```
@@ -184,15 +184,15 @@ end
 
 ```julia
 # Balcony slab extending from the south facade
-balcony_region = rectangular_path(xyz(4, -2, 0), 8, 2)
+balcony_region = rectangular_path(xy(4, -2), 8, 2)
 slab(balcony_region, first_floor,
      slab_family(thickness=0.15))
 
 # Railing around the balcony edge
 railing(open_polygonal_path([
-  xyz(4, -2, 0), xyz(12, -2, 0), xyz(12, 0, 0)]),
+  xy(4, -2), xy(12, -2), xy(12, 0)]),
   first_floor)
-railing(open_polygonal_path([xyz(4, 0, 0), xyz(4, -2, 0)]),
+railing(open_polygonal_path([xy(4, 0), xy(4, -2)]),
         first_floor)
 ```
 
@@ -200,13 +200,13 @@ railing(open_polygonal_path([xyz(4, 0, 0), xyz(4, -2, 0)]),
 
 ```julia
 # Roof slab with slight overhang
-roof_region = rectangular_path(xyz(-0.3, -0.3, 0), 16.6, 12.6)
+roof_region = rectangular_path(xy(-0.3, -0.3), 16.6, 12.6)
 roof(roof_region, roof_level)
 
 # Perimeter railing on the roof
 railing(open_polygonal_path([
-  xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0),
-  xyz(0, 12, 0), xyz(0, 0, 0)]),
+  xy(0, 0), xy(16, 0), xy(16, 12),
+  xy(0, 12), xy(0, 0)]),
   roof_level,
   nothing,
   railing_family(height=1.1))
@@ -216,19 +216,19 @@ railing(open_polygonal_path([
 
 ```julia
 # Ground floor reception: table and chairs
-table_and_chairs(xyz(4, 9, 0), 0, ground)
+table_and_chairs(xy(4, 9), 0, ground)
 
 # First floor conference room
 conference = table_chair_family(
   table_family=table_family(length=2.4, width=1.0),
   chairs_top=1, chairs_bottom=1,
   chairs_right=3, chairs_left=3)
-table_and_chairs(xyz(4, 9, 0), 0, first_floor, conference)
+table_and_chairs(xy(4, 9), 0, first_floor, conference)
 
 # Office desks
 for (x, y) in [(3, 2), (3, 4), (10, 2), (10, 4)]
-  table(xyz(x, y, 0), 0, ground, table_family(length=1.4, width=0.7))
-  chair(xyz(x, y - 0.6, 0), 0, ground)
+  table(xy(x, y), 0, ground, table_family(length=1.4, width=0.7))
+  chair(xy(x, y - 0.6), 0, ground)
 end
 ```
 

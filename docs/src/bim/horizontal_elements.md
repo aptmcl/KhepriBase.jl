@@ -31,17 +31,17 @@ The slab's elevation relative to the level is `coating_thickness - thickness` (i
 ```julia
 # Rectangular slab at ground level
 ground = level(0)
-slab(surface_rectangular_path(xyz(0, 0, 0), 10, 8), ground)
+slab(surface_rectangular_path(xy(0, 0), 10, 8), ground)
 
 # L-shaped slab using a polygonal path
 l_shape = closed_polygonal_path([
-  xyz(0, 0, 0), xyz(10, 0, 0), xyz(10, 5, 0),
-  xyz(6, 5, 0), xyz(6, 8, 0), xyz(0, 8, 0)])
+  xy(0, 0), xy(10, 0), xy(10, 5),
+  xy(6, 5), xy(6, 8), xy(0, 8)])
 slab(l_shape, ground)
 
 # Custom thickness
 thick_floor = slab_family(thickness=0.35)
-slab(rectangular_path(xyz(0, 0, 0), 10, 8), ground, thick_floor)
+slab(rectangular_path(xy(0, 0), 10, 8), ground, thick_floor)
 ```
 
 ## Roof
@@ -71,10 +71,10 @@ roof(region::Region=rectangular_path(),
 ```julia
 # Flat roof at the top of the building
 roof_level = level(6.0)
-roof(rectangular_path(xyz(0, 0, 0), 12, 10), roof_level)
+roof(rectangular_path(xy(0, 0), 12, 10), roof_level)
 
 # Roof with overhang (larger region than the floor below)
-roof(rectangular_path(xyz(-0.5, -0.5, 0), 13, 11), roof_level)
+roof(rectangular_path(xy(-0.5, -0.5), 13, 11), roof_level)
 ```
 
 ## Ceiling
@@ -104,12 +104,12 @@ ceiling(region::Region=rectangular_path(),
 ```julia
 # Ceiling below the first floor slab
 first_floor = level(3.0)
-ceiling(rectangular_path(xyz(0, 0, 0), 10, 8), first_floor)
+ceiling(rectangular_path(xy(0, 0), 10, 8), first_floor)
 
 # Custom ceiling material
 painted_ceiling = ceiling_family(
   bottom_material=standard_material(base_color=rgba(0.95, 0.95, 0.95, 1)))
-ceiling(rectangular_path(xyz(0, 0, 0), 10, 8), first_floor, painted_ceiling)
+ceiling(rectangular_path(xy(0, 0), 10, 8), first_floor, painted_ceiling)
 ```
 
 ## Panel
@@ -135,7 +135,7 @@ panel(region::Region=rectangular_path(),
 ### Examples
 
 ```julia
-# Vertical glass panel
+# Vertical glass panel (not on XY plane -- vertices span different heights)
 panel(closed_polygonal_path([
   xyz(0, 0, 0), xyz(3, 0, 0), xyz(3, 0, 2.5), xyz(0, 0, 2.5)]))
 
@@ -144,7 +144,7 @@ partition = panel_family(
   thickness=0.05,
   right_material=material_plaster,
   left_material=material_plaster)
-panel(rectangular_path(xyz(5, 0, 0), 4, 3), partition)
+panel(rectangular_path(xy(5, 0), 4, 3), partition)
 ```
 
 ## Composing Horizontal Elements
@@ -156,7 +156,7 @@ ground = level(0)
 first_floor = level(3.5)
 roof_level = level(7.0)
 
-floor_region = rectangular_path(xyz(0, 0, 0), 12, 10)
+floor_region = rectangular_path(xy(0, 0), 12, 10)
 
 # Ground floor: just a slab
 slab(floor_region, ground)
@@ -166,5 +166,5 @@ slab(floor_region, first_floor)
 ceiling(floor_region, first_floor)
 
 # Roof: roof element on top
-roof(rectangular_path(xyz(-0.3, -0.3, 0), 12.6, 10.6), roof_level)
+roof(rectangular_path(xy(-0.3, -0.3), 12.6, 10.6), roof_level)
 ```

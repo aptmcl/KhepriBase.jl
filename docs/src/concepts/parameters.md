@@ -88,6 +88,7 @@ Multiple parameters -- pass alternating parameter/value pairs:
 
 ```julia
 with(render_width, 1920, render_height, 1080) do
+  set_view(xyz(30, 30, 20), xyz(0, 0, 0))
   render_view("high_res_output")
 end
 ```

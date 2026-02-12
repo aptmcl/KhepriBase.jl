@@ -504,7 +504,7 @@ If your backend doesn't use a field named `refs`, override
 | Xeokit   | `RemoteBackend`    | `XEOKey`     | `String`                   | `""`         |
 | GL       | `Backend`          | `GLKey`      | `Int`                      | `0`          |
 | Makie    | `Backend`          | `MakieKey`   | `Any`                      | `nothing`    |
-| Thebes   | `Backend`          | `ThebesKey`  | `Union{Nothing, RGBA}`     | `nothing`    |
+| Thebes   | `Backend`          | `ThebesKey`  | `Int`                      | `0`          |
 | TikZ     | `IOBackend`        | `TikZKey`    | `Any`                      | `-1`         |
 | POVRay   | `IOBackend`        | `POVRayKey`  | `Any`                      | `-1`         |
 | Radiance | `IOBackend`        | `RADKey`     | `Any`                      | `-1`         |
@@ -513,14 +513,13 @@ If your backend doesn't use a field named `refs`, override
 
 ## 10. Known Limitations and Design Notes
 
-### Thebes: `void_ref` and shape refs are both `nothing`
+### Thebes: integer refs with dirty-flag deletion
 
-Thebes uses `T = Union{Nothing, RGBA}` with `void_ref` returning `nothing`.
-Since `b_*` operations also return `nothing`, every shape's ref is identical to
-void_ref. This means `ref != void_ref` checks always evaluate to `false`, and
-`realized()` always returns `true` after the first realization. In practice,
-Thebes uses refs primarily for material tracking (where the ref is an `RGBA`
-color), not shape identification.
+Thebes uses `T = Int` with `void_ref` returning `0`. Each `b_*` geometry
+operation returns a monotonically increasing integer from `next_ref!`. Deletion
+sets a `scene_dirty` flag; the scene is rebuilt from remaining shapes on the
+next render via `rebuild_scene!`. Material operations return `RGBA` colors,
+which are stored as `LocalRef{ThebesKey, Int}` by `ensure_ref`.
 
 ### Makie: `T = Any` loses type safety
 

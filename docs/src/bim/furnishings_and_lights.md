@@ -34,14 +34,14 @@ table(loc::Loc, angle::Real, level::Level=default_level(),
 ground = level(0)
 
 # Default table at origin
-table(xyz(3, 3, 0), ground)
+table(xy(3, 3), ground)
 
 # Rotated table (angle in radians)
-table(xyz(3, 3, 0), pi/4, ground)
+table(xy(3, 3), pi/4, ground)
 
 # Custom desk
 desk = table_family(length=1.8, width=0.8, height=0.72)
-table(xyz(5, 2, 0), 0, ground, desk)
+table(xy(5, 2), 0, ground, desk)
 ```
 
 ## Chair
@@ -76,10 +76,10 @@ chair(loc::Loc, angle::Real, level::Level=default_level(),
 ground = level(0)
 
 # Chair facing forward
-chair(xyz(3, 2, 0), ground)
+chair(xy(3, 2), ground)
 
 # Chair rotated to face a table
-chair(xyz(3, 1.5, 0), pi, ground)
+chair(xy(3, 1.5), pi, ground)
 ```
 
 ## Table and Chairs
@@ -115,7 +115,7 @@ table_and_chairs(loc::Loc, angle::Real, level::Level=default_level(),
 ground = level(0)
 
 # Default table with 6 chairs (1+1+2+2)
-table_and_chairs(xyz(5, 5, 0), ground)
+table_and_chairs(xy(5, 5), ground)
 
 # Conference table with more chairs
 conference = table_chair_family(
@@ -125,10 +125,10 @@ conference = table_chair_family(
   chairs_right=4,
   chairs_left=4,
   spacing=0.65)
-table_and_chairs(xyz(10, 5, 0), 0, ground, conference)
+table_and_chairs(xy(10, 5), 0, ground, conference)
 
 # Rotated dining set
-table_and_chairs(xyz(3, 3, 0), pi/6, ground)
+table_and_chairs(xy(3, 3), pi/6, ground)
 ```
 
 ## Fixtures
@@ -171,12 +171,12 @@ closet(cb::Loc, angle::Real, host::BIMShape, family::ClosetFamily)
 
 ```julia
 ground = level(0)
-floor = slab(rectangular_path(xyz(0, 0, 0), 3, 4), ground)
+floor = slab(rectangular_path(xy(0, 0), 3, 4), ground)
 
 # Bathroom fixtures placed on the floor slab
-toilet(xyz(0.5, 3, 0), 0, floor)
-sink(xyz(2, 3, 0), 0, floor)
-closet(xyz(0.5, 0.5, 0), pi/2, floor)
+toilet(xy(0.5, 3), 0, floor)
+sink(xy(2, 3), 0, floor)
+closet(xy(0.5, 0.5), pi/2, floor)
 ```
 
 ## Lights

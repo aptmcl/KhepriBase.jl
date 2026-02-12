@@ -38,18 +38,18 @@ ground = level(0)
 first_floor = level(3.0)
 
 # Basic stair climbing in the Y direction
-stair(xyz(0, 0, 0), vy(1), ground, first_floor)
+stair(xy(0, 0), vy(1), ground, first_floor)
 
 # Stair climbing in the X direction
-stair(xyz(0, 5, 0), vx(1), ground, first_floor)
+stair(xy(0, 5), vx(1), ground, first_floor)
 
 # Wide stair with shallow risers
 wide_stair = stair_family(width=1.5, riser_height=0.15, tread_depth=0.30)
-stair(xyz(0, 0, 0), vy(1), ground, first_floor, wide_stair)
+stair(xy(0, 0), vy(1), ground, first_floor, wide_stair)
 
 # Open-riser stair
 open_stair = stair_family(has_risers=false)
-stair(xyz(0, 0, 0), vy(1), ground, first_floor, open_stair)
+stair(xy(0, 0), vy(1), ground, first_floor, open_stair)
 ```
 
 ## Spiral Stair
@@ -88,13 +88,13 @@ ground = level(0)
 first_floor = level(3.0)
 
 # Full-turn spiral stair
-spiral_stair(xyz(5, 5, 0), 1.5, 0, 2*pi, true, ground, first_floor)
+spiral_stair(xy(5, 5), 1.5, 0, 2*pi, true, ground, first_floor)
 
 # Half-turn spiral stair, counterclockwise
-spiral_stair(xyz(5, 5, 0), 2.0, 0, pi, false, ground, first_floor)
+spiral_stair(xy(5, 5), 2.0, 0, pi, false, ground, first_floor)
 
 # Spiral with custom start angle
-spiral_stair(xyz(5, 5, 0), 1.8, pi/4, 2*pi, true, ground, first_floor)
+spiral_stair(xy(5, 5), 1.8, pi/4, 2*pi, true, ground, first_floor)
 ```
 
 ## Stair Landing
@@ -124,11 +124,11 @@ stair_landing(region::Region=rectangular_path(),
 mid_level = level(1.5)
 
 # Rectangular landing between stair flights
-stair_landing(rectangular_path(xyz(0, 3, 0), 2.5, 1.2), mid_level)
+stair_landing(rectangular_path(xy(0, 3), 2.5, 1.2), mid_level)
 
 # Custom landing
 thin_landing = stair_landing_family(thickness=0.15)
-stair_landing(rectangular_path(xyz(0, 3, 0), 2.5, 1.2), mid_level, thin_landing)
+stair_landing(rectangular_path(xy(0, 3), 2.5, 1.2), mid_level, thin_landing)
 ```
 
 ## Ramp
@@ -168,17 +168,17 @@ ground = level(0)
 mezzanine = level(1.5)
 
 # Simple straight ramp
-ramp(xyz(0, 0, 0), xyz(0, 12, 0),
+ramp(xy(0, 0), xy(0, 12),
      bottom_level=ground, top_level=mezzanine)
 
 # Wider ADA-compliant ramp
 accessible_ramp = ramp_family(width=1.5)
-ramp(xyz(0, 0, 0), xyz(0, 18, 0),
+ramp(xy(0, 0), xy(0, 18),
      bottom_level=ground, top_level=mezzanine,
      family=accessible_ramp)
 
 # L-shaped ramp with a turn
-ramp(open_polygonal_path([xyz(0, 0, 0), xyz(0, 6, 0), xyz(3, 6, 0)]),
+ramp(open_polygonal_path([xy(0, 0), xy(0, 6), xy(3, 6)]),
      ground, mezzanine)
 ```
 
@@ -209,20 +209,20 @@ railing(path::Path=open_polygonal_path([u0(), ux()]),
 ground = level(0)
 
 # Railing along a straight edge
-railing(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]), ground)
+railing(open_polygonal_path([xy(0, 0), xy(10, 0)]), ground)
 
 # Railing around a balcony
 railing(open_polygonal_path([
-  xyz(0, 6, 0), xyz(8, 6, 0), xyz(8, 0, 0)]), level(3.0))
+  xy(0, 6), xy(8, 6), xy(8, 0)]), level(3.0))
 
 # Railing with custom height and spacing
 short_rail = railing_family(height=1.1, post_spacing=1.5)
-railing(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+railing(open_polygonal_path([xy(0, 0), xy(10, 0)]),
         ground, nothing, short_rail)
 
 # Railing attached to a stair
-s = stair(xyz(0, 0, 0), vy(1), level(0), level(3.0))
-railing(open_polygonal_path([xyz(0, 0, 0), xyz(0, 5, 3.0)]),
+s = stair(xy(0, 0), vy(1), level(0), level(3.0))
+railing(open_polygonal_path([xy(0, 0), xyz(0, 5, 3.0)]),
         level(0), s)
 ```
 
@@ -236,22 +236,22 @@ mid_level = level(1.5)
 first_floor = level(3.0)
 
 # First flight: ground to mid-landing, going in Y direction
-stair(xyz(0, 0, 0), vy(1), ground, mid_level)
+stair(xy(0, 0), vy(1), ground, mid_level)
 
 # Landing platform at mid-level
-stair_landing(rectangular_path(xyz(-0.25, 4.5, 0), 2.5, 1.5), mid_level)
+stair_landing(rectangular_path(xy(-0.25, 4.5), 2.5, 1.5), mid_level)
 
 # Second flight: mid-landing to first floor, going in -Y direction
-stair(xyz(2.0, 6.0, 0), vy(-1), mid_level, first_floor)
+stair(xy(2.0, 6.0), vy(-1), mid_level, first_floor)
 
-# Railings along both flights
-railing(open_polygonal_path([xyz(0, 0, 0), xyz(0, 4.5, 1.5)]), ground)
-railing(open_polygonal_path([xyz(2.0, 0, 0), xyz(2.0, 4.5, 1.5)]), ground)
+# Railings along both flights (these paths span different Z heights)
+railing(open_polygonal_path([xy(0, 0), xyz(0, 4.5, 1.5)]), ground)
+railing(open_polygonal_path([xy(2.0, 0), xyz(2.0, 4.5, 1.5)]), ground)
 
 railing(open_polygonal_path([xyz(0, 6.0, 1.5), xyz(0, 1.5, 3.0)]), mid_level)
 railing(open_polygonal_path([xyz(2.0, 6.0, 1.5), xyz(2.0, 1.5, 3.0)]), mid_level)
 
 # Landing railings
-railing(open_polygonal_path([xyz(-0.25, 4.5, 0), xyz(-0.25, 6.0, 0)]), mid_level)
-railing(open_polygonal_path([xyz(2.25, 4.5, 0), xyz(2.25, 6.0, 0)]), mid_level)
+railing(open_polygonal_path([xy(-0.25, 4.5), xy(-0.25, 6.0)]), mid_level)
+railing(open_polygonal_path([xy(2.25, 4.5), xy(2.25, 6.0)]), mid_level)
 ```

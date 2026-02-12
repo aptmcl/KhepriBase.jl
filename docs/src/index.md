@@ -30,18 +30,19 @@ ground = level(0)
 first_floor = level(3.0)
 
 # Floor slab
-slab(rectangular_path(xyz(0, 0, 0), 8, 6), ground)
+slab(rectangular_path(xy(0, 0), 8, 6), ground)
 
 # Walls (closed path = room perimeter)
 w = wall(
   closed_polygonal_path([
-    xyz(0, 0, 0), xyz(8, 0, 0), xyz(8, 6, 0), xyz(0, 6, 0)]),
+    xy(0, 0), xy(8, 0), xy(8, 6), xy(0, 6)]),
   ground, first_floor)
 
 # Add a door and window
 add_door(w, xy(1, 0))
 add_window(w, xy(4, 1.0), window_family(width=1.5, height=1.2))
 
+set_view(xyz(15, -15, 10), xyz(4, 3, 1.5))
 render_view("simple_room")
 ```
 

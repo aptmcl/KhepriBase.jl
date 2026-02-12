@@ -45,17 +45,17 @@ ground = level(0)
 first_floor = level(3.5)
 
 # Simple straight wall
-wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
      ground, first_floor)
 
 # Room perimeter (closed path — offset defaults to 1/2)
 wall(closed_polygonal_path([
-  xyz(0, 0, 0), xyz(10, 0, 0), xyz(10, 8, 0), xyz(0, 8, 0)]),
+  xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
   ground, first_floor)
 
 # Custom wall thickness
 exterior_wall = wall_family(thickness=0.3)
-wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
      ground, first_floor, exterior_wall)
 ```
 
@@ -64,9 +64,9 @@ wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
 Two walls with the same levels, family, and offset can be joined into a single continuous wall:
 
 ```julia
-w1 = wall(open_polygonal_path([xyz(0, 0, 0), xyz(5, 0, 0)]),
+w1 = wall(open_polygonal_path([xy(0, 0), xy(5, 0)]),
           ground, first_floor)
-w2 = wall(open_polygonal_path([xyz(5, 0, 0), xyz(5, 8, 0)]),
+w2 = wall(open_polygonal_path([xy(5, 0), xy(5, 8)]),
           ground, first_floor)
 joined = join_walls(w1, w2)
 ```
@@ -76,7 +76,7 @@ joined = join_walls(w1, w2)
 Use `with_wall` to create a wall and add openings in a transaction:
 
 ```julia
-with_wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+with_wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
           ground, first_floor) do w
   add_door(w, xy(2, 0))
   add_window(w, xy(5, 1.0))
@@ -125,7 +125,7 @@ The `loc` parameter uses a 2D coordinate relative to the wall's base path:
 
 ```julia
 # Add a door to an existing wall
-w = wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+w = wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
          ground, first_floor)
 add_door(w, xy(2, 0))                                    # default family
 add_door(w, xy(6, 0), door_family(width=0.9, height=2.1)) # custom size
@@ -202,12 +202,12 @@ ground = level(0)
 first_floor = level(3.5)
 
 # Simple curtain wall between two points
-curtain_wall(xyz(0, 0, 0), xyz(10, 0, 0),
+curtain_wall(xy(0, 0), xy(10, 0),
              bottom_level=ground, top_level=first_floor)
 
 # Curtain wall with custom panel spacing
 fine_grid = curtain_wall_family(max_panel_dx=0.8, max_panel_dy=1.5)
-curtain_wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+curtain_wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
              ground, first_floor, fine_grid)
 ```
 
@@ -221,7 +221,7 @@ first_floor = level(3.0)
 
 # Room perimeter
 w = wall(closed_polygonal_path([
-  xyz(0, 0, 0), xyz(8, 0, 0), xyz(8, 6, 0), xyz(0, 6, 0)]),
+  xy(0, 0), xy(8, 0), xy(8, 6), xy(0, 6)]),
   ground, first_floor)
 
 # Front wall openings: door at 1m, windows at 3.5m and 5.5m
@@ -230,5 +230,5 @@ add_window(w, xy(3.5, 1.0), window_family(width=1.2, height=1.2))
 add_window(w, xy(5.5, 1.0), window_family(width=1.2, height=1.2))
 
 # Floor slab
-slab(rectangular_path(xyz(0, 0, 0), 8, 6), ground)
+slab(rectangular_path(xy(0, 0), 8, 6), ground)
 ```
