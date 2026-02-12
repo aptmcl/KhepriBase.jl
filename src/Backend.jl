@@ -47,6 +47,10 @@ end
 export new_refs
 new_refs(b::Backend{K,T}) where {K,T} = T[]
 
+# Safely extend refs from a b_* operation that may return a vector or a scalar.
+collect_ref!(refs, r::AbstractVector) = append!(refs, r)
+collect_ref!(refs, r) = push!(refs, r)
+
 ############################################################
 # Zeroth tier: curves. Not all backends support these.
 
@@ -1350,11 +1354,11 @@ b_stair(b::Backend, base_point, direction, bottom_level, top_level, family) =
                    base + perp * w + vz(riser_h),
                    base + dir * tread_d + perp * w + vz(riser_h),
                    base + dir * tread_d + vz(riser_h)]
-        append!(refs, b_surface_polygon(b, tread, tmat))
+        collect_ref!(refs, b_surface_polygon(b, tread, tmat))
         if family.has_risers
           riser = [base, base + perp * w,
                    base + perp * w + vz(riser_h), base + vz(riser_h)]
-          append!(refs, b_surface_polygon(b, riser, rmat))
+          collect_ref!(refs, b_surface_polygon(b, riser, rmat))
         end
       end
     end
@@ -1384,7 +1388,7 @@ b_spiral_stair(b::Backend, center, radius, start_angle, included_angle,
                    c + vpol(r_outer, a0) + vz(h),
                    c + vpol(r_outer, a1) + vz(h),
                    c + vpol(r_inner, a1) + vz(h)]
-        append!(refs, b_surface_polygon(b, tread, tmat))
+        collect_ref!(refs, b_surface_polygon(b, tread, tmat))
       end
     end
     refs
@@ -1450,18 +1454,18 @@ b_wall_no_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lmat,
         strip = closed ? b_quad_strip_closed : b_quad_strip,
         refs = new_refs(b)
       with_material_as_layer(b, rmat) do
-        append!(refs, strip(b, r_vs, r_top, false, material_ref(b, rmat)))
+        collect_ref!(refs, strip(b, r_vs, r_top, false, material_ref(b, rmat)))
       end
       with_material_as_layer(b, lmat) do
-        append!(refs, strip(b, l_top, l_vs, false, material_ref(b, lmat)))
+        collect_ref!(refs, strip(b, l_top, l_vs, false, material_ref(b, lmat)))
       end
       with_material_as_layer(b, smat) do
         let smat_ref = material_ref(b, smat)
-          append!(refs, strip(b, r_top, l_top, false, smat_ref))
-          append!(refs, strip(b, l_vs, r_vs, false, smat_ref))
+          collect_ref!(refs, strip(b, r_top, l_top, false, smat_ref))
+          collect_ref!(refs, strip(b, l_vs, r_vs, false, smat_ref))
           if !closed
-            append!(refs, b_surface_polygon(b, [r_vs[1], r_top[1], l_top[1], l_vs[1]], smat_ref))
-            append!(refs, b_surface_polygon(b, [l_vs[end], l_top[end], r_top[end], r_vs[end]], smat_ref))
+            collect_ref!(refs, b_surface_polygon(b, [r_vs[1], r_top[1], l_top[1], l_vs[1]], smat_ref))
+            collect_ref!(refs, b_surface_polygon(b, [l_vs[end], l_top[end], r_top[end], r_vs[end]], smat_ref))
           end
         end
       end
@@ -1497,10 +1501,10 @@ b_wall_with_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lma
                 l_vs = path_vertices(l_w_path),
                 r_top = map(p -> p + vz(w_height), r_vs),
                 l_top = map(p -> p + vz(w_height), l_vs)
-              append!(refs, b_quad_strip(b, r_top, l_top, false, smat_ref))
+              collect_ref!(refs, b_quad_strip(b, r_top, l_top, false, smat_ref))
               if !is_closed_path(w_path)
-                append!(refs, b_surface_polygon(b, [r_vs[1], r_top[1], l_top[1], l_vs[1]], smat_ref))
-                append!(refs, b_surface_polygon(b, [l_vs[end], l_top[end], r_top[end], r_vs[end]], smat_ref))
+                collect_ref!(refs, b_surface_polygon(b, [r_vs[1], r_top[1], l_top[1], l_vs[1]], smat_ref))
+                collect_ref!(refs, b_surface_polygon(b, [l_vs[end], l_top[end], r_top[end], r_vs[end]], smat_ref))
               end
             end
           end
@@ -1534,7 +1538,7 @@ b_wall_with_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lma
                     let ps = path_vertices(l_op_translated)
                       open_polygonal_path([ps[1], ps[1]+vz(op_height), ps[end]+vz(op_height), ps[end]])
                     end : c_l_op_path
-                append!(refs, materialize_path(b, reverse(r_jacket), reverse(l_jacket), smat))
+                collect_ref!(refs, materialize_path(b, reverse(r_jacket), reverse(l_jacket), smat))
                 c_r_w_path, c_l_w_path = subtract_wall_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
                 !(op.path_position >= prevlength && op.path_position + op.width <= currlength)
               end
@@ -1544,8 +1548,8 @@ b_wall_with_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lma
           end
           prevlength = currlength
           # Render wall faces (with openings subtracted as holes in the surfaces)
-          append!(refs, materialize_path(b, reverse(c_l_w_path), lmat))
-          append!(refs, materialize_path(b, c_r_w_path, rmat))
+          collect_ref!(refs, materialize_path(b, reverse(c_l_w_path), lmat))
+          collect_ref!(refs, materialize_path(b, c_r_w_path, rmat))
         end
       end
       refs
@@ -1582,19 +1586,19 @@ b_curtain_wall(b::Backend, path, bottom_level, top_level, family, offset) =
       x_panels = ceil(Int, path_length/family.max_panel_dx),
       y_panels = ceil(Int, height/family.max_panel_dy),
       refs = new_refs(b)
-    append!(refs, b_curtain_wall_element(b, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, getproperty(family, :panel)))
-    append!(refs, b_curtain_wall_element(b, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
-    append!(refs, b_curtain_wall_element(b, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
-    append!(refs, b_curtain_wall_element(b, subpath(path, 0, bfw), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
-    append!(refs, b_curtain_wall_element(b, subpath(path, path_length-bfw, path_length), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
+    collect_ref!(refs, b_curtain_wall_element(b, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, getproperty(family, :panel)))
+    collect_ref!(refs, b_curtain_wall_element(b, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
+    collect_ref!(refs, b_curtain_wall_element(b, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
+    collect_ref!(refs, b_curtain_wall_element(b, subpath(path, 0, bfw), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
+    collect_ref!(refs, b_curtain_wall_element(b, subpath(path, path_length-bfw, path_length), bottom+bfw, height-2*bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
     for i in 1:y_panels-1
       l = height/y_panels*i
       sub = subpath(path, bfw, path_length-bfw)
-      append!(refs, b_curtain_wall_element(b, sub, bottom+l-tfw/2, tfw, l_thickness(tfdo, tfd), r_thickness(tfdo, tfd), getproperty(family, :transom_frame)))
+      collect_ref!(refs, b_curtain_wall_element(b, sub, bottom+l-tfw/2, tfw, l_thickness(tfdo, tfd), r_thickness(tfdo, tfd), getproperty(family, :transom_frame)))
     end
     for i in 1:x_panels-1
       l = path_length/x_panels*i
-      append!(refs, b_curtain_wall_element(b, subpath(path, l-mfw/2, l+mfw/2), bottom+bfw, height-2*bfw, l_thickness(mdfo, mfd), r_thickness(mdfo, mfd), getproperty(family, :mullion_frame)))
+      collect_ref!(refs, b_curtain_wall_element(b, subpath(path, l-mfw/2, l+mfw/2), bottom+bfw, height-2*bfw, l_thickness(mdfo, mfd), r_thickness(mdfo, mfd), getproperty(family, :mullion_frame)))
     end
     refs
   end
