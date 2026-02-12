@@ -49,40 +49,25 @@ The minimum code to create geometry in Khepri:
 ```julia
 using KhepriThebes
 
-backend(thebes)
 delete_all_shapes()
 sphere(xyz(0, 0, 0), 5)
 ```
 
-This creates a sphere of radius 5 centered at the origin. The four lines are all you need: load the backend, activate it, clear the scene, and create a shape.
+This creates a sphere of radius 5 centered at the origin. Importing a backend package automatically activates it, so `using KhepriThebes` is all the setup you need.
 
 ## Switching Backends
 
-One of Khepri's core guarantees is that **the same design code works across all backends**. Only two lines change -- the `using` declaration and the `backend()` call:
+One of Khepri's core guarantees is that **the same design code works across all backends**. Only the `using` line changes:
 
 ```julia
-# Using Thebes (local renderer)
-using KhepriThebes
-backend(thebes)
-
-# Using AutoCAD
-using KhepriAutoCAD
-backend(autocad)
-
-# Using Blender
-using KhepriBlender
-backend(blender)
-
-# Using Revit
-using KhepriRevit
-backend(revit)
-
-# Using Rhino
-using KhepriRhino
-backend(rhino)
+using KhepriThebes    # local renderer
+using KhepriAutoCAD   # AutoCAD
+using KhepriBlender   # Blender
+using KhepriRevit     # Revit
+using KhepriRhino     # Rhino
 ```
 
-Everything else -- shape creation, materials, views, rendering -- remains identical regardless of the backend.
+Each backend is activated automatically on import. Everything else -- shape creation, materials, views, rendering -- remains identical regardless of the backend. If you need to switch backends mid-session, call `backend(autocad)` explicitly (see [Backends](../concepts/backends.md)).
 
 ## Backend Types
 
@@ -120,7 +105,6 @@ After installing a backend, verify that everything works:
 ```julia
 using KhepriThebes
 
-backend(thebes)
 delete_all_shapes()
 
 # Create a few shapes

@@ -22,7 +22,6 @@ before the design is sent to a backend for visualization.
 ```julia
 using KhepriAutoCAD   # or any Khepri backend (re-exports KhepriBase)
 
-backend(autocad)
 delete_all_shapes()
 ```
 

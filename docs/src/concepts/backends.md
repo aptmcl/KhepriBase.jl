@@ -17,10 +17,10 @@ When Khepri creates a sphere in AutoCAD, the AutoCAD backend returns an `Int64` 
 
 ## Selecting a Backend
 
-Activate a backend with the `backend` function:
+Importing a backend package automatically activates it, so `using KhepriAutoCAD` is all you need in a fresh session. To switch backends mid-session, call `backend` explicitly:
 
 ```julia
-backend(autocad)       # set AutoCAD as the current backend
+backend(autocad)       # switch to AutoCAD mid-session
 ```
 
 Query the current state:
@@ -74,11 +74,10 @@ Every concrete backend struct must include a `refs::References{K,T}` field. The 
 
 ## The Portability Guarantee
 
-The central design principle of Khepri is that **the same script must work across all backends**. Only the import and the `backend(...)` call change:
+The central design principle of Khepri is that **the same script must work across all backends**. Only the `using` line changes:
 
 ```julia
-using KhepriAutoCAD          # swap this line...
-backend(autocad)              # ...and this line
+using KhepriAutoCAD   # swap this line to switch backends
 
 # Everything below is backend-agnostic
 delete_all_shapes()
@@ -88,11 +87,10 @@ set_view(xyz(50, 50, 30), xyz(0, 0, 0))
 render_view("my_design")
 ```
 
-Switching to Blender requires only two changes:
+Switching to Blender requires only one change:
 
 ```julia
 using KhepriBlender
-backend(blender)
 # ... identical design code ...
 ```
 

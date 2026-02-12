@@ -26,8 +26,6 @@ Create a simple room with a floor slab and four walls:
 ```julia
 using KhepriThebes   # or any Khepri backend (re-exports KhepriBase)
 
-backend(thebes)
-
 ground = level(0)
 first_floor = level(3.0)
 
