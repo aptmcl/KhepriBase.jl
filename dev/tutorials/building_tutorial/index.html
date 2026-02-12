@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Building a Complete Building · KhepriBase.jl</title><meta name="title" content="Building a Complete Building · KhepriBase.jl"/><meta property="og:title" content="Building a Complete Building · KhepriBase.jl"/><meta property="twitter:title" content="Building a Complete Building · KhepriBase.jl"/><meta name="description" content="Documentation for KhepriBase.jl."/><meta property="og:description" content="Documentation for KhepriBase.jl."/><meta property="twitter:description" content="Documentation for KhepriBase.jl."/><meta property="og:url" content="https://aptmcl.github.io/KhepriBase.jl/tutorials\\building_tutorial/"/><meta property="twitter:url" content="https://aptmcl.github.io/KhepriBase.jl/tutorials\\building_tutorial/"/><link rel="canonical" href="https://aptmcl.github.io/KhepriBase.jl/tutorials\\building_tutorial/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">KhepriBase.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Getting Started</span><ul><li><a class="tocitem" href="../../getting_started/installation/">Installation</a></li><li><a class="tocitem" href="../../getting_started/coordinates/">Coordinates</a></li><li><a class="tocitem" href="../../getting_started/paths/">Paths</a></li></ul></li><li><span class="tocitem">Concepts</span><ul><li><a class="tocitem" href="../../concepts/levels_and_families/">Levels &amp; Families</a></li><li><a class="tocitem" href="../../concepts/shapes/">Shapes</a></li><li><a class="tocitem" href="../../concepts/parameters/">Parameters</a></li><li><a class="tocitem" href="../../concepts/backends/">Backends</a></li></ul></li><li><span class="tocitem">BIM Elements</span><ul><li><a class="tocitem" href="../../bim/horizontal_elements/">Horizontal Elements</a></li><li><a class="tocitem" href="../../bim/vertical_elements/">Vertical Elements</a></li><li><a class="tocitem" href="../../bim/structural_elements/">Structural Elements</a></li><li><a class="tocitem" href="../../bim/circulation/">Circulation</a></li><li><a class="tocitem" href="../../bim/furnishings_and_lights/">Furnishings &amp; Lights</a></li><li><a class="tocitem" href="../../bim/spaces/">Spaces</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li class="is-active"><a class="tocitem" href>Building a Complete Building</a><ul class="internal"><li><a class="tocitem" href="#Setup"><span>Setup</span></a></li><li><a class="tocitem" href="#Step-1:-Define-Levels"><span>Step 1: Define Levels</span></a></li><li><a class="tocitem" href="#Step-2:-Define-Custom-Families"><span>Step 2: Define Custom Families</span></a></li><li><a class="tocitem" href="#Step-3:-Ground-Floor-Structure"><span>Step 3: Ground Floor Structure</span></a></li><li><a class="tocitem" href="#Step-4:-First-Floor"><span>Step 4: First Floor</span></a></li><li><a class="tocitem" href="#Step-5:-Roof"><span>Step 5: Roof</span></a></li><li><a class="tocitem" href="#Step-6:-Interior-Furnishings"><span>Step 6: Interior Furnishings</span></a></li><li><a class="tocitem" href="#Step-7:-Lighting"><span>Step 7: Lighting</span></a></li><li><a class="tocitem" href="#Step-8:-Render"><span>Step 8: Render</span></a></li><li><a class="tocitem" href="#Summary"><span>Summary</span></a></li></ul></li><li><a class="tocitem" href="../spaces_tutorial/">Space-First Layout Design</a></li><li><a class="tocitem" href="../rendering_tutorial/">Rendering &amp; Animation</a></li><li><a class="tocitem" href="../algorithmic_tutorial/">Algorithmic Design</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../reference/shapes_geometry/">Shapes &amp; Geometry</a></li><li><a class="tocitem" href="../../reference/utilities/">Utilities</a></li><li><a class="tocitem" href="../../reference/camera_rendering/">Camera &amp; Rendering</a></li><li><a class="tocitem" href="../../reference/backend_operations/">Backend Operations Matrix</a></li><li><a class="tocitem" href="../../reference/realize_and_ref/">Realize &amp; Ref Protocol</a></li><li><a class="tocitem" href="../../reference/implementing_backend/">Implementing a Backend</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Building a Complete Building</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Building a Complete Building</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/aptmcl/KhepriBase.jl/blob/master/docs/src/tutorials/building_tutorial.md#L" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Building-a-Complete-Building"><a class="docs-heading-anchor" href="#Building-a-Complete-Building">Building a Complete Building</a><a id="Building-a-Complete-Building-1"></a><a class="docs-heading-anchor-permalink" href="#Building-a-Complete-Building" title="Permalink"></a></h1><p>This tutorial walks through the creation of a 2-story office building using KhepriBase&#39;s BIM operations. The code is backend-portable — change the <code>using</code> line and backend call to switch between any Khepri backend.</p><h2 id="Setup"><a class="docs-heading-anchor" href="#Setup">Setup</a><a id="Setup-1"></a><a class="docs-heading-anchor-permalink" href="#Setup" title="Permalink"></a></h2><pre><code class="language-julia hljs">using KhepriThebes   # or KhepriAutoCAD, KhepriRevit, KhepriTikZ, etc.
+using KhepriBase
+
+backend(thebes)      # or autocad, revit, tikz, etc.
+delete_all_shapes()</code></pre><h2 id="Step-1:-Define-Levels"><a class="docs-heading-anchor" href="#Step-1:-Define-Levels">Step 1: Define Levels</a><a id="Step-1:-Define-Levels-1"></a><a class="docs-heading-anchor-permalink" href="#Step-1:-Define-Levels" title="Permalink"></a></h2><p>Every building starts with levels. We define three: ground floor, first floor, and roof.</p><pre><code class="language-julia hljs">ground      = level(0.0)
+first_floor = level(3.5)
+roof_level  = level(7.0)</code></pre><h2 id="Step-2:-Define-Custom-Families"><a class="docs-heading-anchor" href="#Step-2:-Define-Custom-Families">Step 2: Define Custom Families</a><a id="Step-2:-Define-Custom-Families-1"></a><a class="docs-heading-anchor-permalink" href="#Step-2:-Define-Custom-Families" title="Permalink"></a></h2><p>Override default families to match the building&#39;s design intent.</p><pre><code class="language-julia hljs"># Exterior walls: 30cm thick
+ext_wall = wall_family(thickness=0.3)
+
+# Interior partitions: 15cm thick
+int_wall = wall_family(thickness=0.15)
+
+# Custom door and window sizes
+main_door    = door_family(width=1.2, height=2.2)
+office_door  = door_family(width=0.9, height=2.1)
+tall_window  = window_family(width=1.4, height=1.6)
+small_window = window_family(width=0.8, height=1.0)
+
+# Structural columns
+col_family = column_family(
+  profile=rectangular_profile(0.3, 0.3))
+
+# Stair with wider treads
+office_stair = stair_family(width=1.2, riser_height=0.175, tread_depth=0.28)</code></pre><h2 id="Step-3:-Ground-Floor-Structure"><a class="docs-heading-anchor" href="#Step-3:-Ground-Floor-Structure">Step 3: Ground Floor Structure</a><a id="Step-3:-Ground-Floor-Structure-1"></a><a class="docs-heading-anchor-permalink" href="#Step-3:-Ground-Floor-Structure" title="Permalink"></a></h2><h3 id="Floor-Slab"><a class="docs-heading-anchor" href="#Floor-Slab">Floor Slab</a><a id="Floor-Slab-1"></a><a class="docs-heading-anchor-permalink" href="#Floor-Slab" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Building footprint: 16m x 12m
+building_region = rectangular_path(xyz(0, 0, 0), 16, 12)
+slab(building_region, ground)</code></pre><h3 id="Exterior-Walls"><a class="docs-heading-anchor" href="#Exterior-Walls">Exterior Walls</a><a id="Exterior-Walls-1"></a><a class="docs-heading-anchor-permalink" href="#Exterior-Walls" title="Permalink"></a></h3><p>Use a closed path for the building perimeter. The offset defaults to <code>1/2</code> for closed paths, placing wall thickness to the interior.</p><pre><code class="language-julia hljs">exterior = wall(
+  closed_polygonal_path([
+    xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0), xyz(0, 12, 0)]),
+  ground, first_floor, ext_wall)</code></pre><h3 id="Doors-and-Windows-on-Exterior-Walls"><a class="docs-heading-anchor" href="#Doors-and-Windows-on-Exterior-Walls">Doors and Windows on Exterior Walls</a><a id="Doors-and-Windows-on-Exterior-Walls-1"></a><a class="docs-heading-anchor-permalink" href="#Doors-and-Windows-on-Exterior-Walls" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Front facade (south wall, along y=0)
+add_door(exterior, xy(2, 0), main_door)       # main entrance
+add_window(exterior, xy(5, 1.0), tall_window)
+add_window(exterior, xy(8, 1.0), tall_window)
+add_window(exterior, xy(11, 1.0), tall_window)
+
+# Right facade (east wall, along x=16 from corner, continues from path length 16)
+add_window(exterior, xy(18, 1.0), tall_window)   # 2m from corner on east wall
+add_window(exterior, xy(21, 1.0), tall_window)
+add_window(exterior, xy(24, 1.0), tall_window)
+
+# Back facade (north wall)
+add_window(exterior, xy(30, 1.0), tall_window)
+add_window(exterior, xy(33, 1.0), tall_window)
+add_window(exterior, xy(36, 1.0), tall_window)
+
+# Left facade (west wall)
+add_window(exterior, xy(42, 1.0), tall_window)
+add_window(exterior, xy(45, 1.0), tall_window)</code></pre><h3 id="Interior-Partitions"><a class="docs-heading-anchor" href="#Interior-Partitions">Interior Partitions</a><a id="Interior-Partitions-1"></a><a class="docs-heading-anchor-permalink" href="#Interior-Partitions" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Corridor wall dividing the floor at y=6
+corridor_wall = wall(
+  open_polygonal_path([xyz(0.3, 6, 0), xyz(15.7, 6, 0)]),
+  ground, first_floor, int_wall)
+
+# Office dividers on south side
+wall(open_polygonal_path([xyz(8, 0.3, 0), xyz(8, 5.85, 0)]),
+     ground, first_floor, int_wall)
+
+# Office doors
+add_door(corridor_wall, xy(3, 0), office_door)   # left office
+add_door(corridor_wall, xy(10, 0), office_door)  # right office</code></pre><h3 id="Columns"><a class="docs-heading-anchor" href="#Columns">Columns</a><a id="Columns-1"></a><a class="docs-heading-anchor-permalink" href="#Columns" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Columns at 8m spacing along the corridor
+for x in [0.15, 8, 15.85]
+  for y in [0.15, 6, 11.85]
+    column(xyz(x, y, 0), 0, ground, first_floor, col_family)
+  end
+end</code></pre><h3 id="Stairwell"><a class="docs-heading-anchor" href="#Stairwell">Stairwell</a><a id="Stairwell-1"></a><a class="docs-heading-anchor-permalink" href="#Stairwell" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Stair in the northeast corner
+stair(xyz(13, 8, 0), vy(1), ground, first_floor, office_stair)
+
+# Railings along the stair
+railing(open_polygonal_path([xyz(13, 8, 0), xyz(13, 13.5, 3.5)]), ground)
+railing(open_polygonal_path([xyz(14.2, 8, 0), xyz(14.2, 13.5, 3.5)]), ground)</code></pre><h2 id="Step-4:-First-Floor"><a class="docs-heading-anchor" href="#Step-4:-First-Floor">Step 4: First Floor</a><a id="Step-4:-First-Floor-1"></a><a class="docs-heading-anchor-permalink" href="#Step-4:-First-Floor" title="Permalink"></a></h2><h3 id="Floor-Slab-and-Ceiling-Below"><a class="docs-heading-anchor" href="#Floor-Slab-and-Ceiling-Below">Floor Slab and Ceiling Below</a><a id="Floor-Slab-and-Ceiling-Below-1"></a><a class="docs-heading-anchor-permalink" href="#Floor-Slab-and-Ceiling-Below" title="Permalink"></a></h3><pre><code class="language-julia hljs">slab(building_region, first_floor)
+ceiling(building_region, first_floor)</code></pre><h3 id="Walls-and-Openings"><a class="docs-heading-anchor" href="#Walls-and-Openings">Walls and Openings</a><a id="Walls-and-Openings-1"></a><a class="docs-heading-anchor-permalink" href="#Walls-and-Openings" title="Permalink"></a></h3><p>The first floor has a similar layout. We repeat the pattern:</p><pre><code class="language-julia hljs"># Exterior walls
+exterior_1f = wall(
+  closed_polygonal_path([
+    xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0), xyz(0, 12, 0)]),
+  first_floor, roof_level, ext_wall)
+
+# Windows on all facades (same pattern as ground floor)
+add_window(exterior_1f, xy(5, 1.0), tall_window)
+add_window(exterior_1f, xy(8, 1.0), tall_window)
+add_window(exterior_1f, xy(11, 1.0), tall_window)
+
+add_window(exterior_1f, xy(18, 1.0), tall_window)
+add_window(exterior_1f, xy(21, 1.0), tall_window)
+add_window(exterior_1f, xy(24, 1.0), tall_window)
+
+add_window(exterior_1f, xy(30, 1.0), tall_window)
+add_window(exterior_1f, xy(33, 1.0), tall_window)
+add_window(exterior_1f, xy(36, 1.0), tall_window)
+
+add_window(exterior_1f, xy(42, 1.0), tall_window)
+add_window(exterior_1f, xy(45, 1.0), tall_window)
+
+# Interior partitions
+corridor_1f = wall(
+  open_polygonal_path([xyz(0.3, 6, 0), xyz(15.7, 6, 0)]),
+  first_floor, roof_level, int_wall)
+add_door(corridor_1f, xy(3, 0), office_door)
+add_door(corridor_1f, xy(10, 0), office_door)
+
+# Columns
+for x in [0.15, 8, 15.85]
+  for y in [0.15, 6, 11.85]
+    column(xyz(x, y, 0), 0, first_floor, roof_level, col_family)
+  end
+end</code></pre><h3 id="Balcony-with-Railing"><a class="docs-heading-anchor" href="#Balcony-with-Railing">Balcony with Railing</a><a id="Balcony-with-Railing-1"></a><a class="docs-heading-anchor-permalink" href="#Balcony-with-Railing" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Balcony slab extending from the south facade
+balcony_region = rectangular_path(xyz(4, -2, 0), 8, 2)
+slab(balcony_region, first_floor,
+     slab_family(thickness=0.15))
+
+# Railing around the balcony edge
+railing(open_polygonal_path([
+  xyz(4, -2, 0), xyz(12, -2, 0), xyz(12, 0, 0)]),
+  first_floor)
+railing(open_polygonal_path([xyz(4, 0, 0), xyz(4, -2, 0)]),
+        first_floor)</code></pre><h2 id="Step-5:-Roof"><a class="docs-heading-anchor" href="#Step-5:-Roof">Step 5: Roof</a><a id="Step-5:-Roof-1"></a><a class="docs-heading-anchor-permalink" href="#Step-5:-Roof" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Roof slab with slight overhang
+roof_region = rectangular_path(xyz(-0.3, -0.3, 0), 16.6, 12.6)
+roof(roof_region, roof_level)
+
+# Perimeter railing on the roof
+railing(open_polygonal_path([
+  xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0),
+  xyz(0, 12, 0), xyz(0, 0, 0)]),
+  roof_level,
+  nothing,
+  railing_family(height=1.1))</code></pre><h2 id="Step-6:-Interior-Furnishings"><a class="docs-heading-anchor" href="#Step-6:-Interior-Furnishings">Step 6: Interior Furnishings</a><a id="Step-6:-Interior-Furnishings-1"></a><a class="docs-heading-anchor-permalink" href="#Step-6:-Interior-Furnishings" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Ground floor reception: table and chairs
+table_and_chairs(xyz(4, 9, 0), 0, ground)
+
+# First floor conference room
+conference = table_chair_family(
+  table_family=table_family(length=2.4, width=1.0),
+  chairs_top=1, chairs_bottom=1,
+  chairs_right=3, chairs_left=3)
+table_and_chairs(xyz(4, 9, 0), 0, first_floor, conference)
+
+# Office desks
+for (x, y) in [(3, 2), (3, 4), (10, 2), (10, 4)]
+  table(xyz(x, y, 0), 0, ground, table_family(length=1.4, width=0.7))
+  chair(xyz(x, y - 0.6, 0), 0, ground)
+end</code></pre><h2 id="Step-7:-Lighting"><a class="docs-heading-anchor" href="#Step-7:-Lighting">Step 7: Lighting</a><a id="Step-7:-Lighting-1"></a><a class="docs-heading-anchor-permalink" href="#Step-7:-Lighting" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Ground floor ceiling lights
+for x in 4:4:12, y in [3, 9]
+  pointlight(xyz(x, y, 3.2), rgb(1, 0.98, 0.95), 800.0, ground)
+end
+
+# First floor ceiling lights
+for x in 4:4:12, y in [3, 9]
+  pointlight(xyz(x, y, 3.2), rgb(1, 0.98, 0.95), 800.0, first_floor)
+end</code></pre><h2 id="Step-8:-Render"><a class="docs-heading-anchor" href="#Step-8:-Render">Step 8: Render</a><a id="Step-8:-Render-1"></a><a class="docs-heading-anchor-permalink" href="#Step-8:-Render" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Set camera position
+set_view(xyz(25, -15, 12), xyz(8, 6, 3))
+
+# Render the scene
+render_view(&quot;office_building&quot;)</code></pre><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This building uses the following BIM elements:</p><table><tr><th style="text-align: right">Element</th><th style="text-align: right">Count</th><th style="text-align: right">Purpose</th></tr><tr><td style="text-align: right"><code>level</code></td><td style="text-align: right">3</td><td style="text-align: right">Ground, first floor, roof</td></tr><tr><td style="text-align: right"><code>slab</code></td><td style="text-align: right">3+</td><td style="text-align: right">Floor plates, balcony</td></tr><tr><td style="text-align: right"><code>roof</code></td><td style="text-align: right">1</td><td style="text-align: right">Building roof</td></tr><tr><td style="text-align: right"><code>ceiling</code></td><td style="text-align: right">1</td><td style="text-align: right">Below first floor slab</td></tr><tr><td style="text-align: right"><code>wall</code></td><td style="text-align: right">6+</td><td style="text-align: right">Exterior and interior walls</td></tr><tr><td style="text-align: right"><code>door</code></td><td style="text-align: right">5+</td><td style="text-align: right">Entrance and office doors</td></tr><tr><td style="text-align: right"><code>window</code></td><td style="text-align: right">22+</td><td style="text-align: right">Facade glazing</td></tr><tr><td style="text-align: right"><code>column</code></td><td style="text-align: right">18</td><td style="text-align: right">Structural grid</td></tr><tr><td style="text-align: right"><code>stair</code></td><td style="text-align: right">1</td><td style="text-align: right">Vertical circulation</td></tr><tr><td style="text-align: right"><code>railing</code></td><td style="text-align: right">6+</td><td style="text-align: right">Stair, balcony, and roof</td></tr><tr><td style="text-align: right"><code>table_and_chairs</code></td><td style="text-align: right">2</td><td style="text-align: right">Reception and conference</td></tr><tr><td style="text-align: right"><code>table</code> / <code>chair</code></td><td style="text-align: right">8</td><td style="text-align: right">Office workstations</td></tr><tr><td style="text-align: right"><code>pointlight</code></td><td style="text-align: right">12+</td><td style="text-align: right">Interior lighting</td></tr></table><p>All elements are backend-portable. To render in a different backend, change only the <code>using</code> line and <code>backend()</code> call at the top.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../bim/spaces/">« Spaces</a><a class="docs-footer-nextpage" href="../spaces_tutorial/">Space-First Layout Design »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Thursday 12 February 2026 09:52">Thursday 12 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

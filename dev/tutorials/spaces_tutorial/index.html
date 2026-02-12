@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Space-First Layout Design · KhepriBase.jl</title><meta name="title" content="Space-First Layout Design · KhepriBase.jl"/><meta property="og:title" content="Space-First Layout Design · KhepriBase.jl"/><meta property="twitter:title" content="Space-First Layout Design · KhepriBase.jl"/><meta name="description" content="Documentation for KhepriBase.jl."/><meta property="og:description" content="Documentation for KhepriBase.jl."/><meta property="twitter:description" content="Documentation for KhepriBase.jl."/><meta property="og:url" content="https://aptmcl.github.io/KhepriBase.jl/tutorials\\spaces_tutorial/"/><meta property="twitter:url" content="https://aptmcl.github.io/KhepriBase.jl/tutorials\\spaces_tutorial/"/><link rel="canonical" href="https://aptmcl.github.io/KhepriBase.jl/tutorials\\spaces_tutorial/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">KhepriBase.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Getting Started</span><ul><li><a class="tocitem" href="../../getting_started/installation/">Installation</a></li><li><a class="tocitem" href="../../getting_started/coordinates/">Coordinates</a></li><li><a class="tocitem" href="../../getting_started/paths/">Paths</a></li></ul></li><li><span class="tocitem">Concepts</span><ul><li><a class="tocitem" href="../../concepts/levels_and_families/">Levels &amp; Families</a></li><li><a class="tocitem" href="../../concepts/shapes/">Shapes</a></li><li><a class="tocitem" href="../../concepts/parameters/">Parameters</a></li><li><a class="tocitem" href="../../concepts/backends/">Backends</a></li></ul></li><li><span class="tocitem">BIM Elements</span><ul><li><a class="tocitem" href="../../bim/horizontal_elements/">Horizontal Elements</a></li><li><a class="tocitem" href="../../bim/vertical_elements/">Vertical Elements</a></li><li><a class="tocitem" href="../../bim/structural_elements/">Structural Elements</a></li><li><a class="tocitem" href="../../bim/circulation/">Circulation</a></li><li><a class="tocitem" href="../../bim/furnishings_and_lights/">Furnishings &amp; Lights</a></li><li><a class="tocitem" href="../../bim/spaces/">Spaces</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../building_tutorial/">Building a Complete Building</a></li><li class="is-active"><a class="tocitem" href>Space-First Layout Design</a><ul class="internal"><li><a class="tocitem" href="#Setup"><span>Setup</span></a></li><li><a class="tocitem" href="#A-First-Example:-Two-Rooms-with-a-Door"><span>A First Example: Two Rooms with a Door</span></a></li><li><a class="tocitem" href="#Designing-a-House"><span>Designing a House</span></a></li><li><a class="tocitem" href="#Querying-the-Model"><span>Querying the Model</span></a></li><li><a class="tocitem" href="#Validation-Rules"><span>Validation Rules</span></a></li><li><a class="tocitem" href="#Arches:-Open-Connections"><span>Arches: Open Connections</span></a></li><li><a class="tocitem" href="#Parameterized-Layouts"><span>Parameterized Layouts</span></a></li><li><a class="tocitem" href="#Complete-House-Example-with-Validation"><span>Complete House Example with Validation</span></a></li><li><a class="tocitem" href="#Summary"><span>Summary</span></a></li></ul></li><li><a class="tocitem" href="../rendering_tutorial/">Rendering &amp; Animation</a></li><li><a class="tocitem" href="../algorithmic_tutorial/">Algorithmic Design</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../reference/shapes_geometry/">Shapes &amp; Geometry</a></li><li><a class="tocitem" href="../../reference/utilities/">Utilities</a></li><li><a class="tocitem" href="../../reference/camera_rendering/">Camera &amp; Rendering</a></li><li><a class="tocitem" href="../../reference/backend_operations/">Backend Operations Matrix</a></li><li><a class="tocitem" href="../../reference/realize_and_ref/">Realize &amp; Ref Protocol</a></li><li><a class="tocitem" href="../../reference/implementing_backend/">Implementing a Backend</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Space-First Layout Design</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Space-First Layout Design</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/aptmcl/KhepriBase.jl/blob/master/docs/src/tutorials/spaces_tutorial.md#L" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Space-First-Layout-Design"><a class="docs-heading-anchor" href="#Space-First-Layout-Design">Space-First Layout Design</a><a id="Space-First-Layout-Design-1"></a><a class="docs-heading-anchor-permalink" href="#Space-First-Layout-Design" title="Permalink"></a></h1><p>Traditional BIM modeling requires the architect to create each wall, position each door and window along it, and manually manage shared boundaries between adjacent rooms. This becomes tedious and error-prone, especially for algorithmically-generated layouts where rooms are computed rather than drawn by hand.</p><p>The <strong>Spaces</strong> module inverts this workflow: you define <em>spaces</em> (rooms) as closed polygonal areas and declare <em>connections</em> (doors, windows, arches) between them. A single call to <code>build()</code> generates all the walls, doors, windows, and floor slabs automatically. Shared walls between adjacent rooms are detected and built only once, doors are centered on the shared edge, and exterior walls are placed around the perimeter.</p><p>After building, the result can be <em>introspected</em>: which walls bound a room, which spaces share a door, what is the area of each room. Validation rules can check construction regulations –- minimum areas, mandatory doors, maximum room sizes –- before the design is sent to a backend for visualization.</p><h2 id="Setup"><a class="docs-heading-anchor" href="#Setup">Setup</a><a id="Setup-1"></a><a class="docs-heading-anchor-permalink" href="#Setup" title="Permalink"></a></h2><pre><code class="language-julia hljs">using KhepriAutoCAD   # or any Khepri backend
+using KhepriBase
+
+backend(autocad)
+delete_all_shapes()</code></pre><h2 id="A-First-Example:-Two-Rooms-with-a-Door"><a class="docs-heading-anchor" href="#A-First-Example:-Two-Rooms-with-a-Door">A First Example: Two Rooms with a Door</a><a id="A-First-Example:-Two-Rooms-with-a-Door-1"></a><a class="docs-heading-anchor-permalink" href="#A-First-Example:-Two-Rooms-with-a-Door" title="Permalink"></a></h2><p>The simplest floor plan has two rooms and a door between them.</p><pre><code class="language-julia hljs">plan = floor_plan()
+
+room_a = add_space(plan, &quot;Room A&quot;, rectangular_path(u0(), 5, 4))
+room_b = add_space(plan, &quot;Room B&quot;, rectangular_path(xy(5, 0), 5, 4))
+
+add_door(plan, room_a, room_b)
+
+build(plan)</code></pre><p><code>floor_plan()</code> creates an empty plan with default level, height, wall, and slab families. <code>add_space</code> registers a named space defined by a closed path –- here, two 5x4 rectangles sharing the edge at x=5. <code>add_door</code> declares a door between them, and <code>build</code> does all the work: it detects the shared edge, creates one interior wall there, creates exterior walls around the perimeter, places the door centered on the shared wall, and generates floor slabs for both rooms.</p><h2 id="Designing-a-House"><a class="docs-heading-anchor" href="#Designing-a-House">Designing a House</a><a id="Designing-a-House-1"></a><a class="docs-heading-anchor-permalink" href="#Designing-a-House" title="Permalink"></a></h2><p>Let us design a small single-story house with a living room, kitchen, two bedrooms, a bathroom, and a corridor connecting them.</p><h3 id="Step-1:-The-Floor-Plan"><a class="docs-heading-anchor" href="#Step-1:-The-Floor-Plan">Step 1: The Floor Plan</a><a id="Step-1:-The-Floor-Plan-1"></a><a class="docs-heading-anchor-permalink" href="#Step-1:-The-Floor-Plan" title="Permalink"></a></h3><pre><code class="language-julia hljs">plan = floor_plan(
+  height=2.8,
+  wall_family=wall_family(thickness=0.2),
+  slab_family=slab_family(thickness=0.25))</code></pre><h3 id="Step-2:-Define-the-Spaces"><a class="docs-heading-anchor" href="#Step-2:-Define-the-Spaces">Step 2: Define the Spaces</a><a id="Step-2:-Define-the-Spaces-1"></a><a class="docs-heading-anchor-permalink" href="#Step-2:-Define-the-Spaces" title="Permalink"></a></h3><p>We lay out the rooms on a grid. The <code>kind</code> keyword classifies each space for later validation.</p><pre><code class="language-julia hljs"># South wing: living room and kitchen
+living = add_space(plan, &quot;Living Room&quot;,
+  closed_polygonal_path([xy(0,0), xy(6,0), xy(6,5), xy(0,5)]),
+  kind=:room)
+
+kitchen = add_space(plan, &quot;Kitchen&quot;,
+  closed_polygonal_path([xy(6,0), xy(10,0), xy(10,5), xy(6,5)]),
+  kind=:kitchen)
+
+# Central corridor
+corridor = add_space(plan, &quot;Corridor&quot;,
+  closed_polygonal_path([xy(0,5), xy(10,5), xy(10,6.2), xy(0,6.2)]),
+  kind=:corridor)
+
+# North wing: two bedrooms and a bathroom
+bedroom1 = add_space(plan, &quot;Master Bedroom&quot;,
+  closed_polygonal_path([xy(0,6.2), xy(4.5,6.2), xy(4.5,10), xy(0,10)]),
+  kind=:bedroom)
+
+bedroom2 = add_space(plan, &quot;Bedroom 2&quot;,
+  closed_polygonal_path([xy(4.5,6.2), xy(8,6.2), xy(8,10), xy(4.5,10)]),
+  kind=:bedroom)
+
+bathroom = add_space(plan, &quot;Bathroom&quot;,
+  closed_polygonal_path([xy(8,6.2), xy(10,6.2), xy(10,10), xy(8,10)]),
+  kind=:wc)</code></pre><p>The house footprint is 10m x 10m. The living room (6x5m) and kitchen (4x5m) face south. A 1.2m-wide corridor runs east–west, giving access to three rooms on the north side: master bedroom (4.5x3.8m), second bedroom (3.5x3.8m), and bathroom (2x3.8m).</p><h3 id="Step-3:-Declare-Connections"><a class="docs-heading-anchor" href="#Step-3:-Declare-Connections">Step 3: Declare Connections</a><a id="Step-3:-Declare-Connections-1"></a><a class="docs-heading-anchor-permalink" href="#Step-3:-Declare-Connections" title="Permalink"></a></h3><p>Interior doors connect the south rooms to the corridor, and the corridor to the north rooms.</p><pre><code class="language-julia hljs"># Doors from south wing to corridor
+add_door(plan, living, corridor)
+add_door(plan, kitchen, corridor)
+
+# Doors from corridor to north wing
+add_door(plan, bedroom1, corridor)
+add_door(plan, bedroom2, corridor)
+add_door(plan, bathroom, corridor)</code></pre><p>An interior door between the living room and kitchen provides direct access without going through the corridor.</p><pre><code class="language-julia hljs">add_door(plan, living, kitchen)</code></pre><h3 id="Step-4:-Add-Windows"><a class="docs-heading-anchor" href="#Step-4:-Add-Windows">Step 4: Add Windows</a><a id="Step-4:-Add-Windows-1"></a><a class="docs-heading-anchor-permalink" href="#Step-4:-Add-Windows" title="Permalink"></a></h3><p>Windows go on exterior walls. The <code>loc</code> parameter gives a world-space point on or near the exterior edge where the window should be placed.</p><pre><code class="language-julia hljs"># Living room: two large windows on the south facade
+add_window(plan, living, :exterior,
+  loc=xy(1.5, 0),
+  family=window_family(width=1.4, height=1.5))
+add_window(plan, living, :exterior,
+  loc=xy(4.5, 0),
+  family=window_family(width=1.4, height=1.5))
+
+# Kitchen: one window on the south facade
+add_window(plan, kitchen, :exterior,
+  loc=xy(8, 0),
+  family=window_family(width=1.2, height=1.2))
+
+# Master bedroom: window on the north facade
+add_window(plan, bedroom1, :exterior,
+  loc=xy(2.25, 10),
+  family=window_family(width=1.4, height=1.5))
+
+# Bedroom 2: window on the north facade
+add_window(plan, bedroom2, :exterior,
+  loc=xy(6.25, 10),
+  family=window_family(width=1.2, height=1.2))
+
+# Bathroom: small window on the north facade
+add_window(plan, bathroom, :exterior,
+  loc=xy(9, 10),
+  family=window_family(width=0.6, height=0.6))
+
+# Living room: window on the west facade
+add_window(plan, living, :exterior,
+  loc=xy(0, 2.5),
+  family=window_family(width=1.4, height=1.5))</code></pre><h3 id="Step-5:-Build"><a class="docs-heading-anchor" href="#Step-5:-Build">Step 5: Build</a><a id="Step-5:-Build-1"></a><a class="docs-heading-anchor-permalink" href="#Step-5:-Build" title="Permalink"></a></h3><pre><code class="language-julia hljs">result = build(plan)</code></pre><p>This single call generates all the geometry: exterior walls around the perimeter, interior walls between adjacent rooms (each shared edge produces exactly one wall), doors centered on the shared walls, windows at the specified positions, and floor slabs for every room.</p><p>The result supports tuple destructuring if you only need the element lists:</p><pre><code class="language-julia hljs">walls, doors, windows, slabs = build(plan)</code></pre><h2 id="Querying-the-Model"><a class="docs-heading-anchor" href="#Querying-the-Model">Querying the Model</a><a id="Querying-the-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Querying-the-Model" title="Permalink"></a></h2><p>After <code>build()</code>, the <code>BuildResult</code> carries a descriptive model of space-to-element relationships, inspired by IFC&#39;s <code>IfcRelSpaceBoundary</code>. This allows questions like &quot;which walls bound this room?&quot; or &quot;which rooms share this door?&quot;</p><h3 id="Computed-Properties"><a class="docs-heading-anchor" href="#Computed-Properties">Computed Properties</a><a id="Computed-Properties-1"></a><a class="docs-heading-anchor-permalink" href="#Computed-Properties" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Area and perimeter of each space
+for s in plan.spaces
+  println(&quot;$(s.name): $(round(space_area(s), digits=1))m², &quot;,
+          &quot;perimeter $(round(space_perimeter(s), digits=1))m&quot;)
+end</code></pre><p>Output:</p><pre><code class="nohighlight hljs">Living Room: 30.0m², perimeter 22.0m
+Kitchen: 20.0m², perimeter 18.0m
+Corridor: 12.0m², perimeter 21.6m   (actually 10*1.2 = 12)
+Master Bedroom: 17.1m², perimeter 16.6m
+Bedroom 2: 13.3m², perimeter 14.6m
+Bathroom: 7.6m², perimeter 11.6m</code></pre><h3 id="Boundary-Introspection"><a class="docs-heading-anchor" href="#Boundary-Introspection">Boundary Introspection</a><a id="Boundary-Introspection-1"></a><a class="docs-heading-anchor-permalink" href="#Boundary-Introspection" title="Permalink"></a></h3><p>Every space has a list of boundaries –- the physical walls and virtual openings (doors, windows, arches) that bound it.</p><pre><code class="language-julia hljs">for b in space_boundaries(result, living)
+  println(&quot;  $(b.kind) $(b.side): $(typeof(b.element))&quot;)
+end</code></pre><p>This might produce:</p><pre><code class="nohighlight hljs">  physical exterior: Wall
+  physical exterior: Wall
+  physical exterior: Wall
+  physical interior: Wall   (shared with kitchen)
+  physical interior: Wall   (shared with corridor)
+  virtual interior: Door    (to kitchen)
+  virtual interior: Door    (to corridor)
+  virtual exterior: Window
+  virtual exterior: Window
+  virtual exterior: Window</code></pre><h3 id="Targeted-Queries"><a class="docs-heading-anchor" href="#Targeted-Queries">Targeted Queries</a><a id="Targeted-Queries-1"></a><a class="docs-heading-anchor-permalink" href="#Targeted-Queries" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Walls around the master bedroom
+space_walls(result, bedroom1)
+
+# Doors accessible from the corridor
+space_doors(result, corridor)
+
+# Windows on the kitchen
+space_windows(result, kitchen)
+
+# Which rooms does a specific wall separate?
+some_wall = result.walls[1]
+bounding_spaces(result, some_wall)
+
+# Which rooms are adjacent to the corridor?
+adjacent_spaces(result, corridor)</code></pre><h3 id="Neighbor-Queries-(Pre-Build)"><a class="docs-heading-anchor" href="#Neighbor-Queries-(Pre-Build)">Neighbor Queries (Pre-Build)</a><a id="Neighbor-Queries-(Pre-Build)-1"></a><a class="docs-heading-anchor-permalink" href="#Neighbor-Queries-(Pre-Build)" title="Permalink"></a></h3><p>Even before calling <code>build()</code>, you can query the geometric topology:</p><pre><code class="language-julia hljs"># All spaces that share a boundary with the living room
+neighbors(plan, living)
+# =&gt; [kitchen, corridor]
+
+# The shared boundary between living room and kitchen
+shared_boundary(living, kitchen)
+# =&gt; [(xy(6,0), xy(6,5))]  — a single 5m edge
+
+# All exterior edges of the bathroom
+exterior_edges(plan, bathroom)
+# =&gt; [(xy(10,6.2), xy(10,10)), (xy(10,10), xy(8,10))]</code></pre><h2 id="Validation-Rules"><a class="docs-heading-anchor" href="#Validation-Rules">Validation Rules</a><a id="Validation-Rules-1"></a><a class="docs-heading-anchor-permalink" href="#Validation-Rules" title="Permalink"></a></h2><p>Construction regulations often impose constraints on spaces: bathrooms must have a minimum area, every room must have a door, corridors must not exceed a certain width. The Spaces module lets you attach validation rules to a floor plan and check them against the built model.</p><h3 id="Predefined-Rules"><a class="docs-heading-anchor" href="#Predefined-Rules">Predefined Rules</a><a id="Predefined-Rules-1"></a><a class="docs-heading-anchor-permalink" href="#Predefined-Rules" title="Permalink"></a></h3><pre><code class="language-julia hljs">plan = floor_plan(
+  height=2.8,
+  wall_family=wall_family(thickness=0.2),
+  rules=[
+    # Every space must have at least one door
+    has_door_rule(),
+    # Bathrooms must be at least 3m²
+    min_area_rule(:wc, 3.0),
+    # Bedrooms must be at least 9m²
+    min_area_rule(:bedroom, 9.0),
+    # Kitchens must be at least 6m²
+    min_area_rule(:kitchen, 6.0),
+  ])</code></pre><p>Rules can also be added after construction:</p><pre><code class="language-julia hljs">add_rule(plan, max_area_rule(:wc, 12.0))
+add_rule(plan, has_connection_rule())</code></pre><h3 id="Running-Validation"><a class="docs-heading-anchor" href="#Running-Validation">Running Validation</a><a id="Running-Validation-1"></a><a class="docs-heading-anchor-permalink" href="#Running-Validation" title="Permalink"></a></h3><p>After building, call <code>validate</code> to check all rules:</p><pre><code class="language-julia hljs">result = build(plan)
+violations = validate(result)
+
+if isempty(violations)
+  println(&quot;All rules pass.&quot;)
+else
+  println(&quot;Violations found:&quot;)
+  for v in violations
+    println(&quot;  - $v&quot;)
+  end
+end</code></pre><p>If the bathroom is undersized (e.g., only 1.5x1.5m = 2.25m²), the output is:</p><pre><code class="nohighlight hljs">Violations found:
+  - Bathroom (wc): area 2.25m² &lt; minimum 3.0m²</code></pre><h3 id="Custom-Rules"><a class="docs-heading-anchor" href="#Custom-Rules">Custom Rules</a><a id="Custom-Rules-1"></a><a class="docs-heading-anchor-permalink" href="#Custom-Rules" title="Permalink"></a></h3><p>A <code>SpaceRule</code> is a name and a function <code>(Space, BuildResult) -&gt; Union{Nothing, String}</code>. Return <code>nothing</code> if the rule passes, or a message string if it fails.</p><pre><code class="language-julia hljs"># Every bedroom must have at least one window
+bedroom_window_rule = SpaceRule(
+  &quot;Bedrooms must have a window&quot;,
+  (space, result) -&gt;
+    space.kind == :bedroom &amp;&amp; isempty(space_windows(result, space)) ?
+      &quot;$(space.name): bedroom has no window&quot; :
+      nothing)
+
+add_rule(plan, bedroom_window_rule)</code></pre><pre><code class="language-julia hljs"># Corridor width must not exceed 2m (approximated as area/length)
+corridor_width_rule = SpaceRule(
+  &quot;Corridor max width 2m&quot;,
+  (space, result) -&gt;
+    let a = space_area(space), p = space_perimeter(space),
+        # For a rectangular corridor, width ≈ a / (p/2 - width), but
+        # a simpler check: area must be ≤ longest_edge * 2
+        edges = polygon_edges(path_vertices(space.boundary)),
+        max_edge = maximum(distance(e[1], e[2]) for e in edges),
+        approx_width = a / max_edge
+      space.kind == :corridor &amp;&amp; approx_width &gt; 2.0 ?
+        &quot;$(space.name): corridor width ≈ $(round(approx_width, digits=2))m &gt; 2.0m&quot; :
+        nothing
+    end)</code></pre><pre><code class="language-julia hljs"># Minimum number of windows per room area (1 window per 10m²)
+daylight_rule = SpaceRule(
+  &quot;Daylight: 1 window per 10m²&quot;,
+  (space, result) -&gt;
+    let a = space_area(space),
+        nw = length(space_windows(result, space)),
+        required = ceil(Int, a / 10)
+      space.kind in (:room, :bedroom, :kitchen) &amp;&amp; nw &lt; required ?
+        &quot;$(space.name): has $nw windows but needs at least $required for $(round(a, digits=1))m²&quot; :
+        nothing
+    end)</code></pre><h3 id="Validating-Against-Specific-Rules"><a class="docs-heading-anchor" href="#Validating-Against-Specific-Rules">Validating Against Specific Rules</a><a id="Validating-Against-Specific-Rules-1"></a><a class="docs-heading-anchor-permalink" href="#Validating-Against-Specific-Rules" title="Permalink"></a></h3><p>You can also validate against a custom list of rules without registering them on the plan:</p><pre><code class="language-julia hljs"># Check only area rules
+area_rules = [
+  min_area_rule(:wc, 3.0),
+  min_area_rule(:bedroom, 9.0),
+  min_area_rule(:kitchen, 6.0),
+]
+
+validate(result, area_rules)</code></pre><h2 id="Arches:-Open-Connections"><a class="docs-heading-anchor" href="#Arches:-Open-Connections">Arches: Open Connections</a><a id="Arches:-Open-Connections-1"></a><a class="docs-heading-anchor-permalink" href="#Arches:-Open-Connections" title="Permalink"></a></h2><p>An arch is an open passage between two spaces with no wall on the shared boundary. This is useful for open-plan living/dining layouts.</p><pre><code class="language-julia hljs">plan = floor_plan()
+
+living = add_space(plan, &quot;Living&quot;, rectangular_path(u0(), 6, 5))
+dining = add_space(plan, &quot;Dining&quot;, rectangular_path(xy(6, 0), 4, 5))
+
+# Open passage between living and dining
+add_arch(plan, living, dining)
+
+result = build(plan)</code></pre><p>No wall is generated on the shared edge between living and dining. The boundary model records a <code>:virtual</code> boundary with no element, reflecting the open passage.</p><h2 id="Parameterized-Layouts"><a class="docs-heading-anchor" href="#Parameterized-Layouts">Parameterized Layouts</a><a id="Parameterized-Layouts-1"></a><a class="docs-heading-anchor-permalink" href="#Parameterized-Layouts" title="Permalink"></a></h2><p>Because spaces are defined by paths and connections are symbolic, the entire layout can be parameterized and generated algorithmically.</p><h3 id="Grid-of-Offices"><a class="docs-heading-anchor" href="#Grid-of-Offices">Grid of Offices</a><a id="Grid-of-Offices-1"></a><a class="docs-heading-anchor-permalink" href="#Grid-of-Offices" title="Permalink"></a></h3><pre><code class="language-julia hljs">function office_floor(nx, ny; office_w=4, office_d=4, corridor_w=2)
+  plan = floor_plan(
+    wall_family=wall_family(thickness=0.15),
+    rules=[has_door_rule(:office)])
+
+  offices = [
+    add_space(plan, &quot;Office $(i)x$(j)&quot;,
+      rectangular_path(xy(i * office_w, j * office_d), office_w, office_d),
+      kind=:office)
+    for i in 0:nx-1, j in 0:ny-1]
+
+  # Corridor along the top
+  corridor = add_space(plan, &quot;Corridor&quot;,
+    closed_polygonal_path([
+      xy(0, ny * office_d),
+      xy(nx * office_w, ny * office_d),
+      xy(nx * office_w, ny * office_d + corridor_w),
+      xy(0, ny * office_d + corridor_w)]),
+    kind=:corridor)
+
+  # Door from each top-row office to the corridor
+  for i in 1:nx
+    add_door(plan, offices[i, ny], corridor)
+  end
+
+  # Doors between horizontally adjacent offices
+  for i in 1:nx-1, j in 1:ny
+    add_door(plan, offices[i, j], offices[i+1, j])
+  end
+
+  build(plan)
+end
+
+# Generate a 5x3 grid of offices
+result = office_floor(5, 3)</code></pre><h3 id="Radial-Layout"><a class="docs-heading-anchor" href="#Radial-Layout">Radial Layout</a><a id="Radial-Layout-1"></a><a class="docs-heading-anchor-permalink" href="#Radial-Layout" title="Permalink"></a></h3><pre><code class="language-julia hljs">function radial_rooms(n; inner_r=3, outer_r=7, center=u0())
+  plan = floor_plan()
+
+  # Central atrium (approximated as polygon)
+  atrium_pts = [center + vpol(inner_r, i * 2pi / n) for i in 0:n-1]
+  atrium = add_space(plan, &quot;Atrium&quot;,
+    closed_polygonal_path(atrium_pts), kind=:room)
+
+  rooms = map(0:n-1) do i
+    a1 = i * 2pi / n
+    a2 = (i + 1) * 2pi / n
+    pts = [center + vpol(inner_r, a1),
+           center + vpol(outer_r, a1),
+           center + vpol(outer_r, a2),
+           center + vpol(inner_r, a2)]
+    add_space(plan, &quot;Room $(i+1)&quot;,
+      closed_polygonal_path(pts), kind=:room)
+  end
+
+  for room in rooms
+    add_door(plan, atrium, room)
+  end
+
+  build(plan)
+end
+
+result = radial_rooms(8)</code></pre><h2 id="Complete-House-Example-with-Validation"><a class="docs-heading-anchor" href="#Complete-House-Example-with-Validation">Complete House Example with Validation</a><a id="Complete-House-Example-with-Validation-1"></a><a class="docs-heading-anchor-permalink" href="#Complete-House-Example-with-Validation" title="Permalink"></a></h2><p>Putting it all together, here is a complete example that designs a house and validates Portuguese residential building regulations (simplified).</p><pre><code class="language-julia hljs"># --- Setup ---
+plan = floor_plan(
+  height=2.7,
+  wall_family=wall_family(thickness=0.2),
+  slab_family=slab_family(thickness=0.25),
+  rules=[
+    # Portuguese RGEU-inspired rules (simplified)
+    min_area_rule(:bedroom, 9.0),     # Bedrooms &gt;= 9m²
+    min_area_rule(:wc, 3.0),          # Bathrooms &gt;= 3m²
+    min_area_rule(:kitchen, 6.0),     # Kitchens &gt;= 6m²
+    min_area_rule(:room, 10.0),       # Living rooms &gt;= 10m²
+    has_door_rule(),                    # Every space must have a door
+  ])
+
+# --- Spaces ---
+living = add_space(plan, &quot;Living Room&quot;,
+  closed_polygonal_path([xy(0,0), xy(7,0), xy(7,5), xy(0,5)]),
+  kind=:room)
+
+kitchen = add_space(plan, &quot;Kitchen&quot;,
+  closed_polygonal_path([xy(7,0), xy(11,0), xy(11,5), xy(7,5)]),
+  kind=:kitchen)
+
+corridor = add_space(plan, &quot;Corridor&quot;,
+  closed_polygonal_path([xy(0,5), xy(11,5), xy(11,6.5), xy(0,6.5)]),
+  kind=:corridor)
+
+master = add_space(plan, &quot;Master Bedroom&quot;,
+  closed_polygonal_path([xy(0,6.5), xy(4.5,6.5), xy(4.5,10.5), xy(0,10.5)]),
+  kind=:bedroom)
+
+bedroom2 = add_space(plan, &quot;Bedroom 2&quot;,
+  closed_polygonal_path([xy(4.5,6.5), xy(8.5,6.5), xy(8.5,10.5), xy(4.5,10.5)]),
+  kind=:bedroom)
+
+wc = add_space(plan, &quot;Bathroom&quot;,
+  closed_polygonal_path([xy(8.5,6.5), xy(11,6.5), xy(11,10.5), xy(8.5,10.5)]),
+  kind=:wc)
+
+# --- Doors ---
+add_door(plan, living, corridor)
+add_door(plan, kitchen, corridor)
+add_door(plan, master, corridor)
+add_door(plan, bedroom2, corridor)
+add_door(plan, wc, corridor)
+add_door(plan, living, kitchen)          # direct kitchen access
+
+# --- Windows ---
+large_win = window_family(width=1.4, height=1.5)
+medium_win = window_family(width=1.2, height=1.2)
+small_win = window_family(width=0.6, height=0.6)
+
+# South facade
+add_window(plan, living, :exterior, loc=xy(2, 0), family=large_win)
+add_window(plan, living, :exterior, loc=xy(5, 0), family=large_win)
+add_window(plan, kitchen, :exterior, loc=xy(9, 0), family=medium_win)
+
+# West facade
+add_window(plan, living, :exterior, loc=xy(0, 2.5), family=large_win)
+add_window(plan, master, :exterior, loc=xy(0, 8.5), family=large_win)
+
+# North facade
+add_window(plan, master, :exterior, loc=xy(2.25, 10.5), family=large_win)
+add_window(plan, bedroom2, :exterior, loc=xy(6.5, 10.5), family=medium_win)
+add_window(plan, wc, :exterior, loc=xy(9.75, 10.5), family=small_win)
+
+# East facade
+add_window(plan, kitchen, :exterior, loc=xy(11, 2.5), family=medium_win)
+
+# --- Build and validate ---
+result = build(plan)
+
+println(result)
+# BuildResult(6 spaces, ... walls, 6 doors, 10 windows, 6 slabs, ... boundaries)
+
+violations = validate(result)
+if isempty(violations)
+  println(&quot;Design passes all rules.&quot;)
+else
+  for v in violations
+    println(&quot;VIOLATION: $v&quot;)
+  end
+end</code></pre><h3 id="Adding-a-Custom-Rule-After-the-Fact"><a class="docs-heading-anchor" href="#Adding-a-Custom-Rule-After-the-Fact">Adding a Custom Rule After the Fact</a><a id="Adding-a-Custom-Rule-After-the-Fact-1"></a><a class="docs-heading-anchor-permalink" href="#Adding-a-Custom-Rule-After-the-Fact" title="Permalink"></a></h3><p>Suppose regulations also require that every bedroom has at least one window:</p><pre><code class="language-julia hljs">bedroom_window_rule = SpaceRule(
+  &quot;Bedrooms must have a window&quot;,
+  (space, result) -&gt;
+    space.kind == :bedroom &amp;&amp; isempty(space_windows(result, space)) ?
+      &quot;$(space.name): bedroom has no window&quot; : nothing)
+
+# Validate against just this rule
+validate(result, [bedroom_window_rule])
+# =&gt; []  (both bedrooms have windows)</code></pre><h3 id="Experimenting-with-the-Layout"><a class="docs-heading-anchor" href="#Experimenting-with-the-Layout">Experimenting with the Layout</a><a id="Experimenting-with-the-Layout-1"></a><a class="docs-heading-anchor-permalink" href="#Experimenting-with-the-Layout" title="Permalink"></a></h3><p>Because the layout is algorithmic, we can easily experiment. What if the bathroom is too small?</p><pre><code class="language-julia hljs"># Replace the bathroom with a tiny one
+plan2 = floor_plan(rules=[min_area_rule(:wc, 3.0), has_door_rule()])
+
+add_space(plan2, &quot;Room&quot;, rectangular_path(u0(), 5, 4), kind=:room)
+tiny_wc = add_space(plan2, &quot;Tiny WC&quot;,
+  rectangular_path(xy(5, 0), 1.5, 1.5), kind=:wc)
+
+add_door(plan2, plan2.spaces[1], tiny_wc)
+
+result2 = build(plan2)
+validate(result2)
+# =&gt; [&quot;Tiny WC (wc): area 2.25m² &lt; minimum 3.0m²&quot;]</code></pre><p>The validation catches the undersized bathroom <em>before</em> the design reaches the construction site.</p><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><table><tr><th style="text-align: right">Function</th><th style="text-align: right">Purpose</th></tr><tr><td style="text-align: right"><code>floor_plan(; ...)</code></td><td style="text-align: right">Create an empty floor plan with defaults</td></tr><tr><td style="text-align: right"><code>add_space(plan, name, path; kind)</code></td><td style="text-align: right">Register a named space</td></tr><tr><td style="text-align: right"><code>add_door(plan, a, b; family, loc)</code></td><td style="text-align: right">Declare a door between spaces</td></tr><tr><td style="text-align: right"><code>add_window(plan, a, b; family, loc)</code></td><td style="text-align: right">Declare a window (<code>b</code> can be <code>:exterior</code>)</td></tr><tr><td style="text-align: right"><code>add_arch(plan, a, b)</code></td><td style="text-align: right">Declare an open passage</td></tr><tr><td style="text-align: right"><code>add_rule(plan, rule)</code></td><td style="text-align: right">Attach a validation rule</td></tr><tr><td style="text-align: right"><code>build(plan)</code></td><td style="text-align: right">Generate all BIM geometry</td></tr><tr><td style="text-align: right"><code>validate(result)</code></td><td style="text-align: right">Check all registered rules</td></tr><tr><td style="text-align: right"><code>validate(result, rules)</code></td><td style="text-align: right">Check specific rules</td></tr><tr><td style="text-align: right"><code>space_area(space)</code></td><td style="text-align: right">Compute space area (m²)</td></tr><tr><td style="text-align: right"><code>space_perimeter(space)</code></td><td style="text-align: right">Compute space perimeter (m)</td></tr><tr><td style="text-align: right"><code>space_boundaries(result, space)</code></td><td style="text-align: right">All boundaries of a space</td></tr><tr><td style="text-align: right"><code>space_walls(result, space)</code></td><td style="text-align: right">Walls bounding a space</td></tr><tr><td style="text-align: right"><code>space_doors(result, space)</code></td><td style="text-align: right">Doors accessible from a space</td></tr><tr><td style="text-align: right"><code>space_windows(result, space)</code></td><td style="text-align: right">Windows on a space</td></tr><tr><td style="text-align: right"><code>bounding_spaces(result, element)</code></td><td style="text-align: right">Spaces bounded by an element</td></tr><tr><td style="text-align: right"><code>adjacent_spaces(result, space)</code></td><td style="text-align: right">Spaces adjacent to a space</td></tr><tr><td style="text-align: right"><code>shared_boundary(a, b)</code></td><td style="text-align: right">Shared edges between two spaces</td></tr><tr><td style="text-align: right"><code>exterior_edges(plan, space)</code></td><td style="text-align: right">Exterior edges of a space</td></tr><tr><td style="text-align: right"><code>neighbors(plan, space)</code></td><td style="text-align: right">Spaces sharing a boundary</td></tr><tr><td style="text-align: right"><code>min_area_rule(kind, area)</code></td><td style="text-align: right">Minimum area for a space kind</td></tr><tr><td style="text-align: right"><code>max_area_rule(kind, area)</code></td><td style="text-align: right">Maximum area for a space kind</td></tr><tr><td style="text-align: right"><code>has_door_rule()</code></td><td style="text-align: right">Every space must have a door</td></tr><tr><td style="text-align: right"><code>has_door_rule(kind)</code></td><td style="text-align: right">Spaces of a kind must have a door</td></tr><tr><td style="text-align: right"><code>has_connection_rule()</code></td><td style="text-align: right">Every space must have a connection</td></tr><tr><td style="text-align: right"><code>SpaceRule(name, check)</code></td><td style="text-align: right">Custom validation rule</td></tr></table></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../building_tutorial/">« Building a Complete Building</a><a class="docs-footer-nextpage" href="../rendering_tutorial/">Rendering &amp; Animation »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Thursday 12 February 2026 09:52">Thursday 12 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
