@@ -232,6 +232,9 @@ join_paths(p1::OpenPolygonalPath, p2::OpenPolygonalPath) =
         polygonal_path([p1.vertices[1:end-1]..., p2.vertices...]) :
       polygonal_path([p1.vertices..., p2.vertices...])
 
+join_paths(p1::ArcPath, p2::OpenPolygonalPath) =
+  path_sequence(p1, p2)
+
 # Splines
 
 struct OpenSplinePath <: OpenPath
@@ -708,9 +711,10 @@ closed_path_sequence(paths...) =
 
 PathSequence = Union{OpenPathSequence, ClosedPathSequence}
 
+join_paths(p1::OpenPolygonalPath, p2::OpenPathSequence) =
+  path_sequence(p1, p2.paths...)
+
 # HACK : Include treatment of empty paths.
-
-
 
 path_sequence(paths...) =
   let paths = ensure_connected_paths([paths...])
@@ -720,6 +724,9 @@ path_sequence(paths...) =
   end
 
 ensure_connected_paths(paths) = filter(!is_empty_path, paths)
+
+path_domain(path::PathSequence) = (0, path_length(path))
+location_at(path::PathSequence, d::Real) = location_at_length(path, d)
 
 path_length(path::PathSequence) =
   sum(map(path_length, path.paths))
@@ -1097,6 +1104,8 @@ path_on(path::ClosedPathSequence, p) =
 ## Utility operations
 Base.reverse(path::CircularPath) =
   circular_path(loc_from_o_vz(path.center, vz(-1, path.center.cs)), path.radius)
+Base.reverse(path::ArcPath) =
+  arc_path(loc_from_o_vz(path.center, vz(-1, path.center.cs)), path.radius, path.start_angle + path.amplitude, -path.amplitude)
 Base.reverse(path::RectangularPath) =
   rectangular_path(loc_from_o_vz(path.corner, vz(-1, path.corner.cs)), -path.dx, path.dy)
 Base.reverse(path::OpenPolygonalPath) =
