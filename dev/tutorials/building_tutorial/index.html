@@ -21,10 +21,10 @@ col_family = column_family(
 
 # Stair with wider treads
 office_stair = stair_family(width=1.2, riser_height=0.175, tread_depth=0.28)</code></pre><h2 id="Step-3:-Ground-Floor-Structure"><a class="docs-heading-anchor" href="#Step-3:-Ground-Floor-Structure">Step 3: Ground Floor Structure</a><a id="Step-3:-Ground-Floor-Structure-1"></a><a class="docs-heading-anchor-permalink" href="#Step-3:-Ground-Floor-Structure" title="Permalink"></a></h2><h3 id="Floor-Slab"><a class="docs-heading-anchor" href="#Floor-Slab">Floor Slab</a><a id="Floor-Slab-1"></a><a class="docs-heading-anchor-permalink" href="#Floor-Slab" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Building footprint: 16m x 12m
-building_region = rectangular_path(xyz(0, 0, 0), 16, 12)
+building_region = rectangular_path(xy(0, 0), 16, 12)
 slab(building_region, ground)</code></pre><h3 id="Exterior-Walls"><a class="docs-heading-anchor" href="#Exterior-Walls">Exterior Walls</a><a id="Exterior-Walls-1"></a><a class="docs-heading-anchor-permalink" href="#Exterior-Walls" title="Permalink"></a></h3><p>Use a closed path for the building perimeter. The offset defaults to <code>1/2</code> for closed paths, placing wall thickness to the interior.</p><pre><code class="language-julia hljs">exterior = wall(
   closed_polygonal_path([
-    xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0), xyz(0, 12, 0)]),
+    xy(0, 0), xy(16, 0), xy(16, 12), xy(0, 12)]),
   ground, first_floor, ext_wall)</code></pre><h3 id="Doors-and-Windows-on-Exterior-Walls"><a class="docs-heading-anchor" href="#Doors-and-Windows-on-Exterior-Walls">Doors and Windows on Exterior Walls</a><a id="Doors-and-Windows-on-Exterior-Walls-1"></a><a class="docs-heading-anchor-permalink" href="#Doors-and-Windows-on-Exterior-Walls" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Front facade (south wall, along y=0)
 add_door(exterior, xy(2, 0), main_door)       # main entrance
 add_window(exterior, xy(5, 1.0), tall_window)
@@ -45,11 +45,11 @@ add_window(exterior, xy(36, 1.0), tall_window)
 add_window(exterior, xy(42, 1.0), tall_window)
 add_window(exterior, xy(45, 1.0), tall_window)</code></pre><h3 id="Interior-Partitions"><a class="docs-heading-anchor" href="#Interior-Partitions">Interior Partitions</a><a id="Interior-Partitions-1"></a><a class="docs-heading-anchor-permalink" href="#Interior-Partitions" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Corridor wall dividing the floor at y=6
 corridor_wall = wall(
-  open_polygonal_path([xyz(0.3, 6, 0), xyz(15.7, 6, 0)]),
+  open_polygonal_path([xy(0.3, 6), xy(15.7, 6)]),
   ground, first_floor, int_wall)
 
 # Office dividers on south side
-wall(open_polygonal_path([xyz(8, 0.3, 0), xyz(8, 5.85, 0)]),
+wall(open_polygonal_path([xy(8, 0.3), xy(8, 5.85)]),
      ground, first_floor, int_wall)
 
 # Office doors
@@ -57,18 +57,18 @@ add_door(corridor_wall, xy(3, 0), office_door)   # left office
 add_door(corridor_wall, xy(10, 0), office_door)  # right office</code></pre><h3 id="Columns"><a class="docs-heading-anchor" href="#Columns">Columns</a><a id="Columns-1"></a><a class="docs-heading-anchor-permalink" href="#Columns" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Columns at 8m spacing along the corridor
 for x in [0.15, 8, 15.85]
   for y in [0.15, 6, 11.85]
-    column(xyz(x, y, 0), 0, ground, first_floor, col_family)
+    column(xy(x, y), 0, ground, first_floor, col_family)
   end
 end</code></pre><h3 id="Stairwell"><a class="docs-heading-anchor" href="#Stairwell">Stairwell</a><a id="Stairwell-1"></a><a class="docs-heading-anchor-permalink" href="#Stairwell" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Stair in the northeast corner
-stair(xyz(13, 8, 0), vy(1), ground, first_floor, office_stair)
+stair(xy(13, 8), vy(1), ground, first_floor, office_stair)
 
 # Railings along the stair
-railing(open_polygonal_path([xyz(13, 8, 0), xyz(13, 13.5, 3.5)]), ground)
-railing(open_polygonal_path([xyz(14.2, 8, 0), xyz(14.2, 13.5, 3.5)]), ground)</code></pre><h2 id="Step-4:-First-Floor"><a class="docs-heading-anchor" href="#Step-4:-First-Floor">Step 4: First Floor</a><a id="Step-4:-First-Floor-1"></a><a class="docs-heading-anchor-permalink" href="#Step-4:-First-Floor" title="Permalink"></a></h2><h3 id="Floor-Slab-and-Ceiling-Below"><a class="docs-heading-anchor" href="#Floor-Slab-and-Ceiling-Below">Floor Slab and Ceiling Below</a><a id="Floor-Slab-and-Ceiling-Below-1"></a><a class="docs-heading-anchor-permalink" href="#Floor-Slab-and-Ceiling-Below" title="Permalink"></a></h3><pre><code class="language-julia hljs">slab(building_region, first_floor)
+railing(open_polygonal_path([xy(13, 8), xyz(13, 13.5, 3.5)]), ground)
+railing(open_polygonal_path([xy(14.2, 8), xyz(14.2, 13.5, 3.5)]), ground)</code></pre><h2 id="Step-4:-First-Floor"><a class="docs-heading-anchor" href="#Step-4:-First-Floor">Step 4: First Floor</a><a id="Step-4:-First-Floor-1"></a><a class="docs-heading-anchor-permalink" href="#Step-4:-First-Floor" title="Permalink"></a></h2><h3 id="Floor-Slab-and-Ceiling-Below"><a class="docs-heading-anchor" href="#Floor-Slab-and-Ceiling-Below">Floor Slab and Ceiling Below</a><a id="Floor-Slab-and-Ceiling-Below-1"></a><a class="docs-heading-anchor-permalink" href="#Floor-Slab-and-Ceiling-Below" title="Permalink"></a></h3><pre><code class="language-julia hljs">slab(building_region, first_floor)
 ceiling(building_region, first_floor)</code></pre><h3 id="Walls-and-Openings"><a class="docs-heading-anchor" href="#Walls-and-Openings">Walls and Openings</a><a id="Walls-and-Openings-1"></a><a class="docs-heading-anchor-permalink" href="#Walls-and-Openings" title="Permalink"></a></h3><p>The first floor has a similar layout. We repeat the pattern:</p><pre><code class="language-julia hljs"># Exterior walls
 exterior_1f = wall(
   closed_polygonal_path([
-    xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0), xyz(0, 12, 0)]),
+    xy(0, 0), xy(16, 0), xy(16, 12), xy(0, 12)]),
   first_floor, roof_level, ext_wall)
 
 # Windows on all facades (same pattern as ground floor)
@@ -89,7 +89,7 @@ add_window(exterior_1f, xy(45, 1.0), tall_window)
 
 # Interior partitions
 corridor_1f = wall(
-  open_polygonal_path([xyz(0.3, 6, 0), xyz(15.7, 6, 0)]),
+  open_polygonal_path([xy(0.3, 6), xy(15.7, 6)]),
   first_floor, roof_level, int_wall)
 add_door(corridor_1f, xy(3, 0), office_door)
 add_door(corridor_1f, xy(10, 0), office_door)
@@ -97,42 +97,42 @@ add_door(corridor_1f, xy(10, 0), office_door)
 # Columns
 for x in [0.15, 8, 15.85]
   for y in [0.15, 6, 11.85]
-    column(xyz(x, y, 0), 0, first_floor, roof_level, col_family)
+    column(xy(x, y), 0, first_floor, roof_level, col_family)
   end
 end</code></pre><h3 id="Balcony-with-Railing"><a class="docs-heading-anchor" href="#Balcony-with-Railing">Balcony with Railing</a><a id="Balcony-with-Railing-1"></a><a class="docs-heading-anchor-permalink" href="#Balcony-with-Railing" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Balcony slab extending from the south facade
-balcony_region = rectangular_path(xyz(4, -2, 0), 8, 2)
+balcony_region = rectangular_path(xy(4, -2), 8, 2)
 slab(balcony_region, first_floor,
      slab_family(thickness=0.15))
 
 # Railing around the balcony edge
 railing(open_polygonal_path([
-  xyz(4, -2, 0), xyz(12, -2, 0), xyz(12, 0, 0)]),
+  xy(4, -2), xy(12, -2), xy(12, 0)]),
   first_floor)
-railing(open_polygonal_path([xyz(4, 0, 0), xyz(4, -2, 0)]),
+railing(open_polygonal_path([xy(4, 0), xy(4, -2)]),
         first_floor)</code></pre><h2 id="Step-5:-Roof"><a class="docs-heading-anchor" href="#Step-5:-Roof">Step 5: Roof</a><a id="Step-5:-Roof-1"></a><a class="docs-heading-anchor-permalink" href="#Step-5:-Roof" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Roof slab with slight overhang
-roof_region = rectangular_path(xyz(-0.3, -0.3, 0), 16.6, 12.6)
+roof_region = rectangular_path(xy(-0.3, -0.3), 16.6, 12.6)
 roof(roof_region, roof_level)
 
 # Perimeter railing on the roof
 railing(open_polygonal_path([
-  xyz(0, 0, 0), xyz(16, 0, 0), xyz(16, 12, 0),
-  xyz(0, 12, 0), xyz(0, 0, 0)]),
+  xy(0, 0), xy(16, 0), xy(16, 12),
+  xy(0, 12), xy(0, 0)]),
   roof_level,
   nothing,
   railing_family(height=1.1))</code></pre><h2 id="Step-6:-Interior-Furnishings"><a class="docs-heading-anchor" href="#Step-6:-Interior-Furnishings">Step 6: Interior Furnishings</a><a id="Step-6:-Interior-Furnishings-1"></a><a class="docs-heading-anchor-permalink" href="#Step-6:-Interior-Furnishings" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Ground floor reception: table and chairs
-table_and_chairs(xyz(4, 9, 0), 0, ground)
+table_and_chairs(xy(4, 9), 0, ground)
 
 # First floor conference room
 conference = table_chair_family(
   table_family=table_family(length=2.4, width=1.0),
   chairs_top=1, chairs_bottom=1,
   chairs_right=3, chairs_left=3)
-table_and_chairs(xyz(4, 9, 0), 0, first_floor, conference)
+table_and_chairs(xy(4, 9), 0, first_floor, conference)
 
 # Office desks
 for (x, y) in [(3, 2), (3, 4), (10, 2), (10, 4)]
-  table(xyz(x, y, 0), 0, ground, table_family(length=1.4, width=0.7))
-  chair(xyz(x, y - 0.6, 0), 0, ground)
+  table(xy(x, y), 0, ground, table_family(length=1.4, width=0.7))
+  chair(xy(x, y - 0.6), 0, ground)
 end</code></pre><h2 id="Step-7:-Lighting"><a class="docs-heading-anchor" href="#Step-7:-Lighting">Step 7: Lighting</a><a id="Step-7:-Lighting-1"></a><a class="docs-heading-anchor-permalink" href="#Step-7:-Lighting" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Ground floor ceiling lights
 for x in 4:4:12, y in [3, 9]
   pointlight(xyz(x, y, 3.2), rgb(1, 0.98, 0.95), 800.0, ground)
@@ -145,4 +145,4 @@ end</code></pre><h2 id="Step-8:-Render"><a class="docs-heading-anchor" href="#St
 set_view(xyz(25, -15, 12), xyz(8, 6, 3))
 
 # Render the scene
-render_view(&quot;office_building&quot;)</code></pre><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This building uses the following BIM elements:</p><table><tr><th style="text-align: right">Element</th><th style="text-align: right">Count</th><th style="text-align: right">Purpose</th></tr><tr><td style="text-align: right"><code>level</code></td><td style="text-align: right">3</td><td style="text-align: right">Ground, first floor, roof</td></tr><tr><td style="text-align: right"><code>slab</code></td><td style="text-align: right">3+</td><td style="text-align: right">Floor plates, balcony</td></tr><tr><td style="text-align: right"><code>roof</code></td><td style="text-align: right">1</td><td style="text-align: right">Building roof</td></tr><tr><td style="text-align: right"><code>ceiling</code></td><td style="text-align: right">1</td><td style="text-align: right">Below first floor slab</td></tr><tr><td style="text-align: right"><code>wall</code></td><td style="text-align: right">6+</td><td style="text-align: right">Exterior and interior walls</td></tr><tr><td style="text-align: right"><code>door</code></td><td style="text-align: right">5+</td><td style="text-align: right">Entrance and office doors</td></tr><tr><td style="text-align: right"><code>window</code></td><td style="text-align: right">22+</td><td style="text-align: right">Facade glazing</td></tr><tr><td style="text-align: right"><code>column</code></td><td style="text-align: right">18</td><td style="text-align: right">Structural grid</td></tr><tr><td style="text-align: right"><code>stair</code></td><td style="text-align: right">1</td><td style="text-align: right">Vertical circulation</td></tr><tr><td style="text-align: right"><code>railing</code></td><td style="text-align: right">6+</td><td style="text-align: right">Stair, balcony, and roof</td></tr><tr><td style="text-align: right"><code>table_and_chairs</code></td><td style="text-align: right">2</td><td style="text-align: right">Reception and conference</td></tr><tr><td style="text-align: right"><code>table</code> / <code>chair</code></td><td style="text-align: right">8</td><td style="text-align: right">Office workstations</td></tr><tr><td style="text-align: right"><code>pointlight</code></td><td style="text-align: right">12+</td><td style="text-align: right">Interior lighting</td></tr></table><p>All elements are backend-portable. To render in a different backend, change only the <code>using</code> line at the top.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../bim/spaces/">« Spaces</a><a class="docs-footer-nextpage" href="../spaces_tutorial/">Space-First Layout Design »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Thursday 12 February 2026 10:14">Thursday 12 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+render_view(&quot;office_building&quot;)</code></pre><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This building uses the following BIM elements:</p><table><tr><th style="text-align: right">Element</th><th style="text-align: right">Count</th><th style="text-align: right">Purpose</th></tr><tr><td style="text-align: right"><code>level</code></td><td style="text-align: right">3</td><td style="text-align: right">Ground, first floor, roof</td></tr><tr><td style="text-align: right"><code>slab</code></td><td style="text-align: right">3+</td><td style="text-align: right">Floor plates, balcony</td></tr><tr><td style="text-align: right"><code>roof</code></td><td style="text-align: right">1</td><td style="text-align: right">Building roof</td></tr><tr><td style="text-align: right"><code>ceiling</code></td><td style="text-align: right">1</td><td style="text-align: right">Below first floor slab</td></tr><tr><td style="text-align: right"><code>wall</code></td><td style="text-align: right">6+</td><td style="text-align: right">Exterior and interior walls</td></tr><tr><td style="text-align: right"><code>door</code></td><td style="text-align: right">5+</td><td style="text-align: right">Entrance and office doors</td></tr><tr><td style="text-align: right"><code>window</code></td><td style="text-align: right">22+</td><td style="text-align: right">Facade glazing</td></tr><tr><td style="text-align: right"><code>column</code></td><td style="text-align: right">18</td><td style="text-align: right">Structural grid</td></tr><tr><td style="text-align: right"><code>stair</code></td><td style="text-align: right">1</td><td style="text-align: right">Vertical circulation</td></tr><tr><td style="text-align: right"><code>railing</code></td><td style="text-align: right">6+</td><td style="text-align: right">Stair, balcony, and roof</td></tr><tr><td style="text-align: right"><code>table_and_chairs</code></td><td style="text-align: right">2</td><td style="text-align: right">Reception and conference</td></tr><tr><td style="text-align: right"><code>table</code> / <code>chair</code></td><td style="text-align: right">8</td><td style="text-align: right">Office workstations</td></tr><tr><td style="text-align: right"><code>pointlight</code></td><td style="text-align: right">12+</td><td style="text-align: right">Interior lighting</td></tr></table><p>All elements are backend-portable. To render in a different backend, change only the <code>using</code> line at the top.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../bim/spaces/">« Spaces</a><a class="docs-footer-nextpage" href="../spaces_tutorial/">Space-First Layout Design »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Thursday 12 February 2026 12:58">Thursday 12 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

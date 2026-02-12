@@ -9,28 +9,28 @@
 first_floor = level(3.5)
 
 # Simple straight wall
-wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
      ground, first_floor)
 
 # Room perimeter (closed path — offset defaults to 1/2)
 wall(closed_polygonal_path([
-  xyz(0, 0, 0), xyz(10, 0, 0), xyz(10, 8, 0), xyz(0, 8, 0)]),
+  xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
   ground, first_floor)
 
 # Custom wall thickness
 exterior_wall = wall_family(thickness=0.3)
-wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
-     ground, first_floor, exterior_wall)</code></pre><h3 id="Joining-Walls"><a class="docs-heading-anchor" href="#Joining-Walls">Joining Walls</a><a id="Joining-Walls-1"></a><a class="docs-heading-anchor-permalink" href="#Joining-Walls" title="Permalink"></a></h3><p>Two walls with the same levels, family, and offset can be joined into a single continuous wall:</p><pre><code class="language-julia hljs">w1 = wall(open_polygonal_path([xyz(0, 0, 0), xyz(5, 0, 0)]),
+wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
+     ground, first_floor, exterior_wall)</code></pre><h3 id="Joining-Walls"><a class="docs-heading-anchor" href="#Joining-Walls">Joining Walls</a><a id="Joining-Walls-1"></a><a class="docs-heading-anchor-permalink" href="#Joining-Walls" title="Permalink"></a></h3><p>Two walls with the same levels, family, and offset can be joined into a single continuous wall:</p><pre><code class="language-julia hljs">w1 = wall(open_polygonal_path([xy(0, 0), xy(5, 0)]),
           ground, first_floor)
-w2 = wall(open_polygonal_path([xyz(5, 0, 0), xyz(5, 8, 0)]),
+w2 = wall(open_polygonal_path([xy(5, 0), xy(5, 8)]),
           ground, first_floor)
-joined = join_walls(w1, w2)</code></pre><h3 id="Incremental-Construction"><a class="docs-heading-anchor" href="#Incremental-Construction">Incremental Construction</a><a id="Incremental-Construction-1"></a><a class="docs-heading-anchor-permalink" href="#Incremental-Construction" title="Permalink"></a></h3><p>Use <code>with_wall</code> to create a wall and add openings in a transaction:</p><pre><code class="language-julia hljs">with_wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+joined = join_walls(w1, w2)</code></pre><h3 id="Incremental-Construction"><a class="docs-heading-anchor" href="#Incremental-Construction">Incremental Construction</a><a id="Incremental-Construction-1"></a><a class="docs-heading-anchor-permalink" href="#Incremental-Construction" title="Permalink"></a></h3><p>Use <code>with_wall</code> to create a wall and add openings in a transaction:</p><pre><code class="language-julia hljs">with_wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
           ground, first_floor) do w
   add_door(w, xy(2, 0))
   add_window(w, xy(5, 1.0))
 end</code></pre><h3 id="Boolean-vs.-Polygonal-Decomposition"><a class="docs-heading-anchor" href="#Boolean-vs.-Polygonal-Decomposition">Boolean vs. Polygonal Decomposition</a><a id="Boolean-vs.-Polygonal-Decomposition-1"></a><a class="docs-heading-anchor-permalink" href="#Boolean-vs.-Polygonal-Decomposition" title="Permalink"></a></h3><p>Walls with openings can be realized in two ways depending on the backend:</p><ul><li><strong>Boolean operations</strong> (<code>HasBooleanOps{true}</code>): wall solid minus opening solids — used by backends with CSG support (AutoCAD, Revit).</li><li><strong>Polygonal decomposition</strong> (<code>HasBooleanOps{false}</code>, the default): wall geometry is split into polygonal regions around openings — used by backends without CSG (GL, Thebes, Blender).</li></ul><p>This is handled automatically; user code is the same for both.</p><h2 id="Door"><a class="docs-heading-anchor" href="#Door">Door</a><a id="Door-1"></a><a class="docs-heading-anchor-permalink" href="#Door" title="Permalink"></a></h2><p>A door is an opening placed within a wall. Doors are not standalone elements — they exist as children of a wall.</p><h3 id="Signature-2"><a class="docs-heading-anchor" href="#Signature-2">Signature</a><a class="docs-heading-anchor-permalink" href="#Signature-2" title="Permalink"></a></h3><pre><code class="language-julia hljs">door(wall::Wall, loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false,
      angle::Real=0, family::DoorFamily=default_door_family())</code></pre><h3 id="DoorFamily-Parameters"><a class="docs-heading-anchor" href="#DoorFamily-Parameters">DoorFamily Parameters</a><a id="DoorFamily-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#DoorFamily-Parameters" title="Permalink"></a></h3><table><tr><th style="text-align: right">Parameter</th><th style="text-align: right">Default</th><th style="text-align: right">Description</th></tr><tr><td style="text-align: right"><code>width</code></td><td style="text-align: right"><code>1.0</code></td><td style="text-align: right">Door opening width</td></tr><tr><td style="text-align: right"><code>height</code></td><td style="text-align: right"><code>2.0</code></td><td style="text-align: right">Door opening height</td></tr><tr><td style="text-align: right"><code>thickness</code></td><td style="text-align: right"><code>0.05</code></td><td style="text-align: right">Door panel thickness</td></tr><tr><td style="text-align: right"><code>frame</code></td><td style="text-align: right"><code>default_frame_family()</code></td><td style="text-align: right">Frame profile and material</td></tr><tr><td style="text-align: right"><code>right_material</code></td><td style="text-align: right"><code>material_wood</code></td><td style="text-align: right">Right face material</td></tr><tr><td style="text-align: right"><code>left_material</code></td><td style="text-align: right"><code>material_wood</code></td><td style="text-align: right">Left face material</td></tr><tr><td style="text-align: right"><code>side_material</code></td><td style="text-align: right"><code>material_wood</code></td><td style="text-align: right">Edge material</td></tr></table><h3 id="Location-Semantics"><a class="docs-heading-anchor" href="#Location-Semantics">Location Semantics</a><a id="Location-Semantics-1"></a><a class="docs-heading-anchor-permalink" href="#Location-Semantics" title="Permalink"></a></h3><p>The <code>loc</code> parameter uses a 2D coordinate relative to the wall&#39;s base path:</p><ul><li><strong><code>loc.x</code></strong>: distance along the path from the start (in meters)</li><li><strong><code>loc.y</code></strong>: height above the bottom level</li></ul><h3 id="Adding-Doors"><a class="docs-heading-anchor" href="#Adding-Doors">Adding Doors</a><a id="Adding-Doors-1"></a><a class="docs-heading-anchor-permalink" href="#Adding-Doors" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Add a door to an existing wall
-w = wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+w = wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
          ground, first_floor)
 add_door(w, xy(2, 0))                                    # default family
 add_door(w, xy(6, 0), door_family(width=0.9, height=2.1)) # custom size</code></pre><h2 id="Window"><a class="docs-heading-anchor" href="#Window">Window</a><a id="Window-1"></a><a class="docs-heading-anchor-permalink" href="#Window" title="Permalink"></a></h2><p>A window follows the same pattern as a door but with different default dimensions and materials.</p><h3 id="Signature-3"><a class="docs-heading-anchor" href="#Signature-3">Signature</a><a class="docs-heading-anchor-permalink" href="#Signature-3" title="Permalink"></a></h3><pre><code class="language-julia hljs">window(wall::Wall, loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false,
@@ -50,18 +50,18 @@ curtain_wall(p0::Loc, p1::Loc; bottom_level, top_level, family, offset)</code></
 first_floor = level(3.5)
 
 # Simple curtain wall between two points
-curtain_wall(xyz(0, 0, 0), xyz(10, 0, 0),
+curtain_wall(xy(0, 0), xy(10, 0),
              bottom_level=ground, top_level=first_floor)
 
 # Curtain wall with custom panel spacing
 fine_grid = curtain_wall_family(max_panel_dx=0.8, max_panel_dy=1.5)
-curtain_wall(open_polygonal_path([xyz(0, 0, 0), xyz(10, 0, 0)]),
+curtain_wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
              ground, first_floor, fine_grid)</code></pre><h2 id="Integration-Example"><a class="docs-heading-anchor" href="#Integration-Example">Integration Example</a><a id="Integration-Example-1"></a><a class="docs-heading-anchor-permalink" href="#Integration-Example" title="Permalink"></a></h2><p>A room with walls, a door, and windows:</p><pre><code class="language-julia hljs">ground = level(0)
 first_floor = level(3.0)
 
 # Room perimeter
 w = wall(closed_polygonal_path([
-  xyz(0, 0, 0), xyz(8, 0, 0), xyz(8, 6, 0), xyz(0, 6, 0)]),
+  xy(0, 0), xy(8, 0), xy(8, 6), xy(0, 6)]),
   ground, first_floor)
 
 # Front wall openings: door at 1m, windows at 3.5m and 5.5m
@@ -70,4 +70,4 @@ add_window(w, xy(3.5, 1.0), window_family(width=1.2, height=1.2))
 add_window(w, xy(5.5, 1.0), window_family(width=1.2, height=1.2))
 
 # Floor slab
-slab(rectangular_path(xyz(0, 0, 0), 8, 6), ground)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../horizontal_elements/">« Horizontal Elements</a><a class="docs-footer-nextpage" href="../structural_elements/">Structural Elements »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Thursday 12 February 2026 10:14">Thursday 12 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+slab(rectangular_path(xy(0, 0), 8, 6), ground)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../horizontal_elements/">« Horizontal Elements</a><a class="docs-footer-nextpage" href="../structural_elements/">Structural Elements »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Thursday 12 February 2026 12:58">Thursday 12 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
