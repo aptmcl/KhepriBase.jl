@@ -33,4 +33,19 @@ using Test
   @testset "Legacy Tests" begin
     include("Test.jl")
   end
+
+  # Phase 5: Conformance tests (MockBackend as reference)
+  @testset "Backend Conformance (MockBackend)" begin
+    include("BackendConformanceTests.jl")
+    using .BackendConformanceTests
+
+    b = mock_backend()
+    run_conformance_tests(b,
+      reset! = () -> begin
+        reset_mock_backend!(b)
+        backend(b)
+      end,
+      skip = Symbol[]
+    )
+  end
 end

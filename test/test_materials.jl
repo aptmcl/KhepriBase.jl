@@ -230,4 +230,33 @@ include("TestMockBackend.jl")
     @test material_as_layer() == false
   end
 
+  @testset "standard_material" begin
+    with_mock_backend() do b
+      @testset "creation with defaults" begin
+        sm = standard_material()
+        @test sm isa Material
+        @test is_standard_material(sm)
+        @test standard_material_name(sm) == "Material"
+      end
+
+      @testset "creation with custom base_color" begin
+        sm = standard_material(base_color=rgba(1, 0, 0, 1))
+        @test standard_material_base_color(sm) == rgba(1, 0, 0, 1)
+      end
+
+      @testset "assignment to shape" begin
+        sm = standard_material(base_color=rgba(1, 0, 0, 1))
+        s = sphere(u0(), 5, material=sm)
+        @test s.material === sm
+      end
+
+      @testset "material_ref returns valid reference" begin
+        sm = standard_material(base_color=rgba(0, 1, 0, 1))
+        ref = material_ref(b, sm)
+        @test ref isa Integer
+        @test ref != 0  # not void_ref
+      end
+    end
+  end
+
 end

@@ -209,7 +209,7 @@ b_strip(b::Backend, path1::Region, path2::Region, mat) =
 ############################################################
 # Second tier: surfaces
 export b_surface_polygon, b_surface_polygon_with_holes,
-       b_surface_regular_polygon,
+       b_surface_regular_polygon, b_surface_rectangle,
 	     b_surface_circle, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
 	     b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
 

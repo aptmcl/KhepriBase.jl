@@ -165,6 +165,8 @@ Base.contains(r::NativeRef, v) = r.value == v
 Base.contains(r::NativeRefs, v) = v in r.values
 
 # Rarely, we have a reference that is a local value, such as a string or a number
-struct LocalRef{K,T} <: GenericRef{K,T} 
+struct LocalRef{K,T} <: GenericRef{K,T}
   value::Any
 end
+
+Base.contains(r::LocalRef, v) = r.value == v

@@ -354,7 +354,7 @@ specific building elements and even, when possible, default implementations.
   top_material::Material=material_concrete,
   side_material::Material=material_concrete)
 
-export slab_family_thickness
+export slab_family_elevation, slab_family_thickness
 slab_family_elevation(b::Backend, family::SlabFamily) =
   family.coating_thickness - family.thickness
 slab_family_thickness(b::Backend, family::SlabFamily) =

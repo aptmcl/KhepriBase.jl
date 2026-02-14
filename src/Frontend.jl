@@ -142,6 +142,14 @@ current_layer(layer, backends::Backends=current_backends()) =
 @defcbs set_view_top()
 
 @defcbs zoom_extents()
+
+# View settings — each backend specializes with its own keyword arguments.
+# E.g., view_settings(shaders, antialiasing=2)
+#        view_settings(autocad, visual_style=:conceptual)
+export view_settings, b_view_settings
+view_settings(b::Backend=top_backend(); kwargs...) = b_view_settings(b; kwargs...)
+b_view_settings(b::Backend; kwargs...) = nothing
+
 #@defcb get_material(ref::Any)
 #@defcbs create_material(name::String)
 #@defcb current_material()

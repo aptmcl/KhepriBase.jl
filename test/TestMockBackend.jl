@@ -242,10 +242,16 @@ KhepriBase.b_layer(b::MockBackend, name, active, color) = next_ref!(b)
 KhepriBase.b_current_layer_ref(b::MockBackend) = 0
 KhepriBase.b_current_layer_ref(b::MockBackend, r) = nothing
 KhepriBase.b_delete_all_shapes_in_layer(b::MockBackend, layer) = nothing
+KhepriBase.b_create_layer_from_ref_value(b::MockBackend, r) = layer("Default")
 
 # Material operations (minimal implementation)
 KhepriBase.b_get_material(b::MockBackend, spec::Nothing) = 0
 KhepriBase.b_get_material(b::MockBackend, spec) = 0
+KhepriBase.b_new_material(b::MockBackend, name, base_color, metallic, specular, roughness,
+                          clearcoat, clearcoat_roughness, ior,
+                          transmission, transmission_roughness,
+                          emission_color, emission_strength) =
+  next_ref!(b)
 
 # Create global mock backend instance
 const _mock_backend = Ref{Union{Nothing, MockBackend}}(nothing)

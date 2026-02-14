@@ -15,12 +15,6 @@ convert the generic material parameters into specific model parameters.
 Note: eta is the index of refraction (IOR)
 =#
 
-@bdef b_plastic_material(name, diffuse, specular, roughness, bump_map)
-@bdef b_metal_material(name, eta, absorb, roughness, bump_map)
-@bdef b_glass_material(name, eta, reflect, transmit, roughness, bump_map)
-@bdef b_mirror_material(name, reflect, bump_map)
-@bdef b_translucent_material(name, diffuse, specular, roughness, reflect, transmit, bump_map)
-@bdef b_substrate_material(name, diffuse, specular, roughness, bump_map)
 
 #=
 
@@ -85,7 +79,7 @@ The type and range of each property is described in table [standardPropertiesTyp
 
 =#
 
-@defproxy(standard_material, Proxy, name::String="Material", layer::Layer=current_layer(),
+@defproxy(standard_material, Material, name::String="Material", layer::Layer=current_layer(),
   base_color::RGBA=RGBA(0.5, 0.5, 0.5, 0.5),              # float4   |  [0..1]                  | Pre-multiplied linear RGB
   metallic::Real=0.0,                                     # float    |  [0..1]                  | Should be 0 or 1
   roughness::Real=0.0,                                    # float    |  [0..1]                  |
@@ -108,3 +102,18 @@ The type and range of each property is described in table [standardPropertiesTyp
   micro_thickness::Real=0.0,                              # float    |  [0..n]                  |
   thickness::Real=0.0                                     # float    |  [0..n]                  |
   )
+
+# Default b_standard_material delegates to b_new_material, mapping
+# the Filament PBR fields to the simpler b_new_material signature.
+export b_standard_material
+b_standard_material(b::Backend, name, layer, base_color, metallic, roughness,
+                    reflectance, sheen_color, sheen_roughness,
+                    clear_coat, clear_coat_roughness,
+                    anisotropy, anisotropy_direction,
+                    ambient_occlusion, normal, bent_normal, clear_coat_normal,
+                    emissive, post_lighting_color,
+                    ior, transmission, absorption, micro_thickness, thickness) =
+  b_new_material(b, name, base_color, metallic, reflectance, roughness,
+                 clear_coat, clear_coat_roughness, ior,
+                 transmission, 0,
+                 emissive, 1)
