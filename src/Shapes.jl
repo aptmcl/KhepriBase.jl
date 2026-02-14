@@ -544,8 +544,11 @@ macro defproxy(name_typename, parent, fields...)
   sig_parts = join(["$(fn)=$(fi)" for (fn, fi) in zip(field_names, field_init_strs)], ", ")
   field_lines = ["- `$(fn)::$(ft)` — default: `$(fi)`"
                  for (fn, ft, fi) in zip(field_names, field_type_strs, field_init_strs)]
+  src_file = string(__source__.file)
+  src_line = __source__.line
   docstr = string("    ", name_str, "(", sig_parts, ")\n\n",
                   "Create a `", typename, "` (`", parent, "`).\n\n",
+                  "Defined at `", src_file, ":", src_line, "`\n\n",
                   "# Fields\n",
                   join(field_lines, "\n"), "\n\n",
                   "Backend operation: `b_", name_str, "`\n")
@@ -563,6 +566,7 @@ macro defproxy(name_typename, parent, fields...)
     $(predicate_name)(v::Any) = false
     $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
           selector_names, field_names)...)
+    $(__source__)
     KhepriBase.realize(b::Backend, s::$(abstract_name)) =
       $(Symbol(:b_, name))(b, $(map(f->:(ref_value(b, getproperty(s, $(QuoteNode(f))))), field_names)...))
     KhepriBase.mark_deleted(b::Backend, v::$(abstract_name)) =
@@ -616,13 +620,15 @@ realize(b::Backend, l::StandardLayer) =
   b_layer(b, l.name, l.active, l.color)
 =#
 current_layer(backends::Backends=current_backends()) =
-  let b1 = first(backends),
-      layer = get_or_create_layer_from_ref_value(b1, b_current_layer_ref(b1))
-    for b in Base.tail(backends)
-      ref!(b, layer, b_current_layer_ref(b))
+  isempty(backends) ?
+    layer("Default") :
+    let b1 = first(backends),
+        layer = get_or_create_layer_from_ref_value(b1, b_current_layer_ref(b1))
+      for b in Base.tail(backends)
+        ref!(b, layer, b_current_layer_ref(b))
+      end
+      layer
     end
-    layer
-  end
 @bdef(b_create_layer_from_ref_value(r))
 
 current_layer(layer, backends::Backends=current_backends()) =
@@ -741,52 +747,52 @@ export material_point, material_curve, material_surface,
        material_grass, material_clay
 
 const material_point = standard_material(
-  name="Points",
+  name="Points", layer=layer("Points"),
   base_color=rgba(1.0, 1.0, 0.0, 1.0),
   roughness=1.0)
 const material_curve = standard_material(
-  name="Curves",
+  name="Curves", layer=layer("Curves"),
   base_color=rgba(0.0, 0.0, 0.0, 1.0),
   roughness=1.0)
 const material_surface = standard_material(
-  name="Surfaces",
+  name="Surfaces", layer=layer("Surfaces"),
   base_color=rgba(0.8, 0.8, 0.8, 1.0),
   roughness=0.5)
 const material_basic = standard_material(
-  name="Basic",
+  name="Basic", layer=layer("Basic"),
   base_color=rgba(0.5, 0.5, 0.5, 1.0),
   roughness=0.5)
 const material_glass = standard_material(
-  name="Glass",
+  name="Glass", layer=layer("Glass"),
   base_color=rgba(0.95, 0.95, 1.0, 0.3),
   roughness=0.05,
   reflectance=0.5,
   ior=1.5,
   transmission=0.8)
 const material_metal = standard_material(
-  name="Metal",
+  name="Metal", layer=layer("Metal"),
   base_color=rgba(0.8, 0.8, 0.85, 1.0),
   metallic=1.0,
   roughness=0.3,
   reflectance=0.9)
 const material_wood = standard_material(
-  name="Wood",
+  name="Wood", layer=layer("Wood"),
   base_color=rgba(0.55, 0.35, 0.17, 1.0),
   roughness=0.7)
 const material_concrete = standard_material(
-  name="Concrete",
+  name="Concrete", layer=layer("Concrete"),
   base_color=rgba(0.7, 0.7, 0.7, 1.0),
   roughness=0.9)
 const material_plaster = standard_material(
-  name="Plaster",
+  name="Plaster", layer=layer("Plaster"),
   base_color=rgba(0.93, 0.92, 0.88, 1.0),
   roughness=0.6)
 const material_grass = standard_material(
-  name="Grass",
+  name="Grass", layer=layer("Grass"),
   base_color=rgba(0.2, 0.5, 0.1, 1.0),
   roughness=0.95)
 const material_clay = standard_material(
-  name="Clay",
+  name="Clay", layer=layer("Clay"),
   base_color=rgba(0.76, 0.55, 0.38, 1.0),
   roughness=0.8,
   reflectance=0.4)
@@ -823,16 +829,26 @@ macro defshape(supertype, name_typename, fields...)
     supertype == :Shape3D ? :default_material :
     supertype == :Annotation ? :default_annotation_material :
     error("Unknown supertype:", supertype)
+  src = __source__
+  src_file_str = string(src.file)
+  src_line = src.line
   esc(quote
     @defproxy($(name_typename), $(supertype), $(fields...), material::Material=$(default_material)())
+    $(src)
     KhepriBase.realize(b::Backend, s::$(typename)) =
       $(b_func)(b, $(map(f->:(getproperty(s, $(QuoteNode(f)))), field_names)...), material_ref(b, s))
     # Arity verification: b_<name> must accept (backend, fields..., material)
-    let expected = Tuple{Backend, $(fill(:Any, n_fields + 1)...)}
-      hasmethod($(b_func), expected) ||
-        @warn string("@defshape ", $(string(name)), ": ", $(string(b_func)),
-                     " has no method accepting ", $(n_fields + 2),
-                     " args (backend + ", $(n_fields), " fields + material)")
+    let b_sym = $(QuoteNode(b_func))
+      if isdefined($(__module__), b_sym)
+        let expected = Tuple{Backend, $(fill(:Any, n_fields + 1)...)}
+          hasmethod($(b_func), expected) ||
+            @warn string("@defshape ", $(string(name)),
+                         " at ", $(src_file_str), ":", $(src_line),
+                         ": ", $(string(b_func)),
+                         " has no method accepting ", $(n_fields + 2),
+                         " args (backend + ", $(n_fields), " fields + material)")
+        end
+      end
     end
   end)
 end

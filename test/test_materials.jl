@@ -68,58 +68,60 @@ include("TestMockBackend.jl")
   end
 
   @testset "Predefined materials" begin
+    # Pre-defined materials are StandardMaterial instances (not MaterialInLayer),
+    # so use is_standard_material or isa Material.
     @testset "material_point" begin
-      @test is_material(material_point)
+      @test is_standard_material(material_point)
       @test material_point.layer.name == "Points"
     end
 
     @testset "material_curve" begin
-      @test is_material(material_curve)
+      @test is_standard_material(material_curve)
       @test material_curve.layer.name == "Curves"
     end
 
     @testset "material_surface" begin
-      @test is_material(material_surface)
+      @test is_standard_material(material_surface)
       @test material_surface.layer.name == "Surfaces"
     end
 
     @testset "material_basic" begin
-      @test is_material(material_basic)
+      @test is_standard_material(material_basic)
       @test material_basic.layer.name == "Basic"
     end
 
     @testset "material_glass" begin
-      @test is_material(material_glass)
+      @test is_standard_material(material_glass)
       @test material_glass.layer.name == "Glass"
     end
 
     @testset "material_metal" begin
-      @test is_material(material_metal)
+      @test is_standard_material(material_metal)
       @test material_metal.layer.name == "Metal"
     end
 
     @testset "material_wood" begin
-      @test is_material(material_wood)
+      @test is_standard_material(material_wood)
       @test material_wood.layer.name == "Wood"
     end
 
     @testset "material_concrete" begin
-      @test is_material(material_concrete)
+      @test is_standard_material(material_concrete)
       @test material_concrete.layer.name == "Concrete"
     end
 
     @testset "material_plaster" begin
-      @test is_material(material_plaster)
+      @test is_standard_material(material_plaster)
       @test material_plaster.layer.name == "Plaster"
     end
 
     @testset "material_grass" begin
-      @test is_material(material_grass)
+      @test is_standard_material(material_grass)
       @test material_grass.layer.name == "Grass"
     end
 
     @testset "material_clay" begin
-      @test is_material(material_clay)
+      @test is_standard_material(material_clay)
       @test material_clay.layer.name == "Clay"
     end
   end
