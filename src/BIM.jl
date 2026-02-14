@@ -243,6 +243,7 @@ macro deffamily(name, parent, fields...)
   name_str = string(name)
   abstract_name = esc(Symbol(string))
   struct_name = esc(Symbol(string(map(uppercasefirst,split(name_str,'_'))...)))
+  typename_str = string(map(uppercasefirst,split(name_str,'_'))...)
   # We always add a name field
   fields = [:(name::String=$(name_str)), fields...]
   field_names = map(field -> field.args[1].args[1], fields)
@@ -264,6 +265,17 @@ macro deffamily(name, parent, fields...)
   predicate_name = esc(Symbol("is_", name_str))
   selector_names = map(field_name -> esc(Symbol(name_str, "_", string(field_name))), field_names)
   with_name = esc(Symbol("with_", name_str))
+  # Generate docstring
+  field_type_strs = map(string, field_types)
+  field_init_strs = map(string, field_inits)
+  sig_parts = join(["$(fn)::$(ft)=$(fi)" for (fn, ft, fi) in zip(field_names, field_type_strs, field_init_strs)], ", ")
+  field_lines = ["- `$(fn)::$(ft)` — default: `$(fi)`"
+                 for (fn, ft, fi) in zip(field_names, field_type_strs, field_init_strs)]
+  docstr = string("    ", name_str, "(", sig_parts, ")\n\n",
+                  "Create a `", typename_str, "` family (`", parent, "`).\n\n",
+                  "# Fields\n",
+                  join(field_lines, "\n"), "\n\n",
+                  "Default parameter: `default_", name_str, "`\n")
   quote
     export $(constructor_name), $(instance_name), $(default_name), $(predicate_name), $(struct_name), $(with_name)
     struct $struct_name <: $parent
@@ -292,6 +304,7 @@ macro deffamily(name, parent, fields...)
         Expr(:call, $(Expr(:quote, name)), $(map(field_name -> :(meta_program(v.$(field_name))), field_names)...))
     KhepriBase.meta_program(v::Parameter{$struct_name}) =
         Expr(:call, $(Expr(:quote, default_name)))
+    Base.@doc $(docstr) $(constructor_name)
   end
 end
 

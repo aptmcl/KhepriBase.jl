@@ -14,7 +14,7 @@ struct References{K,T}
   families::Dict{Family,GenericRef{K,T}}
   levels::Dict{Level,GenericRef{K,T}}
   References{K,T}() where {K,T} =
-    new{K,T}(Dict{Shape,GenericRef{K,T}}(), 
+    new{K,T}(Dict{Shape,GenericRef{K,T}}(),
              Dict{Material,GenericRef{K,T}}(),
              Dict{Layer,GenericRef{K,T}}(),
              Dict{Annotation,GenericRef{K,T}}(),
@@ -201,9 +201,12 @@ export default_khepri_socket_server_host, default_khepri_socket_server_port
 const khepri_socket_server_task = GlobalParameter{Union{Nothing,Task}}(nothing)
 
 export ensure_khepri_socket_server_running
+const _server_launch_lock = ReentrantLock()
 ensure_khepri_socket_server_running() =
-  if isnothing(khepri_socket_server_task())
-    khepri_socket_server_task(errormonitor(Threads.@spawn run_khepri_socket_server()))
+  lock(_server_launch_lock) do
+    if isnothing(khepri_socket_server_task())
+      khepri_socket_server_task(errormonitor(Threads.@spawn run_khepri_socket_server()))
+    end
   end
 
 #=

@@ -34,7 +34,10 @@ using Test
     include("Test.jl")
   end
 
-  # Phase 5: Conformance tests (MockBackend as reference)
+  # Phase 5: Fallback chain tests (MinimalTriangleBackend)
+  include("test_fallback_chain.jl")
+
+  # Phase 6: Conformance tests (MockBackend as reference)
   @testset "Backend Conformance (MockBackend)" begin
     include("BackendConformanceTests.jl")
     using .BackendConformanceTests

@@ -275,7 +275,19 @@ function test_materials(b, reset!)
         0.0,              # transmission
         0.0,              # transmission_roughness
         rgba(0,0,0,0),    # emission_color
-        1.0)              # emission_strength
+        1.0,              # emission_strength
+        RGB(0,0,0),       # sheen_color
+        0.0,              # sheen_roughness
+        0.0,              # anisotropy
+        RGB(0,0,0),       # anisotropy_direction
+        0.0,              # ambient_occlusion
+        RGB(0,0,0),       # normal_map
+        RGB(0,0,0),       # bent_normal
+        RGB(0,0,0),       # clearcoat_normal
+        rgba(0,0,0,0),    # post_lighting_color
+        0.0,              # absorption
+        0.0,              # micro_thickness
+        0.0)              # thickness
       @test !isnothing(r)
     end
 

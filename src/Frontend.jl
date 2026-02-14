@@ -21,12 +21,28 @@ def_data(expr) =
     name_params.args[1], name_params.args[2:end], body
   end
 
+# Generate docstring for @defcb/@defcbs
+function _frontend_docstr(name, params_data, multi)
+  name_str = string(name)
+  param_parts = [let (pn, pt, pi) = pd
+                   ismissing(pi) ?
+                     (pt == :Any ? string(pn) : "$(pn)::$(pt)") :
+                     (pt == :Any ? "$(pn)=$(pi)" : "$(pn)::$(pt)=$(pi)")
+                 end
+                 for pd in params_data]
+  sig = join(param_parts, ", ")
+  scope = multi ? "all current backends" : "the current backend"
+  string("    ", name_str, "(", sig, ")\n\n",
+         "Dispatch `b_", name_str, "` to ", scope, ".\n")
+end
+
 # Define for (just the) current backend
 macro defcb(expr)
   name, params, body = def_data(expr)
   params_data = map(param_data, params)
   pnames = map(pd->pd[1], params_data)
   backend_name = Symbol("b_", name)
+  docstr = _frontend_docstr(name, params_data, false)
   esc(
     quote
       export $(name), $(backend_name)
@@ -38,6 +54,7 @@ macro defcb(expr)
 #      $(backend_name)(backend::Any, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
       $(backend_name)(backend::Any, $(pnames...)) =
           $(body)
+      Base.@doc $(docstr) $(name)
       $(name)
     end)
 end
@@ -48,6 +65,7 @@ macro defcbs(expr)
   params_data = map(param_data, params)
   pnames = map(pd->pd[1], params_data)
   backend_name = Symbol("b_", name)
+  docstr = _frontend_docstr(name, params_data, true)
   esc(
     quote
       export $(name), $(backend_name)
@@ -61,6 +79,7 @@ macro defcbs(expr)
 #      $(backend_name)(backend::Any, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
       $(backend_name)(backend::Any, $(pnames...)) =
         $(body)
+      Base.@doc $(docstr) $(name)
       $(name)
     end)
 end

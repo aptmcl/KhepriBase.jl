@@ -28,7 +28,10 @@ struct UnimplementedBackendOperationException <: Exception
   args
 end
 showerror(io::IO, e::UnimplementedBackendOperationException) =
-	print(io, "Operation $(e.operation) is not available in backend $(e.backend).$(length(e.args) > 0 ? "Args: $(e.args)" : "")")
+  print(io,
+    "Operation $(e.operation) is not implemented in backend $(backend_name(e.backend)).\n",
+    "Implement $(e.operation)(b::$(typeof(e.backend)), ...) to add support.\n",
+    "Alternatively, use a backend that supports this operation.")
 
 missing_specialization(b::Backend, oper=:unknown_operation, args...) =
   error(UnimplementedBackendOperationException(b, oper, args))
@@ -46,6 +49,91 @@ end
 
 export new_refs
 new_refs(b::Backend{K,T}) where {K,T} = T[]
+
+#=
+@defbackend generates the standard type infrastructure for a Khepri backend:
+- Key type, Id alias, Ref/NativeRef aliases
+- Backend struct with refs and transaction fields (plus user extra fields)
+- Type alias (e.g., const TBS = ThebesBackend)
+- void_ref, backend_name, and optional view_type implementations
+
+Usage:
+  @defbackend Name Alias begin
+    id_type = Int          # optional, default: Int
+    void_ref = 0           # optional, default: 0
+    view_type = nothing     # optional, default: nothing (use BackendView)
+    # Extra struct fields:
+    drawing::Any = nothing
+    next_id::Int = 1
+  end
+=#
+macro defbackend(name, alias, body)
+  name_str = string(name)
+  key_sym = Symbol(name_str, "Key")
+  id_sym = Symbol(name_str, "Id")
+  ref_sym = Symbol(name_str, "Ref")
+  nref_sym = Symbol(name_str, "NativeRef")
+  backend_sym = Symbol(name_str, "Backend")
+  # Parse the begin...end block
+  @assert body.head == :block "Expected begin...end block"
+  id_type = :Int
+  void_ref_val = 0
+  view_type_val = nothing
+  extra_fields = []
+  for expr in body.args
+    expr isa LineNumberNode && continue
+    if expr isa Expr && expr.head == :(=)
+      lhs = expr.args[1]
+      rhs = expr.args[2]
+      if lhs == :id_type
+        id_type = rhs
+      elseif lhs == :void_ref
+        void_ref_val = rhs
+      elseif lhs == :view_type
+        view_type_val = rhs
+      elseif lhs isa Expr && lhs.head == :(::)
+        # field::Type = default
+        push!(extra_fields, expr)
+      else
+        error("@defbackend: unknown option '$lhs'")
+      end
+    elseif expr isa Expr && expr.head == :(::)
+      # field::Type (no default) — not valid for @kwdef
+      error("@defbackend: field '$(expr.args[1])' must have a default value")
+    else
+      error("@defbackend: unexpected expression: $expr")
+    end
+  end
+  ekey = esc(key_sym)
+  eid = esc(id_sym)
+  eref = esc(ref_sym)
+  enref = esc(nref_sym)
+  ebackend = esc(backend_sym)
+  ealias = esc(alias)
+  ename = esc(name)
+  eid_type = esc(id_type)
+  evoid = esc(void_ref_val)
+  extra_struct_fields = map(esc, extra_fields)
+  view_expr = isnothing(view_type_val) ? nothing :
+    :(KhepriBase.view_type(::Type{$(ealias)}) = $(esc(view_type_val)))
+  quote
+    abstract type $(ekey) end
+    const $(eid) = $(eid_type)
+    const $(eref) = GenericRef{$(ekey), $(eid)}
+    const $(enref) = NativeRef{$(ekey), $(eid)}
+    Base.@kwdef mutable struct $(ebackend) <: Backend{$(ekey), $(eid)}
+      refs::References{$(ekey), $(eid)} = References{$(ekey), $(eid)}()
+      transaction::Parameter{KhepriBase.Transaction} = Parameter{KhepriBase.Transaction}(KhepriBase.AutoCommitTransaction())
+      $(extra_struct_fields...)
+    end
+    const $(ealias) = $(ebackend)
+    export $(ealias), $(ebackend), $(ekey), $(eid), $(eref), $(enref)
+    KhepriBase.void_ref(b::$(ealias)) = $(evoid)
+    KhepriBase.backend_name(b::$(ealias)) = $(name_str)
+    $(view_expr)
+  end
+end
+export @defbackend
 
 # Safely extend refs from a b_* operation that may return a vector or a scalar.
 collect_ref!(refs, r::AbstractVector) = append!(refs, r)
@@ -1125,7 +1213,12 @@ convert the generic material parameters into specific model parameters.
 @bdef b_new_material(b::Backend, name, base_color, metallic, specular, roughness,
 	           	     clearcoat, clearcoat_roughness, ior,
                      transmission, transmission_roughness,
-	           	     emission_color, emission_strength)
+	           	     emission_color, emission_strength,
+                     sheen_color, sheen_roughness,
+                     anisotropy, anisotropy_direction,
+                     ambient_occlusion, normal_map, bent_normal, clearcoat_normal,
+                     post_lighting_color,
+                     absorption, micro_thickness, thickness)
 @bdef b_plastic_material(b::Backend, name, color, roughness)
 @bdef b_metal_material(b::Backend, name, color, roughness, ior)
 @bdef b_glass_material(b::Backend, name, color, roughness, ior)
@@ -1668,7 +1761,10 @@ generate an exception if there is none.
 =#
 
 struct UndefinedBackendException <: Exception end
-showerror(io::IO, e::UndefinedBackendException) = print(io, "No current backend.")
+showerror(io::IO, e::UndefinedBackendException) =
+  print(io,
+    "No backend is set. Call backend(my_backend) to select one.\n",
+    "Example: using KhepriAutoCAD; backend(autocad)")
 
 #=
 Moving Khepri to a multi-threaded model requires that each thread uses its own
