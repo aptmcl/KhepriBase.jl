@@ -320,4 +320,14 @@ include("TestMockBackend.jl")
     end
   end
 
+  @testset "set_material with StandardMaterial" begin
+    # set_material (alias for set_on!) must work with StandardMaterial
+    # even though it has no `data` field
+    sm = standard_material(name="TestSetOn", base_color=rgba(1, 0, 0, 1))
+    # Should not throw
+    set_material(MockBackend, sm, "SomeBackendRef")
+    # The override should be stored
+    @test KhepriBase.backend_override(MockBackend, sm) == "SomeBackendRef"
+  end
+
 end

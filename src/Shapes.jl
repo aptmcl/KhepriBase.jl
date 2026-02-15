@@ -587,19 +587,34 @@ end
 #=
 There are entities who have parameters that depend on the type of backend, e.g., AutoCAD, Rhino, Revit, etc.
 As a concrete example, a material might have widely different realizations, depending on the backend. This
-is similar to what happens with shapes. The difference is that we want to change the way a material is 
+is similar to what happens with shapes. The difference is that we want to change the way a material is
 instantiated in a backend without requiring additional generic function specializations.
 =#
 
+# Backend-specific overrides for proxies without a `data` field (e.g., StandardMaterial).
+# Keyed by the proxy identity; values are BackendParameter instances.
+const _backend_overrides = IdDict{Proxy, BackendParameter}()
+
 set_on!(tb::Type{<:Backend}, proxy, ref) =
   begin
-    proxy.data(tb, ref)
+    if hasproperty(proxy, :data)
+      proxy.data(tb, ref)
+    else
+      bp = get!(() -> BackendParameter(), _backend_overrides, proxy)
+      bp(tb, ref)
+    end
     for b in current_backend()
       if b isa tb
         reset_ref(b, proxy)
       end
     end
     proxy
+  end
+
+# Check if a proxy has a backend-specific override for a given backend type
+backend_override(tb::Type{<:Backend}, proxy) =
+  let bp = get(_backend_overrides, proxy, nothing)
+    bp === nothing ? nothing : bp(tb)
   end
 
 #=
@@ -736,6 +751,15 @@ which is defined in Materials.jl and delegates to b_new_material.
   absorption::Real=0.0,
   micro_thickness::Real=0.0,
   thickness::Real=0.0)
+
+# When a StandardMaterial has a backend-specific override (set via set_material),
+# use the override instead of the PBR realization path.
+realize(b::Backend, s::StandardMaterial) =
+  let override = backend_override(typeof(b), s)
+    override !== nothing ?
+      b_material(b, ref_value(b, override)) :
+      invoke(realize, Tuple{Backend, AbstractStandardMaterial}, b, s)
+  end
 
 # Pre-defined materials with physically-based properties.
 # These provide sensible PBR defaults so that backends implementing
