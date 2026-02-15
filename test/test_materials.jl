@@ -67,62 +67,109 @@ include("TestMockBackend.jl")
     end
   end
 
+  @testset "Material accessor functions" begin
+    @testset "material_color" begin
+      @testset "StandardMaterial" begin
+        @test material_color(material_glass) == rgba(0.95, 0.95, 1.0, 0.3)
+        @test material_color(material_metal) == rgba(0.8, 0.8, 0.85, 1.0)
+      end
+
+      @testset "MaterialInLayer" begin
+        with_mock_backend() do b
+          l = layer("TestLayer", true, rgba(1, 0, 0, 1))
+          m = material_in_layer(l)
+          @test material_color(m) == rgba(1, 0, 0, 1)
+        end
+      end
+    end
+
+    @testset "material_name" begin
+      @testset "StandardMaterial" begin
+        @test material_name(material_glass) == "Glass"
+        @test material_name(material_point) == "Points"
+      end
+
+      @testset "MaterialInLayer" begin
+        with_mock_backend() do b
+          m = material("TestMaterial")
+          @test material_name(m) == "TestMaterial"
+        end
+      end
+    end
+
+    @testset "material_layer" begin
+      with_mock_backend() do b
+        @testset "StandardMaterial derives layer from name" begin
+          l = material_layer(material_glass)
+          @test is_layer(l)
+          @test layer_name(l) == "Glass"
+        end
+
+        @testset "MaterialInLayer returns its layer" begin
+          orig_layer = layer("TestLayer")
+          m = material_in_layer(orig_layer)
+          @test material_layer(m) === orig_layer
+        end
+      end
+    end
+  end
+
   @testset "Predefined materials" begin
-    # Pre-defined materials are StandardMaterial instances (not MaterialInLayer),
-    # so use is_standard_material or isa Material.
+    # Pre-defined materials are StandardMaterial instances (not MaterialInLayer).
+    # They no longer have a layer field; use material_name instead.
     @testset "material_point" begin
       @test is_standard_material(material_point)
-      @test material_point.layer.name == "Points"
+      @test material_name(material_point) == "Points"
     end
 
     @testset "material_curve" begin
       @test is_standard_material(material_curve)
-      @test material_curve.layer.name == "Curves"
+      @test material_name(material_curve) == "Curves"
     end
 
     @testset "material_surface" begin
       @test is_standard_material(material_surface)
-      @test material_surface.layer.name == "Surfaces"
+      @test material_name(material_surface) == "Surfaces"
     end
 
     @testset "material_basic" begin
       @test is_standard_material(material_basic)
-      @test material_basic.layer.name == "Basic"
+      @test material_name(material_basic) == "Basic"
     end
 
     @testset "material_glass" begin
       @test is_standard_material(material_glass)
-      @test material_glass.layer.name == "Glass"
+      @test material_name(material_glass) == "Glass"
     end
 
     @testset "material_metal" begin
       @test is_standard_material(material_metal)
-      @test material_metal.layer.name == "Metal"
+      @test material_name(material_metal) == "Metal"
     end
 
     @testset "material_wood" begin
       @test is_standard_material(material_wood)
-      @test material_wood.layer.name == "Wood"
+      @test material_name(material_wood) == "Wood"
     end
 
     @testset "material_concrete" begin
       @test is_standard_material(material_concrete)
-      @test material_concrete.layer.name == "Concrete"
+      @test material_name(material_concrete) == "Concrete"
     end
 
     @testset "material_plaster" begin
       @test is_standard_material(material_plaster)
-      @test material_plaster.layer.name == "Plaster"
+      @test material_name(material_plaster) == "Plaster"
     end
 
     @testset "material_grass" begin
       @test is_standard_material(material_grass)
-      @test material_grass.layer.name == "Grass"
+      @test material_name(material_grass) == "Grass"
     end
 
     @testset "material_clay" begin
       @test is_standard_material(material_clay)
-      @test material_clay.layer.name == "Clay"
+      @test material_name(material_clay) == "Clay"
     end
   end
 
@@ -160,8 +207,8 @@ include("TestMockBackend.jl")
       m2 = material("Material2")
       merged = merge_materials(m1, m2)
       @test is_material(merged)
-      @test occursin("Material1", merged.layer.name)
-      @test occursin("Material2", merged.layer.name)
+      @test occursin("Material1", material_name(merged))
+      @test occursin("Material2", material_name(merged))
     end
   end
 
@@ -246,6 +293,11 @@ include("TestMockBackend.jl")
         @test standard_material_base_color(sm) == rgba(1, 0, 0, 1)
       end
 
+      @testset "standard_material has no layer field" begin
+        sm = standard_material()
+        @test !hasfield(StandardMaterial, :layer)
+      end
+
       @testset "assignment to shape" begin
         sm = standard_material(base_color=rgba(1, 0, 0, 1))
         s = sphere(u0(), 5, material=sm)
@@ -258,6 +310,13 @@ include("TestMockBackend.jl")
         @test ref isa Integer
         @test ref != 0  # not void_ref
       end
+    end
+  end
+
+  @testset "b_set_layer_material default no-op" begin
+    with_mock_backend() do b
+      # Default implementation returns nothing
+      @test b_set_layer_material(b, 0, 0) === nothing
     end
   end
 

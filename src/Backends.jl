@@ -519,11 +519,12 @@ abstract type AbstractLayer end
 struct BasicLayer <: AbstractLayer
   name::String
   active::Bool
-  color::RGB
+  color::RGBA
 end
 
 export b_layer, b_current_layer_ref,
-       b_all_shapes_in_layer, b_delete_all_shapes_in_layer
+       b_all_shapes_in_layer, b_delete_all_shapes_in_layer,
+       b_set_layer_material
 
 # Default implementation assumes that backends have properties for current_layer and layers (a dict)
 b_layer(b::Backend, name, active, color) = BasicLayer(name, active, color)
@@ -531,6 +532,7 @@ b_current_layer_ref(b::Backend) = b.current_layer
 b_current_layer_ref(b::Backend, layer) = b.current_layer = layer
 b_all_shapes_in_layer(b::Backend, layer) = b.layers[layer]
 b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_in_layer(b, layer))
+b_set_layer_material(b::Backend, layer_ref, material_ref) = nothing
 
 
 ################################################################

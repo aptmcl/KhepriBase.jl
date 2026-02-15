@@ -85,7 +85,7 @@ calls b_standard_material, defined below.
 # Default b_standard_material delegates to b_new_material, forwarding
 # all Filament PBR parameters.
 export b_standard_material
-b_standard_material(b::Backend, name, layer, base_color, metallic, roughness,
+b_standard_material(b::Backend, name, base_color, metallic, roughness,
                     reflectance, sheen_color, sheen_roughness,
                     clear_coat, clear_coat_roughness,
                     anisotropy, anisotropy_direction,
