@@ -68,6 +68,7 @@ KhepriBase.b_create_layer_from_ref_value(b::MinimalTriangleBackend, r) = layer("
 # Material stubs
 KhepriBase.b_get_material(b::MinimalTriangleBackend, spec::Nothing) = 0
 KhepriBase.b_get_material(b::MinimalTriangleBackend, spec) = 0
+KhepriBase.b_get_material(b::MinimalTriangleBackend, ::BackendDefault) = 0
 KhepriBase.b_new_material(b::MinimalTriangleBackend, name, base_color, metallic, specular,
                            roughness, clearcoat, clearcoat_roughness, ior,
                            transmission, transmission_roughness,

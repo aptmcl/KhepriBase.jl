@@ -1188,6 +1188,11 @@ b_get_material(b::Backend, spec::Nothing) = void_ref(b)
 #Is this really needed? Yes, e.g., POVRay.
 b_get_material(b::Backend, spec::Any) = spec
 
+export BackendDefault, backend_default
+struct BackendDefault end
+const backend_default = BackendDefault()
+b_get_material(b::Backend, ::BackendDefault) = void_ref(b)
+
 #=
 In other cases, the material can be algorithmically created.
 
@@ -1846,14 +1851,15 @@ purge_backends() =
 export BackendParameter
 struct BackendParameter
 	value::IdDict{Type{<:Backend}, Any}
-	BackendParameter(ps...) = new(IdDict{Type{<:Backend}, Any}(ps...))
-	BackendParameter(p::BackendParameter) = new(copy(p.value))
+	default::Any
+	BackendParameter(ps...; default=nothing) = new(IdDict{Type{<:Backend}, Any}(ps...), default)
+	BackendParameter(p::BackendParameter) = new(copy(p.value), p.default)
 end
 
 (p::BackendParameter)(b::Backend=top_backend()) = error("Don't do this") #get(p.value, b, nothing)
 (p::BackendParameter)(b::Backend, newvalue) = error("Don't do this") #p.value[b] = newvalue
 
-(p::BackendParameter)(tb::Type{<:Backend}) = get(p.value, tb, nothing)
+(p::BackendParameter)(tb::Type{<:Backend}) = get(p.value, tb, p.default)
 (p::BackendParameter)(tb::Type{<:Backend}, newvalue) = p.value[tb] = newvalue
 
 

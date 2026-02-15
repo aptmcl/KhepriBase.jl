@@ -269,6 +269,67 @@ include("TestMockBackend.jl")
       bp = BackendParameter()
       @test bp isa BackendParameter
     end
+
+    @testset "default field" begin
+      bp_default = BackendParameter()
+      @test bp_default.default === nothing
+      @test bp_default(MockBackend) === nothing
+
+      bp_custom = BackendParameter(default=backend_default)
+      @test bp_custom.default === backend_default
+      @test bp_custom(MockBackend) === backend_default
+
+      # Backend-specific value overrides default
+      bp_override = BackendParameter(default=backend_default)
+      bp_override(MockBackend, "custom_value")
+      @test bp_override(MockBackend) == "custom_value"
+    end
+
+    @testset "copy preserves default" begin
+      bp = BackendParameter(default=backend_default)
+      bp2 = copy(bp)
+      @test bp2.default === backend_default
+    end
+  end
+
+  @testset "three-level material defaults" begin
+    with_mock_backend() do b
+      @testset "structural materials use backend default" begin
+        # Structural materials should return BackendDefault() when no override is set
+        @test material_point.data(MockBackend) === backend_default
+        @test material_curve.data(MockBackend) === backend_default
+        @test material_surface.data(MockBackend) === backend_default
+        @test material_basic.data(MockBackend) === backend_default
+      end
+
+      @testset "visual materials use PBR path" begin
+        # Visual materials should return nothing (PBR path)
+        @test material_glass.data(MockBackend) === nothing
+        @test material_metal.data(MockBackend) === nothing
+      end
+
+      @testset "structural materials produce void_ref" begin
+        ref = material_ref(b, material_curve)
+        @test ref == 0  # void_ref for MockBackend
+      end
+
+      @testset "visual materials produce non-void refs (PBR)" begin
+        ref = material_ref(b, material_glass)
+        @test ref isa Integer
+        @test ref != 0
+      end
+
+      @testset "backend override takes precedence over default" begin
+        # Create a fresh structural material to avoid mutating the global one
+        m = standard_material(
+          name="TestStruct",
+          base_color=rgba(1.0, 1.0, 0.0, 1.0),
+          data=BackendParameter(default=backend_default))
+        @test m.data(MockBackend) === backend_default
+        set_material(MockBackend, m, "CustomOverride")
+        @test m.data(MockBackend) == "CustomOverride"
+      end
+    end
   end
 
   @testset "material_as_layer parameter" begin

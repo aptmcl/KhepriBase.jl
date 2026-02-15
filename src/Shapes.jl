@@ -184,7 +184,7 @@ after_init(s::Proxy) =
 
 equal_spec(s1, s2) = s1 == s2
 equal_spec(s1::BackendParameter, s2::BackendParameter) =
-  s1 === s2 || isequal(pairs(s1.value), pairs(s2.value))
+  s1 === s2 || (s1.default === s2.default && isequal(pairs(s1.value), pairs(s2.value)))
 
 after_init(s::UniqueProxy) =
   let bs = current_backends(),
@@ -765,19 +765,23 @@ export material_point, material_curve, material_surface,
 const material_point = standard_material(
   name="Points",
   base_color=rgba(1.0, 1.0, 0.0, 1.0),
-  roughness=1.0)
+  roughness=1.0,
+  data=BackendParameter(default=backend_default))
 const material_curve = standard_material(
   name="Curves",
   base_color=rgba(0.0, 0.0, 0.0, 1.0),
-  roughness=1.0)
+  roughness=1.0,
+  data=BackendParameter(default=backend_default))
 const material_surface = standard_material(
   name="Surfaces",
   base_color=rgba(0.8, 0.8, 0.8, 1.0),
-  roughness=0.5)
+  roughness=0.5,
+  data=BackendParameter(default=backend_default))
 const material_basic = standard_material(
   name="Basic",
   base_color=rgba(0.5, 0.5, 0.5, 1.0),
-  roughness=0.5)
+  roughness=0.5,
+  data=BackendParameter(default=backend_default))
 const material_glass = standard_material(
   name="Glass",
   base_color=rgba(0.95, 0.95, 1.0, 0.3),

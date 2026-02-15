@@ -247,6 +247,7 @@ KhepriBase.b_create_layer_from_ref_value(b::MockBackend, r) = layer("Default")
 # Material operations (minimal implementation)
 KhepriBase.b_get_material(b::MockBackend, spec::Nothing) = 0
 KhepriBase.b_get_material(b::MockBackend, spec) = 0
+KhepriBase.b_get_material(b::MockBackend, ::BackendDefault) = 0
 KhepriBase.b_new_material(b::MockBackend, name, base_color, metallic, specular, roughness,
                           clearcoat, clearcoat_roughness, ior,
                           transmission, transmission_roughness,
