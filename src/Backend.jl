@@ -382,6 +382,8 @@ function triangulate_polygon(coords)
   trigs
 end
 
+@bdef(b_surface(frontier, mat))
+
 b_surface_polygon(b::Backend, ps, mat) =
   let trigs = triangulate_polygon([raw_point(p) for p in ps])
     [b_trig(b, ps[i], ps[j], ps[k], mat) for (i, j, k) in trigs]
@@ -669,15 +671,12 @@ b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
 export b_extruded_point, b_extruded_curve, b_extruded_surface, b_sweep, b_loft
 
 # Extruding a profile
-b_extruded_point(b::Backend, path::PointPath, v, cb, mat) =
+b_extruded_point(b::Backend, path, v, cb, mat) =
   let p = path_on(path, cb).location
     b_line(b, [p, p + v], mat)
   end
 
-#=
-b_extruded_point(b::Backend, pt::Shape0D, v, cb, mat) =
-  b_extruded_point(b, convert(Path, pt), v, cb, mat)
-=#
+@bdef(b_extruded_curve(path, v, cb, mat))
 
 b_extruded_curve(b::Backend, path::OpenPolygonalPath, v, cb, mat) =
  	let bs = path_vertices_on(path, cb),
@@ -760,17 +759,12 @@ b_loft(b::Backend, profiles, closed, smooth, mat) =
 	b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
   end
 
-b_swept_curve(b::Backend, path::Path, profile::Path, rotation, scaling, mat) =
+
+b_swept_curve(b::Backend, path, profile, rotation, scaling, mat) =
   b_sweep(b, path, profile, rotation, scaling, mat)
 
-#b_swept_curve(b::Backend, path::Shape1D, profile::Shape1D, rotation, scaling, mat) =
-#  b_sweep(b, convert(Path, path), convert(Path, profile), rotation, scaling, mat)
-
-b_swept_surface(b::Backend, path::Path, profile::Region, rotation, scaling, mat) =
+b_swept_surface(b::Backend, path, profile, rotation, scaling, mat) =
   b_sweep(b, path, profile, rotation, scaling, mat)
-
-#b_swept_surface(b::Backend, path::Shape1D, profile::Shape2D, rotation, scaling, mat) =
-#  b_sweep(b, convert(Path, path), convert(Region, profile), rotation, scaling, mat)
 
 b_sweep(b::Backend, path, profile::Region, rotation, scaling, mat) =
   let outer = outer_path(profile),
@@ -1170,10 +1164,10 @@ b_text_size(b::Backend, str, size, mat) =
 # Illustrations
 
 @bdef(b_labels(p, data, mat))
-@bdef(b_radii_illustration(c, rs, rs_txts, mat))
-@bdef(b_vectors_illustration(p, a, rs, rs_txts, mat))
-@bdef(b_angles_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mat))
-@bdef(b_arcs_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mat))
+@bdef(b_radii_illustration(c, rs, rs_txts, mats, mat))
+@bdef(b_vectors_illustration(p, a, rs, rs_txts, mats, mat))
+@bdef(b_angles_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mats, mat))
+@bdef(b_arcs_illustration(c, rs, ss, as, r_txts, s_txts, a_txts, mats, mat))
 
 ##################################################################
 # Materials
