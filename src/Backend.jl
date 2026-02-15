@@ -959,8 +959,8 @@ b_stroke(b::Backend, path::ClosedSplinePath, mat) =
 b_stroke(b::Backend, path::Region, mat) =
   [b_stroke(b, path, mat) for path in path.paths]
 b_stroke(b::Backend, path::Mesh, mat) =
-  let vs = m.vertices
-    for face in m.faces
+  let vs = path.vertices
+    for face in path.faces
       b_line(b, vs[face.+1], mat) #1-indexed
     end
   end
@@ -980,7 +980,7 @@ b_fill(b::Backend, path::ClosedSplinePath, mat) =
 b_fill(b::Backend, path::Region, mat) =
   b_surface(b, path, mat)
 b_fill(b::Backend, path::Mesh, mat) =
-  b_surface_mesh(b, m.vertices, m.faces, mat)
+  b_surface_mesh(b, path.vertices, path.faces, mat)
 
 export b_realize_path
 b_realize_path(b::Backend, path::Region, mat) =

@@ -302,7 +302,7 @@ end
 export register_http_handler
 register_http_handler(c::WebSocketServer, target, handler) =
   let request_str = "/api/"*randstring()
-    HTTP.register!(c.connection.router, "GET", target, req -> (handler(request_parameters(req)...); HTTP.Response(200, "0")))
+    HTTP.register!(c.router, "GET", target, req -> (handler(request_parameters(req)...); HTTP.Response(200, "0")))
     request_str
   end
 
@@ -381,11 +381,13 @@ const content_type_header = Dict(
   )
 
 get_file_content_type(path) =
-  ["Content-Type" => content_type_header[splitext(path)[2][2:end]]] # splitext gives (root, .ext)
+  let ext = lowercase(lstrip(splitext(path)[2], '.'))
+    ["Content-Type" => get(content_type_header, ext, "application/octet-stream")]
+  end
 
 export http_response_with_file, http_response_with_resource_file
 http_response_with_file(path) =
-  HTTP.Response(200, get_file_content_type(path), open(s -> read(s, String), path))
+  HTTP.Response(200, get_file_content_type(path), read(path))
 
 #=
 We need to support a PATH-based approach to resources.
