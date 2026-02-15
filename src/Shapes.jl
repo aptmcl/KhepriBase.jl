@@ -591,30 +591,15 @@ is similar to what happens with shapes. The difference is that we want to change
 instantiated in a backend without requiring additional generic function specializations.
 =#
 
-# Backend-specific overrides for proxies without a `data` field (e.g., StandardMaterial).
-# Keyed by the proxy identity; values are BackendParameter instances.
-const _backend_overrides = IdDict{Proxy, BackendParameter}()
-
 set_on!(tb::Type{<:Backend}, proxy, ref) =
   begin
-    if hasproperty(proxy, :data)
-      proxy.data(tb, ref)
-    else
-      bp = get!(() -> BackendParameter(), _backend_overrides, proxy)
-      bp(tb, ref)
-    end
+    proxy.data(tb, ref)
     for b in current_backend()
       if b isa tb
         reset_ref(b, proxy)
       end
     end
     proxy
-  end
-
-# Check if a proxy has a backend-specific override for a given backend type
-backend_override(tb::Type{<:Backend}, proxy) =
-  let bp = get(_backend_overrides, proxy, nothing)
-    bp === nothing ? nothing : bp(tb)
   end
 
 #=
@@ -750,15 +735,22 @@ which is defined in Materials.jl and delegates to b_new_material.
   transmission::Real=0.0,
   absorption::Real=0.0,
   micro_thickness::Real=0.0,
-  thickness::Real=0.0)
+  thickness::Real=0.0,
+  data::BackendParameter=BackendParameter())
 
 # When a StandardMaterial has a backend-specific override (set via set_material),
-# use the override instead of the PBR realization path.
+# use the override via b_get_material. Otherwise, use the PBR path.
 realize(b::Backend, s::StandardMaterial) =
-  let override = backend_override(typeof(b), s)
-    override !== nothing ?
-      b_material(b, ref_value(b, override)) :
-      invoke(realize, Tuple{Backend, AbstractStandardMaterial}, b, s)
+  let spec = s.data(typeof(b))
+    spec !== nothing ?
+      b_get_material(b, spec) :
+      b_standard_material(b, s.name, s.base_color, s.metallic, s.roughness,
+                          s.reflectance, s.sheen_color, s.sheen_roughness,
+                          s.clear_coat, s.clear_coat_roughness,
+                          s.anisotropy, s.anisotropy_direction,
+                          s.ambient_occlusion, s.normal, s.bent_normal, s.clear_coat_normal,
+                          s.emissive, s.post_lighting_color,
+                          s.ior, s.transmission, s.absorption, s.micro_thickness, s.thickness)
   end
 
 # Pre-defined materials with physically-based properties.
