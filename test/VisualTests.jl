@@ -426,9 +426,18 @@ function pixel_diff_compare(test_path, golden_path; threshold=0.01)
   test_bytes = read(test_path)
   golden_bytes = read(golden_path)
   test_bytes == golden_bytes && return true
-  # Future: pixel-level comparison using PNGFiles.jl
-  # For now, byte-level comparison only
-  false
+  # Pixel-level comparison using PNGFiles (if available)
+  try
+    PNGFiles = Base.loaded_modules[Base.PkgId(Base.UUID("f57f5aa1-a3ce-4bc8-8ab9-96f992907883"), "PNGFiles")]
+    test_img = PNGFiles.load(test_path)
+    golden_img = PNGFiles.load(golden_path)
+    size(test_img) != size(golden_img) && return false
+    n = length(test_img)
+    ndiff = count(i -> !isapprox(test_img[i], golden_img[i]; atol=0.02), 1:n)
+    ndiff / n <= threshold
+  catch
+    false
+  end
 end
 
 # ── Test runner ───────────────────────────────────────────────────────
