@@ -538,7 +538,7 @@ realize_wall_opening(b::Backend, w_ref, w_path, l_thickness, r_thickness, op, fa
       op_height = op.family.height,
       op_path = translate(subpath(w_path, op.loc.x, op.loc.x + op.family.width), vz(op_base_height)),
       op_ref = ensure_ref(b, b_wall_no_openings(b, op_path, op_height, l_thickness+0.1, r_thickness+0.1, family))
-    ensure_ref(b, subtract_ref(b, w_ref, op_ref))
+    ensure_ref(b, b_subtract_ref(b, w_ref, op_ref))
   end
 
 # For backends that do not support boolean operations, we use a different approach
@@ -1213,6 +1213,8 @@ process_bars(bars, processed_nodes) =
 @defcb truss_analysis(load::Vec=vz(-1e5), self_weight::Bool=false, point_loads::Dict=Dict())
 @defcb truss_bars_volume()
 @defcb node_displacement_function(res::Any)
+@defcb reaction_forces(res::Any)
+@defcb element_axial_forces(res::Any)
 
 export view_truss_deformation
 view_truss_deformation(
