@@ -1510,7 +1510,94 @@ map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int, backend::Backend=top
 @defproxy(block_instance, Shape0D, block::Block=required(), loc::Loc=u0(), scale::Real=1.0)
 
 ################################################################################
+## Key locations for bounding box approximation
 
+export shape_locs
+shape_locs(s::Shape) = Loc[]
+
+# 1D shapes
+shape_locs(s::Line) = s.vertices
+shape_locs(s::Polygon) = s.vertices
+shape_locs(s::ClosedLine) = s.vertices
+shape_locs(s::Spline) = s.points
+shape_locs(s::ClosedSpline) = s.points
+shape_locs(s::Circle) =
+  let c = s.center, r = s.radius
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r)]
+  end
+shape_locs(s::Arc) =
+  let c = s.center, r = s.radius
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r)]
+  end
+shape_locs(s::Rectangle) =
+  [s.corner, add_xy(s.corner, s.dx, s.dy)]
+shape_locs(s::RegularPolygon) =
+  let c = s.center, r = s.radius
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r)]
+  end
+
+# 2D shapes (surfaces)
+shape_locs(s::SurfacePolygon) = s.vertices
+shape_locs(s::SurfaceCircle) =
+  let c = s.center, r = s.radius
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r)]
+  end
+shape_locs(s::SurfaceRectangle) =
+  [s.corner, add_xy(s.corner, s.dx, s.dy)]
+shape_locs(s::SurfaceGrid) = vec(s.points)
+shape_locs(s::SurfaceRegularPolygon) =
+  let c = s.center, r = s.radius
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r)]
+  end
+
+# 3D shapes
+shape_locs(s::Sphere) =
+  let c = s.center, r = s.radius
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r),
+     add_z(c, r), add_z(c, -r)]
+  end
+shape_locs(s::Box) =
+  [s.c, add_xyz(s.c, s.dx, s.dy, s.dz)]
+shape_locs(s::Cylinder) =
+  let c = s.cb, r = s.r
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r),
+     add_xz(c, r, s.h), add_xz(c, -r, s.h)]
+  end
+shape_locs(s::Cone) =
+  let c = s.cb, r = s.r
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r), add_z(c, s.h)]
+  end
+shape_locs(s::ConeFrustum) =
+  let c = s.cb, r = max(s.rb, s.rt)
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r), add_z(c, s.h)]
+  end
+shape_locs(s::Torus) =
+  let c = s.center, r = s.re + s.ri
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r),
+     add_z(c, s.ri), add_z(c, -s.ri)]
+  end
+shape_locs(s::RegularPyramid) =
+  let c = s.cb, r = s.rb
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r), add_z(c, s.h)]
+  end
+shape_locs(s::RegularPyramidFrustum) =
+  let c = s.cb, r = max(s.rb, s.rt)
+    [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r), add_z(c, s.h)]
+  end
+
+# Compound shapes
+shape_locs(s::ExtrudedSurface) =
+  let base_locs = try path_vertices(outer_path(s.profile)) catch; Loc[] end
+    vcat(base_locs, [p + s.v for p in base_locs])
+  end
+shape_locs(s::ExtrudedCurve) =
+  let base_locs = try path_vertices(s.profile) catch; Loc[] end
+    vcat(base_locs, [p + s.v for p in base_locs])
+  end
+shape_locs(s::SweptCurve) =
+  try path_vertices(s.path) catch; Loc[] end
+shape_locs(s::SweptSurface) =
+  try path_vertices(s.path) catch; Loc[] end
 
 ################################################################################
 bounding_box(shape::Shape) =
