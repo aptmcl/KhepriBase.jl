@@ -2001,7 +2001,52 @@ backend_fill(b::Backend, path::ClosedPathSequence) =
 
 @bdef name()
 
-@bdef b_zoom_extents()
+# Compute bounding box from all shape proxies stored in the backend
+function shapes_bbox(b)
+  bmin = [Inf, Inf, Inf]
+  bmax = [-Inf, -Inf, -Inf]
+  for shape in keys(b.refs.shapes)
+    for loc in shape_locs(shape)
+      let wp = in_world(loc)
+        bmin[1] = min(bmin[1], wp.x)
+        bmin[2] = min(bmin[2], wp.y)
+        bmin[3] = min(bmin[3], wp.z)
+        bmax[1] = max(bmax[1], wp.x)
+        bmax[2] = max(bmax[2], wp.y)
+        bmax[3] = max(bmax[3], wp.z)
+      end
+    end
+  end
+  (bmin, bmax)
+end
+
+#=
+Backends might not provide camera information. In that case
+we need to provide it in the frontend.
+=#
+export ViewType, FrontendView, BackendView, view_type
+abstract type ViewType end
+struct FrontendView <: ViewType end
+struct BackendView <: ViewType end
+
+# By default, we use the backend view
+view_type(::Type{<:Backend}) = BackendView()
+
+export b_zoom_extents
+b_zoom_extents(b::Backend) = b_zoom_extents(view_type(typeof(b)), b)
+b_zoom_extents(::BackendView, b) = missing_specialization(b, :b_zoom_extents)
+b_zoom_extents(::FrontendView, b) =
+  let (bmin, bmax) = shapes_bbox(b)
+    if all(isfinite, bmin) && all(isfinite, bmax)
+      let center = xyz((bmin[1]+bmax[1])/2, (bmin[2]+bmax[2])/2, (bmin[3]+bmax[3])/2),
+          diag = sqrt((bmax[1]-bmin[1])^2 + (bmax[2]-bmin[2])^2 + (bmax[3]-bmin[3])^2),
+          dist = max(diag * 1.5, 10.0),
+          camera = center + vxyz(dist*0.6, dist*0.6, dist*0.5)
+        b.view.camera = camera
+        b.view.target = center
+      end
+    end
+  end
 
 export b_set_ground
 b_set_ground(b::Backend, level, mat) =
@@ -2060,6 +2105,16 @@ b_render_initial_setup(::Backend, kind) = kind
 b_render_final_setup(::Backend, kind) = kind
 
 @bdef b_render_and_save_view(path)
+
+# -- shot_view: fast viewport capture to raster image (PNG) --
+export b_shot_view, b_shot_pathname, b_raw_view, b_raw_pathname
+
+b_shot_view(b::Backend, path) = b_render_and_save_view(b, path)
+b_shot_pathname(b::Backend, name) = b_render_pathname(b, name)
+
+# -- raw_view: capture native intermediate format for precise comparison --
+b_raw_view(b::Backend, path) = b_shot_view(b, path)
+b_raw_pathname(b::Backend, name) = b_shot_pathname(b, name)
 
 #######
 
@@ -2156,18 +2211,6 @@ target(b::T) where T = target(target_type(T), b)
 
 target(::LocalTarget, b) = b.target
 target(::RemoteTarget, b) = b.connection()
-
-#=
-Backends might not provide camera information. In that case
-we need to provide it in the frontend.
-=#
-export ViewType, FrontendView, BackendView, view_type
-abstract type ViewType end
-struct FrontendView <: ViewType end
-struct BackendView <: ViewType end
-
-# By default, we use the backend view
-view_type(::Type{<:Backend}) = BackendView()
 
 b_set_view(b::T, camera, target, lens, aperture) where {T<:Backend} =
   b_set_view(view_type(T), b, camera, target, lens, aperture)
