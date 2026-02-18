@@ -159,6 +159,7 @@ current_layer(layer, backends::Backends=current_backends()) =
 @defcb get_view()
 @defcbs b_zoom_extents()
 @defcbs set_view_top()
+@defcbs set_view_size(width::Integer, height::Integer)
 
 @defcbs zoom_extents()
 
