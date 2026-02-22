@@ -393,6 +393,9 @@ b_surface_polygon_with_holes(b::Backend, ps, qss, mat) =
   # By default, we use half-edges
   b_surface_polygon(b, foldl(subtract_polygon_vertices, qss, init=ps), mat)
 
+b_surface_polygon_with_holes(b::Backend, ps, qss, smooths, mat) =
+  b_surface_polygon_with_holes(b, ps, qss, mat)
+
 b_surface_rectangle(b::Backend, c, dx, dy, mat) =
   b_quad(b, c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy), mat)
 
@@ -645,6 +648,7 @@ b_surface(b::Backend, region::Region, mat) =
     b,
     path_vertices(outer_path(region)),
     [reverse(path_vertices(path)) for path in inner_paths(region)],
+    BitVector([is_smooth_path(path) for path in region.paths]),
     mat)
 
 b_surface(b::Backend, frontier::Shapes, mat) =

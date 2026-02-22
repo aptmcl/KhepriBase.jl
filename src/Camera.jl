@@ -15,7 +15,9 @@ export render_dir,
        render_view,
        rendering_with,
        to_render,
-       to_film
+       to_film,
+       shot_view,
+       raw_view
 
 # There is a render directory
 const render_dir = Parameter(homedir())
@@ -219,6 +221,17 @@ to_film(f, name) =
     f()
   end
 
+shot_view(name::String, backend::Backend=top_backend()) =
+  let path = prepare_for_saving_file(b_shot_pathname(backend, name))
+    b_shot_view(backend, path)
+    path
+  end
+
+raw_view(name::String, backend::Backend=top_backend()) =
+  let path = prepare_for_saving_file(b_raw_pathname(backend, name))
+    b_raw_view(backend, path)
+    path
+  end
 
 export default_lens,
        default_aperture,

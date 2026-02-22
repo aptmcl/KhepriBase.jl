@@ -1097,7 +1097,7 @@ path_on(path::ClosedPolygonalPath, p) =
 path_on(path::OpenSplinePath, p) =
   open_spline_path(on_cs(path_vertices(path), p))
 path_on(path::Region, p) =
-  region([path_on(path, p) for path in path.paths])
+  region([path_on(path, p) for path in path.paths]...)
 path_on(path::ClosedPathSequence, p) =
   closed_path_sequence([path_on(path, p) for path in path.paths]...)
 

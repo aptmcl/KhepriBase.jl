@@ -164,11 +164,21 @@ current_layer(layer, backends::Backends=current_backends()) =
 @defcbs zoom_extents()
 
 # View settings — each backend specializes with its own keyword arguments.
-# E.g., view_settings(shaders, antialiasing=2)
-#        view_settings(autocad, visual_style=:conceptual)
+# The standardized `visual_style` keyword accepts:
+#   :wireframe — wire edges only
+#   :shaded    — basic solid shading (each backend's default shaded mode)
+#   :realistic — full material/lighting rendering
+# Backend-specific styles (e.g., :ghosted, :xray, :sketchy) remain available per-backend.
 export view_settings, b_view_settings
 view_settings(b::Backend=top_backend(); kwargs...) = b_view_settings(b; kwargs...)
 b_view_settings(b::Backend; kwargs...) = nothing
+
+# Setup for raw view capture — sets window size and view mode for repeatable screenshots.
+# Each backend specializes b_setup_raw_view with its preferred display settings.
+export setup_raw_view, b_setup_raw_view
+setup_raw_view(b::Backend=top_backend()) = b_setup_raw_view(b)
+b_setup_raw_view(b::Backend) =
+  b_set_view_size(b, render_width(), render_height())
 
 #@defcb get_material(ref::Any)
 #@defcbs create_material(name::String)

@@ -99,9 +99,9 @@ const Shape3D = Shape{3}
 Common predicates can be defined for these subtypes
 =#
 
-is_curve(s::Shape) = false
+is_curve(::Any) = false
 is_surface(s::Shape) = false
-is_solid(s::Shape) = false
+is_solid(::Any) = false
 
 is_curve(s::Shape1D) = true
 is_surface(s::Shape2D) = true
