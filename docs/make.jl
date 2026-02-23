@@ -45,6 +45,9 @@ makedocs(;
             "Backend Operations Matrix" => "reference/backend_operations.md",
             "Realize & Ref Protocol" => "reference/realize_and_ref.md",
             "Implementing a Backend" => "reference/implementing_backend.md",
+            "API -- Shapes" => "reference/api.md",
+            "API -- BIM" => "reference/api_bim.md",
+            "API -- Infrastructure" => "reference/api_other.md",
         ],
     ],
 )
