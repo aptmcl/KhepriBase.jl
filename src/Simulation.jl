@@ -40,7 +40,7 @@ with_simulation(f) =
 @defcb create_sim_agent(pos, rot, goal_ids, color=0xb73478)
 @defcb spawn_agents_rect(count, center, dx, dz, rot, goal_ids, color=0xb73478)
 @defcb spawn_agents_ellipse(count, center, dx, dz, rot, goal_ids, color=0xb73478)
-@defcb spawn_agents_polygon(count, vertices, goal_ids, color=0xb73478)
+@defcb spawn_agents_polygon(count, h, vertices, goal_ids, color=0xb73478)
 
 # Simulation control
 @defcb start_simulation(max_time)
