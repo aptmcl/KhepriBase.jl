@@ -134,6 +134,9 @@ with a `surface_` prefix.
 # Filled circle
 surface_circle(xyz(0,0,0), 3)
 
+# Annular ring (inner radius 1, outer radius 3)
+surface_ring(xyz(0,0,0), 1, 3)
+
 # Filled polygon (variadic or vector form)
 surface_polygon(xyz(0,0,0), xyz(5,0,0), xyz(2.5,5,0))
 
@@ -154,6 +157,7 @@ surface_mesh([xyz(0,0,0), xyz(1,0,0), xyz(0,1,0)], [[0,1,2]])
 | Constructor | Key Parameters | Defaults |
 |-------------|---------------|----------|
 | `surface_circle(center, radius)` | `center::Loc`, `radius::Real` | `u0()`, `1` |
+| `surface_ring(center, inner_radius, outer_radius)` | `center::Loc`, radii `Real` | `u0()`, `0.5`, `1` |
 | `surface_arc(center, radius, start_angle, amplitude)` | as above | `u0()`, `1`, `0`, `pi` |
 | `surface_ellipse(center, radius_x, radius_y)` | `center::Loc`, radii | `u0()`, `1`, `1` |
 | `surface_elliptic_arc(center, radius_x, radius_y, start_angle, amplitude)` | as above | `u0()`, `1`, `1`, `0`, `pi` |

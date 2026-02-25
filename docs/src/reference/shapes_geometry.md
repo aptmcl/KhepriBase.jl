@@ -38,6 +38,7 @@ defaults to a dimension-appropriate material (point, curve, surface, or solid).
 | Shape | Constructor Signature | Description |
 |-------|----------------------|-------------|
 | `surface_circle` | `surface_circle(center::Loc=u0(), radius::Real=1; material)` | Filled circle. |
+| `surface_ring` | `surface_ring(center::Loc=u0(), inner_radius::Real=0.5, outer_radius::Real=1; material)` | Annular ring (flat washer shape). |
 | `surface_arc` | `surface_arc(center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi; material)` | Filled arc sector. |
 | `surface_ellipse` | `surface_ellipse(center::Loc=u0(), radius_x::Real=1, radius_y::Real=1; material)` | Filled ellipse. |
 | `surface_elliptic_arc` | `surface_elliptic_arc(center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi; material)` | Filled elliptic arc sector. |

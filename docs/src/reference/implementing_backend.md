@@ -228,6 +228,20 @@ convert a set of surface primitives into a proper solid.
 | `b_set_view(b, camera, target, lens, aperture)` | Set the camera. Dispatches on `view_type`. |
 | `b_get_view(b)` | Retrieve camera state. |
 
+### Tier 7 -- Lighting
+
+| Operation | Signature | Default Fallback |
+|-----------|-----------|-----------------|
+| `b_pointlight` | `b_pointlight(b, loc, energy, color)` | `missing_specialization` |
+| `b_spotlight` | `b_spotlight(b, loc, dir, hotspot, falloff)` | `missing_specialization` |
+| `b_arealight` | `b_arealight(b, loc, dir, size, energy, color)` | `b_pointlight(b, loc, energy, color)` |
+| `b_ieslight` | `b_ieslight(b, file, loc, dir, alpha, beta, gamma)` | `b_spotlight(b, loc, dir, pi/4, pi/3)` |
+
+`b_pointlight` and `b_spotlight` are required for rendering backends.
+`b_arealight` and `b_ieslight` have built-in fallbacks that approximate them
+using simpler light types, so they work on any backend that implements
+point and spot lights.
+
 ## 8. The Fallback Chain
 
 The fallback hierarchy follows this general pattern:
@@ -295,6 +309,9 @@ Everything above, plus:
       `b_render_final_setup(b, kind)` for material/environment switching
 - [ ] Implement `b_get_material(b, spec)` for `standard_material` support
 - [ ] Set `view_type` to `FrontendView()` if storing camera locally
+- [ ] Implement `b_pointlight` and `b_spotlight` for scene lighting
+- [ ] Optionally implement `b_arealight` and `b_ieslight` for advanced lighting
+      (default fallbacks approximate them as point/spot lights)
 
 ### BIM backend
 

@@ -233,6 +233,35 @@ spotlight(xyz(5, 5, 3), vz(-1), pi/6, pi/4)
 spotlight(xyz(0, 0, 3), vxyz(1, 1, -2), pi/8, pi/4)
 ```
 
+### Area Light
+
+An area light emits diffuse illumination from a flat surface. It produces soft shadows proportional to its size.
+
+```julia
+arealight(loc::Loc=z(3), dir::Vec=vz(-1), size::Real=1.0,
+          color::RGB=rgb(1,1,1), intensity::Real=1000.0,
+          level::Level=default_level())
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `loc` | `z(3)` | Center position (relative to level) |
+| `dir` | `vz(-1)` | Emission direction (normal of the light surface) |
+| `size` | `1.0` | Size of the emitting surface |
+| `color` | `rgb(1,1,1)` | Light color |
+| `intensity` | `1000.0` | Luminous intensity in candela |
+| `level` | `default_level()` | Reference level |
+
+```julia
+# Overhead panel light
+arealight(xyz(5, 5, 2.8), vz(-1), 0.6, rgb(1, 1, 1), 800.0, level(0))
+
+# Colored wall wash
+arealight(xyz(0, 3, 2), vy(-1), 1.2, rgb(1, 0.9, 0.8), 500.0)
+```
+
+Backends without native area light support approximate it as a point light at the same location.
+
 ### IES Light
 
 An IES light uses a photometric data file (.ies) for physically accurate light distribution.

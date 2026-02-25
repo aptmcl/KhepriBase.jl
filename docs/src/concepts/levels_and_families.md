@@ -123,6 +123,7 @@ Key `standard_material` properties:
 
 | Property | Range | Description |
 |----------|-------|-------------|
+| `name` | `String` | Human-readable material name (used as identifier by some backends) |
 | `base_color` | RGBA [0..1] | Diffuse albedo (dielectric) or specular color (metallic) |
 | `metallic` | [0..1] | 0 = dielectric, 1 = conductor |
 | `roughness` | [0..1] | 0 = smooth/mirror, 1 = rough/matte |
@@ -130,8 +131,32 @@ Key `standard_material` properties:
 | `transmission` | [0..1] | Transparency (0 = opaque, 1 = fully transparent) |
 | `ior` | [1..n] | Index of refraction |
 | `emissive` | RGBA | Emissive light (for glowing surfaces) |
+| `data` | `BackendParameter` | Per-backend material overrides (see below) |
 
 Each backend interprets these properties using the best available shading model in its renderer.
+
+### Backend-Specific Material Overrides
+
+The `data` field allows passing backend-specific material definitions that bypass
+the PBR pipeline. When a material has a `data` entry for the active backend,
+Khepri calls `b_get_material(backend, spec)` with the backend-specific value
+instead of the default `b_standard_material` PBR path. The PBR properties
+(`base_color`, etc.) serve as fallback for backends without an override.
+
+```julia
+# Radiance-specific material with PBR fallback
+chrome = standard_material(
+  name="chrome",
+  base_color=rgba(0.8, 0.8, 0.8, 1.0),
+  metallic=1.0,
+  roughness=0.0,
+  data=BackendParameter(
+    RAD => radiance_metal_material("chrome", gray=0.8, specularity=0.9, roughness=0)))
+```
+
+`BackendParameter` maps backend types to arbitrary values. Each backend package
+provides helper constructors (e.g., `radiance_plastic_material`,
+`radiance_glass_material`) for its native material types.
 
 ## The BIM Proxy Pattern
 
