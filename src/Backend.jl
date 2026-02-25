@@ -1726,10 +1726,17 @@ b_closet(b::Backend, c, host, family) =
 
 # Lights
 
-@bdef b_ieslight(file, loc, dir, alpha, beta, gamma)
 @bdef b_pointlight(loc, energy, color)
 @bdef b_spotlight(loc, dir, hotspot, falloff)
-@bdef b_arealight(loc, dir, size, energy, color)
+
+# Default fallbacks: approximate unsupported light types with simpler ones
+export b_ieslight
+b_ieslight(b::Backend, file, loc, dir, alpha, beta, gamma) =
+  b_spotlight(b, loc, dir, pi/4, pi/3)
+
+export b_arealight
+b_arealight(b::Backend, loc, dir, size, energy, color) =
+  b_pointlight(b, loc, energy, color)
 
 # Trusses
 export b_truss_node, b_truss_node_support, b_truss_bar
