@@ -997,6 +997,11 @@ realize(b::Backend, s::Pointlight) =
 realize(b::Backend, s::Spotlight) =
   b_spotlight(b, s.loc, s.dir, s.hotspot, s.falloff)
 
+@defproxy(arealight, BIMShape, loc::Loc=z(3), dir::Vec=vz(-1), size::Real=1.0, color::RGB=rgb(1,1,1), intensity::Real=1000.0, level::Level=default_level())
+
+realize(b::Backend, s::Arealight) =
+  b_arealight(b, add_z(s.loc, s.level.height), s.dir, s.size, s.intensity, s.color)
+
 @defproxy(ieslight, BIMShape, file::String=required(), loc::Loc=z(3), dir::Vec=vz(-1), alpha::Real=0, beta::Real=0, gamma::Real=0)
 
 realize(b::Backend, s::Ieslight) =

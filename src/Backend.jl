@@ -298,7 +298,7 @@ b_strip(b::Backend, path1::Region, path2::Region, mat) =
 # Second tier: surfaces
 export b_surface_polygon, b_surface_polygon_with_holes,
        b_surface_regular_polygon, b_surface_rectangle,
-	     b_surface_circle, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
+	     b_surface_circle, b_surface_ring, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
 	     b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
 
 # Ear clipping triangulation for simple (possibly concave) polygons.
@@ -404,6 +404,13 @@ b_surface_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
 
 b_surface_circle(b::Backend, c, r, mat) =
   b_surface_regular_polygon(b, 32, c, r, 0, true, mat)
+
+b_surface_ring(b::Backend, c, ri, ro, mat) =
+  b_surface_polygon_with_holes(
+    b,
+    regular_polygon_vertices(64, c, ro, 0, true),
+    [regular_polygon_vertices(64, c, ri, 0, true)],
+    mat)
 
 b_surface_arc(b::Backend, c, r, α, Δα, mat) =
   b_ngon(b,

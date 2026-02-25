@@ -1062,6 +1062,7 @@ arc_illustration(c, r, s, a, r_txt, s_txt, a_txt, mat=default_annotation_materia
 # Surfaces
 
 @defshape(Shape2D, surface_circle, center::Loc=u0(), radius::Real=1)
+@defshape(Shape2D, surface_ring, center::Loc=u0(), inner_radius::Real=0.5, outer_radius::Real=1)
 @defshape(Shape2D, surface_arc, center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi)
 @defshape(Shape2D, surface_elliptic_arc, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1, start_angle::Real=0, amplitude::Real=pi)
 @defshape(Shape2D, surface_ellipse, center::Loc=u0(), radius_x::Real=1, radius_y::Real=1)
