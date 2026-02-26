@@ -503,8 +503,8 @@ If your backend doesn't use a field named `refs`, override
 | MeshCat  | `RemoteBackend`    | `MCATKey`    | `Union{String, NamedTuple}`| `""`         |
 | Xeokit   | `RemoteBackend`    | `XEOKey`     | `String`                   | `""`         |
 | GL       | `Backend`          | `GLKey`      | `Int`                      | `0`          |
-| Makie    | `Backend`          | `MakieKey`   | `Any`                      | `nothing`    |
-| Thebes   | `Backend`          | `ThebesKey`  | `Union{Nothing, RGBA}`     | `nothing`    |
+| Makie    | `Backend`          | `MakieKey`   | `Int`                      | `0`          |
+| Thebes   | `Backend`          | `ThebesKey`  | `Int`                      | `0`          |
 | TikZ     | `IOBackend`        | `TikZKey`    | `Any`                      | `-1`         |
 | POVRay   | `IOBackend`        | `POVRayKey`  | `Any`                      | `-1`         |
 | Radiance | `IOBackend`        | `RADKey`     | `Any`                      | `-1`         |
@@ -513,22 +513,12 @@ If your backend doesn't use a field named `refs`, override
 
 ## 10. Known Limitations and Design Notes
 
-### Thebes: `void_ref` and shape refs are both `nothing`
+### Thebes and Makie: integer-based refs
 
-Thebes uses `T = Union{Nothing, RGBA}` with `void_ref` returning `nothing`.
-Since `b_*` operations also return `nothing`, every shape's ref is identical to
-void_ref. This means `ref != void_ref` checks always evaluate to `false`, and
-`realized()` always returns `true` after the first realization. In practice,
-Thebes uses refs primarily for material tracking (where the ref is an `RGBA`
-color), not shape identification.
-
-### Makie: `T = Any` loses type safety
-
-Makie defines `MakieId = Any`, which means `ensure_ref` will always match via
-the `ensure_ref(b::Backend{K,T}, r::T)` method since everything is a subtype
-of `Any`. The backend actually returns `Int` values from its `next_ref!()`
-function. This works in practice but loses the type-level guarantee that refs
-are integers.
+Both Thebes and Makie use `T = Int` with `void_ref = 0`. Each `b_*` operation
+returns a unique integer from an incrementing counter (`next_ref!`). This
+provides proper shape identity — each realized shape gets a distinct reference,
+and `void_ref` is distinguishable from valid refs.
 
 ### IOBackend: dummy return values by design
 

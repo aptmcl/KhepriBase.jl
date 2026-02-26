@@ -390,13 +390,12 @@ Light sources.
 Different backends use different reference types (`T` in `Backend{K,T}`):
 - `Int64`: AutoCAD, Revit, Robot, Frame3DD
 - `Int32`: Unity, Three.js, FreeCAD, 3dsMax, Unreal
-- `Int`: GL
+- `Int`: GL, Makie, Thebes
 - `UInt128` (GUID): Rhino
 - `Union{Int32, String}`: Blender (shapes are Int32, layers are strings)
 - `Union{String, NamedTuple}`: MeshCat
 - `String`: Xeokit
-- `Union{Nothing, RGBA}`: Thebes (nothing for shapes, RGBA for materials)
-- `Any`: Makie, TikZ, POVRay, Radiance (IOBackend-based backends use `Any`)
+- `Any`: TikZ, POVRay, Radiance (IOBackend-based backends use `Any`)
 
 The `void_ref` function returns a raw value of type `T` (not wrapped in `NativeRef`).
 The `ensure_ref` function in KhepriBase wraps raw `T` values into `NativeRef{K,T}`.
@@ -429,3 +428,23 @@ For a detailed explanation of BIM family realization, caching, and the
 - `CPP`: C++ backends (Unreal)
 - `TS`/`WS`: TypeScript/WebSocket backends (Three.js, Xeokit, MeshCat)
 - None: Local backends (GL, Makie, Thebes, TikZ, POVRay, Radiance)
+
+---
+
+## Known Issues & Fixes
+
+### Fixed: Revit/3dsMax missing `b_current_layer_ref` override
+
+`SocketBackend` has no `current_layer` field. The default `b_current_layer_ref(b::Backend) = b.current_layer` (Backends.jl) would crash with a field access error on any backend that inherits from `SocketBackend` without overriding this function. Revit now has a no-op override; 3dsMax delegates to its remote `get_current_layer`/`set_current_layer` API.
+
+### Fixed: MeshCat duplicate and unprefixed definitions
+
+Several trait and layer operation definitions in KhepriMeshCat lacked the `KhepriBase.` prefix and included a duplicate `void_ref`. The duplicate was removed and all definitions now use the `KhepriBase.` prefix for consistency.
+
+### Fixed: IOBackend `cached` field removed
+
+The `cached::Bool=false` field in `IOBackend` (Backends.jl) was flagged with `# REMOVE?` and had no references in any backend code. It has been removed.
+
+### Fixed: Radiance `has_boolean_ops` prefix
+
+The `has_boolean_ops(::Type{RAD})` declaration lacked the `KhepriBase.` prefix. While functional (due to import), it was inconsistent with all other backends. Prefix added.

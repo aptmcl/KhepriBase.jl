@@ -576,7 +576,6 @@ abstract type LocalBackend{K,T} <: Backend{K,T} end
   ground_level::Float64=0.0
   ground_material::Union{Nothing,Material}=nothing
   view::View=default_view()
-  cached::Bool=false # REMOVE?
   io::IO=IOBuffer()
   extra::E=E()
 end
