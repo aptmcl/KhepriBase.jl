@@ -111,7 +111,7 @@ export and_mark_deleted,
        @get_remote,
        connection,
        reset_backend,
-       IOBackend,
+       IOBackend, LocalBackend,
        dimension,
        ref,
        show_truss_deformation

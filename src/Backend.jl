@@ -56,17 +56,53 @@ new_refs(b::Backend{K,T}) where {K,T} = T[]
 - Backend struct with refs and transaction fields (plus user extra fields)
 - Type alias (e.g., const TBS = ThebesBackend)
 - void_ref, backend_name, and optional view_type implementations
+- Property forwarding for mixin fields (getproperty/setproperty!/propertynames)
+- Default b_* operation implementations for known mixins
 
 Usage:
   @defbackend Name Alias begin
-    id_type = Int          # optional, default: Int
-    void_ref = 0           # optional, default: 0
-    view_type = nothing     # optional, default: nothing (use BackendView)
+    id_type = Int              # optional, default: Int
+    void_ref = 0               # optional, default: 0
+    view_type = FrontendView() # optional, default: nothing (use BackendView)
+    parent = LazyBackend       # optional, default: Backend
+    mixin(local_shapes)        # shapes, current_layer, layers
+    mixin(render_state)        # date, place, render_env, ground_level, ground_material
+    mixin(io)                  # io::IOBuffer
     # Extra struct fields:
     drawing::Any = nothing
     next_id::Int = 1
   end
 =#
+
+# Helper: generate getproperty/setproperty!/propertynames for mixin forwarding.
+# forwarded is a Vector of (field_symbol, mixin_field_symbol) pairs.
+function _defbackend_property_forwarding(ealias, forwarded, direct_names)
+  isempty(forwarded) && return nothing
+  # Build getproperty chain
+  get_branches = map(forwarded) do (field_sym, mixin_field)
+    :(sym === $(QuoteNode(field_sym)) && return getfield(getfield(b, $(QuoteNode(mixin_field))), $(QuoteNode(field_sym))))
+  end
+  set_branches = map(forwarded) do (field_sym, mixin_field)
+    # Use convert to match Julia's default setproperty! behavior
+    :(sym === $(QuoteNode(field_sym)) && return let obj = getfield(b, $(QuoteNode(mixin_field)))
+        setfield!(obj, $(QuoteNode(field_sym)), convert(fieldtype(typeof(obj), $(QuoteNode(field_sym))), val))
+      end)
+  end
+  forwarded_names = Tuple(first.(forwarded))
+  all_names = (forwarded_names..., direct_names...)
+  quote
+    function Base.getproperty(b::$(ealias), sym::Symbol)
+      $(get_branches...)
+      getfield(b, sym)
+    end
+    function Base.setproperty!(b::$(ealias), sym::Symbol, val)
+      $(set_branches...)
+      setfield!(b, sym, val)
+    end
+    Base.propertynames(b::$(ealias)) = $(all_names)
+  end
+end
+
 macro defbackend(name, alias, body)
   name_str = string(name)
   key_sym = Symbol(name_str, "Key")
@@ -79,7 +115,9 @@ macro defbackend(name, alias, body)
   id_type = :Int
   void_ref_val = 0
   view_type_val = nothing
+  parent_type = nothing
   extra_fields = []
+  mixins = Symbol[]
   for expr in body.args
     expr isa LineNumberNode && continue
     if expr isa Expr && expr.head == :(=)
@@ -91,6 +129,8 @@ macro defbackend(name, alias, body)
         void_ref_val = rhs
       elseif lhs == :view_type
         view_type_val = rhs
+      elseif lhs == :parent
+        parent_type = rhs
       elseif lhs isa Expr && lhs.head == :(::)
         # field::Type = default
         push!(extra_fields, expr)
@@ -100,30 +140,81 @@ macro defbackend(name, alias, body)
     elseif expr isa Expr && expr.head == :(::)
       # field::Type (no default) — not valid for @kwdef
       error("@defbackend: field '$(expr.args[1])' must have a default value")
+    elseif expr isa Expr && expr.head == :call && expr.args[1] == :mixin
+      # mixin(name)
+      mixin_name = expr.args[2]
+      mixin_name isa Symbol || error("@defbackend: mixin name must be a symbol, got: $mixin_name")
+      haskey(KhepriBase.MIXIN_REGISTRY, mixin_name) || error("@defbackend: unknown mixin '$mixin_name'. Known mixins: $(join(keys(KhepriBase.MIXIN_REGISTRY), ", "))")
+      push!(mixins, mixin_name)
     else
       error("@defbackend: unexpected expression: $expr")
     end
   end
+
+  # Build mixin struct fields and forwarding info
+  mixin_struct_fields = Expr[]
+  forwarded = Tuple{Symbol, Symbol}[]  # (field_name, mixin_container_field)
+  for mx in mixins
+    info = KhepriBase.MIXIN_REGISTRY[mx]
+    mixin_field = info.field
+    mixin_type = info.type
+    # Add the composed struct field: _local_shapes::LocalShapes = LocalShapes()
+    push!(mixin_struct_fields, :($(mixin_field)::$(mixin_type) = $(mixin_type)()))
+    for field_name in info.fields
+      push!(forwarded, (field_name, mixin_field))
+    end
+  end
+
+  # Determine transaction type: ManualCommit if local_shapes present, AutoCommit otherwise
+  has_local_shapes = :local_shapes in mixins
+  transaction_default = has_local_shapes ?
+    :(Parameter{KhepriBase.Transaction}(KhepriBase.ManualCommitTransaction())) :
+    :(Parameter{KhepriBase.Transaction}(KhepriBase.AutoCommitTransaction()))
+
+  # Determine parent type
   ekey = esc(key_sym)
   eid = esc(id_sym)
   eref = esc(ref_sym)
   enref = esc(nref_sym)
   ebackend = esc(backend_sym)
   ealias = esc(alias)
-  ename = esc(name)
   eid_type = esc(id_type)
   evoid = esc(void_ref_val)
+
+  parent_expr = if isnothing(parent_type)
+    :(Backend{$(ekey), $(eid)})
+  else
+    let ept = esc(parent_type)
+      :($(ept){$(ekey), $(eid)})
+    end
+  end
+
   extra_struct_fields = map(esc, extra_fields)
+  mixin_struct_fields_esc = map(esc, mixin_struct_fields)
+
   view_expr = isnothing(view_type_val) ? nothing :
     :(KhepriBase.view_type(::Type{$(ealias)}) = $(esc(view_type_val)))
+
+  # Collect direct (non-underscore-prefixed) field names for propertynames
+  direct_field_names = Symbol[:refs, :transaction]
+  for f in extra_fields
+    # f is `field::Type = default`, lhs is `field::Type`
+    lhs = f.args[1]
+    push!(direct_field_names, lhs.args[1])
+  end
+
+  # Generate property forwarding
+  forwarding_expr = _defbackend_property_forwarding(ealias, forwarded, Tuple(direct_field_names))
+
   quote
     abstract type $(ekey) end
     const $(eid) = $(eid_type)
     const $(eref) = GenericRef{$(ekey), $(eid)}
     const $(enref) = NativeRef{$(ekey), $(eid)}
-    Base.@kwdef mutable struct $(ebackend) <: Backend{$(ekey), $(eid)}
+    Base.@kwdef mutable struct $(ebackend) <: $(parent_expr)
       refs::References{$(ekey), $(eid)} = References{$(ekey), $(eid)}()
-      transaction::Parameter{KhepriBase.Transaction} = Parameter{KhepriBase.Transaction}(KhepriBase.AutoCommitTransaction())
+      transaction::Parameter{KhepriBase.Transaction} = $(transaction_default)
+      $(mixin_struct_fields_esc...)
       $(extra_struct_fields...)
     end
     const $(ealias) = $(ebackend)
@@ -131,6 +222,7 @@ macro defbackend(name, alias, body)
     KhepriBase.void_ref(b::$(ealias)) = $(evoid)
     KhepriBase.backend_name(b::$(ealias)) = $(name_str)
     $(view_expr)
+    $(forwarding_expr)
   end
 end
 export @defbackend
@@ -2133,6 +2225,9 @@ b_shot_pathname(b::Backend, name) = b_render_pathname(b, name)
 # -- raw_view: capture native intermediate format for precise comparison --
 b_raw_view(b::Backend, path) = b_shot_view(b, path)
 b_raw_pathname(b::Backend, name) = b_shot_pathname(b, name)
+
+# Viewport: Only some backends support this, but it can be useful for the frontend to be able to set it in a backend-agnostic way.
+b_set_view_size(b::Backend, width, height) = nothing
 
 #######
 

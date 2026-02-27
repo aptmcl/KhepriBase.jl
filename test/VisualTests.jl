@@ -1168,12 +1168,13 @@ register_test("coberturaTubos3", :csg) do
            50)
 end
 
+normal_pontos(p0, p1, p2, p3) =
+  let (v0, v1) = (p1-p0, p2-p0)
+    n = cross(v0, v1)
+    dot(n, p3-p0) < 0 ? n : n*-1
+  end
+
 register_test("tetraedroEvol", :csg) do
-  normal_pontos(p0, p1, p2, p3) =
-    let (v0, v1) = (p1-p0, p2-p0)
-      n = cross(v0, v1)
-      dot(n, p3-p0) < 0 ? n : n*-1
-    end
 
   tetraedro(i, p0, p1, p2, p3) =
     let (pmin, pmax) = (xyz(min(p0.x, p1.x, p2.x, p3.x), min(p0.y, p1.y, p2.y, p3.y), min(p0.z, p1.z, p2.z, p3.z)), xyz(max(p0.x, p1.x, p2.x, p3.x), max(p0.y, p1.y, p2.y, p3.y), max(p0.z, p1.z, p2.z, p3.z)))
