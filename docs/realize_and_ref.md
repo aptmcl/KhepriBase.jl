@@ -438,13 +438,14 @@ maybe_realize(b::LazyBackend, s) = save_shape!(b, s)
 transaction system, shapes are stored via `save_shape!`. This is used by
 backends that accumulate shapes for later batch processing.
 
-### IOBackend `realize_shapes`
+### File-output backends `realize_shapes`
 
-IOBackend (used by TikZ, POVRay, Radiance) provides `realize_shapes` to
-force-realize all accumulated shapes:
+File-output backends (TikZ, POVRay, Radiance) use `@defbackend` with
+`parent = LocalBackend` and the `local_shapes` mixin. They provide
+`realize_shapes` to force-realize all accumulated shapes:
 
 ```julia
-realize_shapes(b::IOBackend) =
+realize_shapes(b) =
   for s in b.shapes
     reset_ref(b, s)
     force_realize(b, s)
@@ -454,6 +455,9 @@ realize_shapes(b::IOBackend) =
 Note that `reset_ref` is called before `force_realize` to ensure a fresh
 realization. This is important for backends that write to files/buffers — the
 shapes must be re-realized each time the output is regenerated.
+
+**Note:** `IOBackend` is deprecated. All file-output backends have been
+migrated to `@defbackend` with `parent = LocalBackend`.
 
 ---
 
@@ -505,9 +509,9 @@ If your backend doesn't use a field named `refs`, override
 | GL       | `Backend`          | `GLKey`      | `Int`                      | `0`          |
 | Makie    | `Backend`          | `MakieKey`   | `Int`                      | `0`          |
 | Thebes   | `Backend`          | `ThebesKey`  | `Int`                      | `0`          |
-| TikZ     | `IOBackend`        | `TikZKey`    | `Any`                      | `-1`         |
-| POVRay   | `IOBackend`        | `POVRayKey`  | `Any`                      | `-1`         |
-| Radiance | `IOBackend`        | `RADKey`     | `Any`                      | `-1`         |
+| TikZ     | `LocalBackend`     | `TikZKey`    | `Any`                      | `-1`         |
+| POVRay   | `LocalBackend`     | `POVRayKey`  | `Any`                      | `-1`         |
+| Radiance | `LocalBackend`     | `RADKey`     | `Any`                      | `-1`         |
 
 ---
 
@@ -520,12 +524,13 @@ returns a unique integer from an incrementing counter (`next_ref!`). This
 provides proper shape identity — each realized shape gets a distinct reference,
 and `void_ref` is distinguishable from valid refs.
 
-### IOBackend: dummy return values by design
+### File-output backends: dummy return values by design
 
-TikZ, POVRay, and Radiance are file-output backends. Their `b_*` operations
-write to an IO buffer and return dummy values (typically `void_ref(b)`,
-which is `-1`). This is by design — these backends don't need to track
-individual shape references since their output is a complete file.
+TikZ, POVRay, and Radiance are file-output backends (using `@defbackend`
+with `parent = LocalBackend`). Their `b_*` operations write to an IO
+buffer and return dummy values (typically `void_ref(b)`, which is `-1`).
+This is by design — these backends don't need to track individual shape
+references since their output is a complete file.
 
 The `realize_shapes` function re-realizes all shapes from scratch each time
 the output file is regenerated, so reference identity is irrelevant.
