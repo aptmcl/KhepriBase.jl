@@ -1063,7 +1063,7 @@ register_test("abobadasRomanas", :csg) do
                     cylinder(p, r, p+vz(-rc)))
     end
   
-  cobertura_arcos_romanos(xyz(0, 0, 0), 5, 0.8, 3)
+  cobertura_arcos_romanos(xyz(-8, -8, 0), 5, 0.8, 3)
   cobertura_arcos_romanos(xyz(0, 0, 0), 5, 0.2, 4)
   cobertura_arcos_romanos(xyz(8, 8, 0), 4, 0.2, 6)
   cobertura_arcos_romanos(xyz(16, 16, 0), 8, 0.1, 10)

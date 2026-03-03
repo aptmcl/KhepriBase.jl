@@ -1312,19 +1312,19 @@ convert the generic material parameters into specific model parameters.
 
 =#
 
-@bdef b_new_material(b::Backend, name, base_color, metallic, specular, roughness,
-	           	     clearcoat, clearcoat_roughness, ior,
+@bdef b_new_material(name, base_color, metallic, specular, roughness,
+	           	       clearcoat, clearcoat_roughness, ior,
                      transmission, transmission_roughness,
-	           	     emission_color, emission_strength,
+	           	       emission_color, emission_strength,
                      sheen_color, sheen_roughness,
                      anisotropy, anisotropy_direction,
                      ambient_occlusion, normal_map, bent_normal, clearcoat_normal,
                      post_lighting_color,
                      absorption, micro_thickness, thickness)
-@bdef b_plastic_material(b::Backend, name, color, roughness)
-@bdef b_metal_material(b::Backend, name, color, roughness, ior)
-@bdef b_glass_material(b::Backend, name, color, roughness, ior)
-@bdef b_mirror_material(b::Backend, name, color)
+@bdef b_plastic_material(name, color, roughness)
+@bdef b_metal_material(name, color, roughness, ior)
+@bdef b_glass_material(name, color, roughness, ior)
+@bdef b_mirror_material(name, color)
 
 #=
 Backends might store shapes locally (in b.refs.shapes) or remotely

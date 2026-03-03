@@ -740,10 +740,11 @@ which is defined in Materials.jl and delegates to b_new_material.
 
 # When a StandardMaterial has a backend-specific override (set via set_material),
 # use the override via b_get_material. Otherwise, use the PBR path.
-# BackendDefault() means "no backend-specific override" — use PBR parameters.
+# BackendDefault() means "use the backend's default material" → b_get_material → void_ref.
+# nothing means "no override" → use PBR parameters via b_standard_material.
 realize(b::Backend, s::StandardMaterial) =
   let spec = s.data(typeof(b))
-    spec !== nothing && !isa(spec, BackendDefault) ?
+    spec !== nothing ?
       b_get_material(b, spec) :
       b_standard_material(b, s.name, s.base_color, s.metallic, s.roughness,
                           s.reflectance, s.sheen_color, s.sheen_roughness,
