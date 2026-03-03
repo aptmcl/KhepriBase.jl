@@ -60,10 +60,10 @@ ensure_ref(b::Backend{K,T}, r::Any) where {K,T} =
 
 # This is not type-stable, but it is convenient
 ref_value(b::Backend{K,T}, a::Any) where {K,T} = a
-ref_value(b::Backend, s::Proxy) = ref_value(b, ref(b, s))
 ref_value(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = r.value
 ref_value(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
 ref_value(b::Backend{K,T}, r::LocalRef{K,T}) where {K,T} = r.value
+ref_value(b::Backend, s::Proxy) = ref_value(b, ref(b, s))
 
 
 # currying
@@ -71,6 +71,7 @@ ref_values(b::Backend{K,T}) where {K,T} = (r::GenericRef{K,T}) -> ref_values(b, 
 # This is type-stable
 ref_values(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = T[r.value]
 ref_values(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
+ref_values(b::Backend{K,T}, r::LocalRef{K,T}) where {K,T} = T[r.value]
 ref_values(b::Backend, s::Proxy) = ref_values(b, ref(b, s))
 ref_values(b::Backend{K,T}, ss::Proxies) where {K,T} = mapreduce(s->ref_values(b, ref(b, s)), vcat, ss, init=T[])
 
