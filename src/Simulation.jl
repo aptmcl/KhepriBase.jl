@@ -25,6 +25,9 @@ with_simulation(f) =
     end
   end
 
+# Agent size (body radius and height); affects collision, visuals, NavMesh baking, and spawn spacing.
+@defcb set_sim_agent_size(radius, height)
+
 # Movement model
 @defcb set_sim_hsf(relaxation_time=0.5, max_speed_coef=1.3,
                    V=2.1, sigma=0.3, U=10.0, R=0.2, c=0.5, phi=100.0)
