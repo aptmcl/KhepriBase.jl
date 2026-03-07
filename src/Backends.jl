@@ -111,7 +111,31 @@ reset_backend(b::RemoteBackend) =
     close(c) # This might err, so it goes last
   end
 
-export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting
+#=
+When a remote backend dies (e.g., the application is closed or rebuilt),
+any operation on it throws an IOError. Instead of letting this error
+propagate and leaving a dead backend in current_backends(), we catch it
+at the broadcast points (maybe_realize, @defcbs) and automatically remove
+the dead backend. try/catch is zero-cost in Julia when no exception is
+thrown, so this has no performance impact in normal operation.
+=#
+retire_dead_backend(b::RemoteBackend) =
+  begin
+    @warn "Backend $(backend_name(b)) disconnected. Removing from active backends."
+    delete_global_backend(b)
+    for f in b.remote
+      reset_opcode(f)
+    end
+    try close(b.connection) catch end
+    b.connection = missing
+  end
+
+handle_backend_error(e, b::Backend) = rethrow()
+handle_backend_error(e::Base.IOError, b::RemoteBackend) =
+  retire_dead_backend(b)
+
+export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting,
+       retire_dead_backend, handle_backend_error
 before_connecting(::RemoteBackend) = nothing
 after_connecting(::RemoteBackend) = nothing
 failed_connecting(b::RemoteBackend) =
@@ -204,8 +228,10 @@ export ensure_khepri_socket_server_running
 const _server_launch_lock = ReentrantLock()
 ensure_khepri_socket_server_running() =
   lock(_server_launch_lock) do
-    if isnothing(khepri_socket_server_task())
-      khepri_socket_server_task(errormonitor(Threads.@spawn run_khepri_socket_server()))
+    let task = khepri_socket_server_task()
+      if isnothing(task) || istaskfailed(task) || istaskdone(task)
+        khepri_socket_server_task(errormonitor(Threads.@spawn run_khepri_socket_server()))
+      end
     end
   end
 
@@ -240,14 +266,19 @@ run_khepri_socket_server(host=default_khepri_socket_server_host(), port=default_
     while true
       println("Waiting for a connection")
       let conn = accept(server)
-        println("Connected!")
-        let backend_name = decode(Val(:CS), Val(:string), conn),
-            init_func = get_socket_backend_init_function(backend_name),
-            backend = invokelatest(init_func, conn)
-          invokelatest(before_connecting, backend)
-    	    invokelatest(after_connecting, backend)
-          add_global_backend(backend)
-          invokelatest(main, backend)
+        try
+          println("Connected!")
+          let backend_name = decode(Val(:CS), Val(:string), conn),
+              init_func = get_socket_backend_init_function(backend_name),
+              backend = invokelatest(init_func, conn)
+            invokelatest(before_connecting, backend)
+            invokelatest(after_connecting, backend)
+            add_global_backend(backend)
+            invokelatest(main, backend)
+          end
+        catch e
+          @warn "Error handling client connection" exception=(e, catch_backtrace())
+          try close(conn) catch end
         end
       end
     end
