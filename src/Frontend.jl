@@ -49,7 +49,13 @@ macro defcb(expr)
       # We don't include types in the parameters to avoid multiple dispatch ambiguities.
       # However, it might be interesting to include them in the body as assertions.
       @named_params $(name)($(params...), backend::Backend=top_backend()) =
-          $(backend_name)(backend, $(pnames...))
+          try
+            $(backend_name)(backend, $(pnames...))
+          catch e
+            e isa Base.IOError && backend isa RemoteBackend ?
+              (retire_dead_backend(backend); rethrow()) :
+              rethrow()
+          end
           # We use a default definition for a Any backend to avoid conflict with a similar def in Backend.jl
 #      $(backend_name)(backend::Any, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =
       $(backend_name)(backend::Any, $(pnames...)) =
@@ -73,7 +79,11 @@ macro defcbs(expr)
       # However, it might be interesting to include them in the body as assertions.
       @named_params $(name)($(params...), backends::Backends=current_backends()) =
         for backend in backends
-          $(backend_name)(backend, $(pnames...))
+          try
+            $(backend_name)(backend, $(pnames...))
+          catch e
+            handle_backend_error(e, backend)
+          end
         end
         # We use a default definition for a Any backend to avoid conflict with a similar def in Backend.jl
 #      $(backend_name)(backend::Any, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =

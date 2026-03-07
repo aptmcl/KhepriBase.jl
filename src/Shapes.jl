@@ -242,7 +242,11 @@ with_transaction(fn) =
 
 maybe_realize(s) =
   for b in current_backends()
-    maybe_realize(b, s)
+    try
+      maybe_realize(b, s)
+    catch e
+      handle_backend_error(e, b)
+    end
   end
 
 #=
