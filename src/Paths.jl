@@ -565,7 +565,33 @@ subpath(path::OpenPolygonalPath, a::Real, b::Real) =
 meta_program(p::OpenPolygonalPath) =
     Expr(:call, :open_polygonal_path, meta_program(p.vertices))
 
+meta_program(p::ClosedPolygonalPath) =
+  Expr(:call, :closed_polygonal_path, map(meta_program, p.vertices)...)
 
+meta_program(p::ArcPath) =
+  Expr(:call, :arc_path, meta_program(p.center), meta_program(p.radius),
+       meta_program(p.start_angle), meta_program(p.amplitude))
+
+meta_program(p::CircularPath) =
+  Expr(:call, :circular_path, meta_program(p.center), meta_program(p.radius))
+
+meta_program(p::EllipticPath) =
+  Expr(:call, :elliptic_path, meta_program(p.center), meta_program(p.r1), meta_program(p.r2))
+
+meta_program(p::RectangularPath) =
+  Expr(:call, :rectangular_path, meta_program(p.corner), meta_program(p.dx), meta_program(p.dy))
+
+meta_program(p::OpenSplinePath) =
+  Expr(:call, :open_spline_path, Expr(:vect, map(meta_program, p.vertices)...))
+
+meta_program(p::ClosedSplinePath) =
+  Expr(:call, :closed_spline_path, Expr(:vect, map(meta_program, p.vertices)...))
+
+meta_program(p::OpenPathSequence) =
+  Expr(:call, :open_path_sequence, map(meta_program, p.paths)...)
+
+meta_program(p::ClosedPathSequence) =
+  Expr(:call, :closed_path_sequence, map(meta_program, p.paths)...)
 
 # Path can be made of subparts
 abstract type PathOp end

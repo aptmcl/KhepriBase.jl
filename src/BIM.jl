@@ -736,26 +736,34 @@ curtain_wall(p0::Loc, p1::Loc;
 realize(b::Backend, s::CurtainWall) =
   b_curtain_wall(b, s.path, s.bottom_level, s.top_level, s.family, s.offset)
 
-#
-# We need to redefine the default method (maybe add an option to the macro to avoid defining the meta_program)
-# This needs to be fixed for windows
-#=
+# Override auto-generated meta_program for Wall to handle doors/windows
+# and emit keyword arguments instead of positional
 meta_program(w::Wall) =
-    if isempty(w.doors)
-        Expr(:call, :wall,
-             meta_program(w.path),
-             meta_program(w.bottom_level),
-             meta_program(w.top_level),
-             meta_program(w.family))
+  let path = meta_program(w.path),
+      kwargs = Expr[
+        Expr(:kw, :bottom_level, meta_program(w.bottom_level)),
+        Expr(:kw, :top_level, meta_program(w.top_level)),
+        Expr(:kw, :family, meta_program(w.family))],
+      has_doors = !isempty(w.doors),
+      has_windows = !isempty(w.windows)
+    if has_doors || has_windows
+      has_doors && push!(kwargs,
+        Expr(:kw, :doors,
+             Expr(:vect, [Expr(:tuple, meta_program(d.loc), meta_program(d.family))
+                          for d in w.doors]...)))
+      has_windows && push!(kwargs,
+        Expr(:kw, :windows,
+             Expr(:vect, [Expr(:tuple, meta_program(wn.loc), meta_program(wn.family))
+                          for wn in w.windows]...)))
+      Expr(:call, :wall_with_openings, path, kwargs...)
     else
-        let door = w.doors[1]
-            Expr(:call, :add_door,
-                 meta_program(wall(w.path, w.bottom_level, w.top_level, w.family, w.doors[2:end], w.windows)),
-                 meta_program(door.loc),
-                 meta_program(door.family))
-        end
+      Expr(:call, :wall, path, kwargs...)
     end
-=#
+  end
+
+# Override auto-generated meta_program for Level to omit elements
+meta_program(l::Level) =
+  Expr(:call, :level, meta_program(l.height))
 
 # Railing
 
