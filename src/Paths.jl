@@ -312,21 +312,6 @@ path_end(path::ClosedSplinePath) = path.vertices[1]
 convert(::Type{ClosedSplinePath}, path::Path) =
   closed_spline_path(path_vertices(path))
 
-#=
-      fixed_normal(vn, vt) = norm(vn) < path_tolerance() ? SVector{3}(vpol(1, sph_phi(xyz(vt[1],vt[2],vt[3], world_cs))+pi/2).raw[1:3]) : vn
-    map_division(
-      t-> let p = interpolator(t),
-              vt = Interpolations.gradient(interpolator, t)[1],
-              vn = Interpolations.hessian(interpolator, t)[1],
-              vy = cross(vt, vn)
-            f(loc_from_o_vx_vy(
-                xyz(p[1], p[2], p[3], world_cs),
-                vxyz(vn[1], vn[2], vn[3], world_cs),
-                vxyz(vy[1], vy[2], vy[3], world_cs)))
-          end,
-     0.0, 1.0, n)
- end
-=#
 
 # There is a set of operations over Paths:
 # 1. translate a path a given vector
@@ -529,38 +514,41 @@ subpath_ending_at(path::OpenPolygonalPath, d::Real) =
           error("Exceeded path length by ", d)
     end
 
-#=
-collect_vertices_length(p::Loc, vs::Locs, d::Real) =
-    let pp = vs[1]
-        dist = distance(p, pp)
-        d <= dist ?
-        push!(Vector{Loc}(), p + (pp - p)/dist*d) :
-        unshift!(collect_vertices_length(pp, vs[2:end], d - dist), pp)
-    end
 
-subpath(path::OpenPolygonalPath, a::Real, b::Real) =
-    let p = path.vertices[1]
-        pts = []
-        for i in 2:length(path.vertices)
-            pp = path.vertices[i]
-            delta = distance(p, pp)
-            if a <= delta
-                phi = pol_phi(pp - p)
-                p0 = add_pol(p, d, phi)
-                return open_polygonal_path(
-                        unshift!(collect_vertices_length(p0,
-                                                         vcat(path.vertices[i:end], path.vertices),
-                                                         delta_d),
-                                 p0))
-            else
-                p = pp
-                d -= delta
-            end
-        end
-        error("Exceeded path length")
-    end
+# A path sequence is a sequence of paths where the next element of the sequence
+# starts at the same place where the previous element ends.
 
-=#
+struct OpenPathSequence <: OpenPath
+  paths::Vector{<:Path}
+end
+open_path_sequence(paths...) =
+  OpenPathSequence(ensure_connected_paths([paths...]))
+struct ClosedPathSequence <: ClosedPath
+  paths::Vector{<:Path}
+end
+closed_path_sequence(paths...) =
+  let start = path_start(paths[1]),
+      finish = path_end(paths[end])
+    coincident_path_location(start, finish) ?
+      ClosedPathSequence(ensure_connected_paths([paths...])) :
+      ClosedPathSequence(ensure_connected_paths([paths..., open_polygonal_path([finish, start])]))
+  end
+
+PathSequence = Union{OpenPathSequence, ClosedPathSequence}
+
+join_paths(p1::OpenPolygonalPath, p2::OpenPathSequence) =
+  path_sequence(p1, p2.paths...)
+
+# HACK : Include treatment of empty paths.
+
+path_sequence(paths...) =
+  let paths = ensure_connected_paths([paths...])
+    coincident_path_location(path_start(paths[1]), path_end(paths[end])) ?
+      ClosedPathSequence(paths) :
+      OpenPathSequence(paths)
+  end
+
+ensure_connected_paths(paths) = filter(!is_empty_path, paths)
 
 meta_program(p::OpenPolygonalPath) =
     Expr(:call, :open_polygonal_path, meta_program(p.vertices))
@@ -595,8 +583,6 @@ meta_program(p::ClosedPathSequence) =
 
 # Path can be made of subparts
 abstract type PathOp end
-#struct MoveToOp <: PathOp loc::Loc end
-#struct MoveOp <: PathOp vec::Vec end
 struct LineOp <: PathOp
   vec::Vec
 end
@@ -633,11 +619,6 @@ path_length(op::ArcOp) = op.radius*abs(op.amplitude)
 translate(path::PathOps, v::Vec) =
   PathOps(path.start + v, path.ops, path.closed)
 
-#translate_op(op::MoveToOp, v) = MoveToOp(op.loc + v)
-#translate_op(op::LineToOp, v) = LineToOp(op.loc + v)
-#translate_op(op::LineToXThenToYOp, v) = LineToXThenToYOpp(op.loc + v)
-#translate_op(op::LineToYThenToXOp, v) = LineToYThenToXOp(op.loc + v)
-#translate_op(op::PathOp, v) = op
 
 location_at_length(path::PathOps, d::Real) =
   let ops = path.ops,
@@ -716,41 +697,6 @@ subpath_ending_at(pathOp::ArcOp, d::Real) =
 subpath(path::Path, a::Real, b::Real) =
   subpath_starting_at(subpath_ending_at(path, b), a)
 
-# A path sequence is a sequence of paths where the next element of the sequence
-# starts at the same place where the previous element ends.
-
-struct OpenPathSequence <: OpenPath
-  paths::Vector{<:Path}
-end
-open_path_sequence(paths...) =
-  OpenPathSequence(ensure_connected_paths([paths...]))
-struct ClosedPathSequence <: ClosedPath
-  paths::Vector{<:Path}
-end
-closed_path_sequence(paths...) =
-  let start = path_start(paths[1]),
-      finish = path_end(paths[end])
-    start ≈ finish ?
-      ClosedPathSequence(ensure_connected_paths([paths...])) :
-      ClosedPathSequence(ensure_connected_paths([paths..., open_polygonal_path([finish, start])]))
-  end
-
-PathSequence = Union{OpenPathSequence, ClosedPathSequence}
-
-join_paths(p1::OpenPolygonalPath, p2::OpenPathSequence) =
-  path_sequence(p1, p2.paths...)
-
-# HACK : Include treatment of empty paths.
-
-path_sequence(paths...) =
-  let paths = ensure_connected_paths([paths...])
-    coincident_path_location(path_start(paths[1]), path_end(paths[end])) ?
-      ClosedPathSequence(paths) :
-      OpenPathSequence(paths)
-  end
-
-ensure_connected_paths(paths) = filter(!is_empty_path, paths)
-
 path_domain(path::PathSequence) = (0, path_length(path))
 location_at(path::PathSequence, d::Real) = location_at_length(path, d)
 
@@ -774,7 +720,7 @@ subpath_starting_at(path::PathSequence, d::Real) =
       subpath = subpaths[i]
       delta = path_length(subpath)
       if d == delta
-        return OpenPathSequence(ops[i+1:end])
+        return OpenPathSequence(subpaths[i+1:end])
       elseif d < delta + path_tolerance()
         subpath = subpath_starting_at(subpath, d)
         return OpenPathSequence([subpath, subpaths[i+1:end]...])
@@ -868,27 +814,6 @@ convert(::Type{ClosedPath}, p::OpenPolygonalPath) =
   closed_polygonal_path(coincident_path_location(path_start(p), path_end(p)) ?
     path_vertices(p)[1:end-1] :
     path_vertices(p))
-#=
-convert(::Type{ClosedPath}, p::OpenPath) =
-  if isa(p.ops[end], CloseOp) || coincident_path_location(path_start(p), path_end(p))
-    closed_path(p.ops)
-  else
-    error("Can't convert to a Closed Path: $p")
-  end
-convert(::Type{ClosedPath}, ops::Vector{<:PathOp}) =
-  if isa(ops[end], CloseOp)
-    closed_path(ops)
-  else
-    error("Can't convert to a Closed Path: $ops")
-  end
-convert(::Type{OpenPath}, ops::Vector{<:PathOp}) = open_path(ops)
-convert(::Type{Path}, ops::Vector{<:PathOp}) =
-  if isa(ops[end], CloseOp)
-    closed_path(ops)
-  else
-    open_path(ops)
-  end
-=#
 convert(::Type{ClosedPolygonalPath}, path::RectangularPath) =
   let p = path.corner,
       dx = path.dx,
@@ -1145,7 +1070,7 @@ Base.reverse(path::Region) =
 
 
 mirrored_path(path::Path, p::Loc, v::Vec) =
-  error("Mush be finished")
+  error("Must be finished: mirrored_path for $(typeof(path))")
 
 mirrored_on_x(path::OpenPolygonalPath) =
   join_paths(path, open_polygonal_path(reverse(map(p->xyz(p.x, -p.y, -p.z, p.cs), path_vertices(path)))))

@@ -408,14 +408,11 @@ using KhepriBase
     end
 
     @testset "ClosedPathSequence" begin
-      # NOTE: There's a bug in closed_path_sequence when paths form a closed loop
-      # Skipping this test until the source is fixed
-      # p1 = open_polygonal_path([xy(0, 0), xy(1, 0)])
-      # p2 = open_polygonal_path([xy(1, 0), xy(1, 1)])
-      # p3 = open_polygonal_path([xy(1, 1), xy(0, 0)])
-      # seq = closed_path_sequence(p1, p2, p3)
-      # @test is_closed_path(seq)
-      @test true  # Placeholder
+      p1 = open_polygonal_path([xy(0, 0), xy(1, 0)])
+      p2 = open_polygonal_path([xy(1, 0), xy(1, 1)])
+      p3 = open_polygonal_path([xy(1, 1), xy(0, 0)])
+      seq = closed_path_sequence(p1, p2, p3)
+      @test is_closed_path(seq)
     end
   end
 
