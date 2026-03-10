@@ -331,7 +331,7 @@ b_circle(b::Backend, c, r, mat) =
 
 b_arc(b::Backend, c, r, α, Δα, mat) =
   Δα ≈ 0.0 ?
-    b_point(b, c + vpol(r, a, c.cs), mat) :
+    void_ref(b) :
     let pts = [c + vpol(r, a, c.cs)
                for a in division(α, α + Δα, max(ceil(Int, Δα*32/2/π), 2), true)]
       b_spline(b, pts, nothing, nothing, mat)
