@@ -242,33 +242,9 @@ layer_family(name, color::RGB=rgb(1,1,1)) =
 backend_get_family_ref(b::Backend, f::Family, af::LayerFamily) =
   b_layer(b, af.name, true, af.color)
 
-# OBJ/MTL file family — generic across all backends that implement b_mesh_obj_fmt.
-#
-# Backends store an OBJFileFamily in family.implemented_as[BackendType].
-# When a BIM element (toilet, sink, door, etc.) is realized, the generic
-# realize / b_xxx code checks for an OBJFamily and calls b_mesh_obj_fmt
-# with a computed 4×4 transform.
-abstract type OBJFamily <: Family end
-
-struct OBJFileFamily <: OBJFamily
-  obj_name::String
-  scale::Float64
-  rotation::Float64   # rotation around vertical axis (radians)
-  offset::Vec         # local offset in model coordinates
-  y_is_up::Bool       # true if OBJ uses Y-up convention (default false = Z-up)
-end
-
-export OBJFamily, OBJFileFamily, obj_family
-
-obj_family(obj_name; scale=1.0, rotation=0.0, offset=vxyz(0, 0, 0), y_is_up=false) =
-  OBJFileFamily(obj_name, Float64(scale), Float64(rotation), offset, y_is_up)
-
-# OBJ families are backend-level families (the value in implemented_as).
-# backend_get_family_ref returns the family itself — actual loading
-# happens in b_mesh_obj_fmt at element placement time.
-backend_get_family_ref(b::Backend, f::Family, bf::OBJFileFamily) = bf
-
-
+# OBJ family types (OBJFamily, OBJFileFamily, obj_family) are defined in
+# Backend.jl because the OBJ transform functions and BIM fallbacks there
+# reference them at compile time.
 
 macro deffamily(name, parent, fields...)
   name_str = string(name)

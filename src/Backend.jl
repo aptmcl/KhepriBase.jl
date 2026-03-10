@@ -1808,11 +1808,32 @@ curtain_wall_panel_path(b::Backend, path, family) =
   end
 
 ## ─────────────────────────────────────────────────────────────────────
-##  OBJ/MTL transform computation
+##  OBJ/MTL family types and transform computation
 ##
-##  These functions compute 4×4 transforms for placing OBJ meshes.
+##  OBJ family types must be defined here (before BIM.jl) because
+##  the transform functions and BIM default fallbacks below use them.
 ##  Used by any backend that implements b_mesh_obj_fmt.
 ## ─────────────────────────────────────────────────────────────────────
+
+abstract type OBJFamily <: Family end
+
+struct OBJFileFamily <: OBJFamily
+  obj_name::String
+  scale::Float64
+  rotation::Float64   # rotation around vertical axis (radians)
+  offset::Vec         # local offset in model coordinates
+  y_is_up::Bool       # true if OBJ uses Y-up convention (default false = Z-up)
+end
+
+export OBJFamily, OBJFileFamily, obj_family
+
+obj_family(obj_name; scale=1.0, rotation=0.0, offset=vxyz(0, 0, 0), y_is_up=false) =
+  OBJFileFamily(obj_name, Float64(scale), Float64(rotation), offset, y_is_up)
+
+# OBJ families are backend-level families (the value in implemented_as).
+# backend_get_family_ref returns the family itself — actual loading
+# happens in b_mesh_obj_fmt at element placement time.
+backend_get_family_ref(b::Backend, f::Family, bf::OBJFileFamily) = bf
 
 export standalone_obj_transform, wall_obj_transform
 
