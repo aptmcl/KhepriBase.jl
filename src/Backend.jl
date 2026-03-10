@@ -734,7 +734,7 @@ b_torus(b::Backend, c, ra, rb, mat) =
     	mat)
 
 export b_mesh_obj_fmt
-@bdef(b_mesh_obj_fmt(obj_name))
+@bdef(b_mesh_obj_fmt(obj_name, transform))
 export b_set_environment
 @bdef(b_set_environment(env_name, set_background))
 
@@ -1807,15 +1807,225 @@ curtain_wall_panel_path(b::Backend, path, family) =
     polygonal_path(pts)
   end
 
+## ─────────────────────────────────────────────────────────────────────
+##  OBJ/MTL transform computation
+##
+##  These functions compute 4×4 transforms for placing OBJ meshes.
+##  Used by any backend that implements b_mesh_obj_fmt.
+## ─────────────────────────────────────────────────────────────────────
+
+export standalone_obj_transform, wall_obj_transform
+
+#=
+  standalone_obj_transform(position, bf::OBJFileFamily)
+
+  Compute a Loc (4×4 transform) for placing an OBJ mesh at a world
+  position (no wall context). Rotation is around the world Z (vertical) axis.
+=#
+function standalone_obj_transform(position, bf::OBJFileFamily)
+  let p = in_world(position),
+      s = bf.scale,
+      θ = bf.rotation,
+      cθ = cos(θ), sθ = sin(θ)
+    if bf.y_is_up
+      # Y-up OBJ → Z-up world: X→X, Y→Z (up), Z→-Y (preserves handedness)
+      let vx = vxyz(cθ * s, sθ * s, 0),
+          vy = vxyz(0, 0, s),
+          vz = vxyz(sθ * s, -cθ * s, 0),
+          local_offset = vx * bf.offset.x + vy * bf.offset.y + vz * bf.offset.z
+        u0(cs_from_o_vx_vy_vz(p + local_offset, vx, vy, vz))
+      end
+    else
+      # Z-up OBJ (default): identity axis mapping
+      let vx = vxyz(cθ * s, sθ * s, 0),
+          vy = vxyz(-sθ * s, cθ * s, 0),
+          vz = vxyz(0, 0, s),
+          local_offset = vx * bf.offset.x + vy * bf.offset.y + vz * bf.offset.z
+        u0(cs_from_o_vx_vy_vz(p + local_offset, vx, vy, vz))
+      end
+    end
+  end
+end
+
+#=
+  wall_obj_transform(sp_begin, sp_end, base_height, bf::OBJFileFamily)
+
+  Compute a Loc (4×4 transform) to position and orient an OBJ mesh
+  at a door/window opening on a wall.
+
+  The resulting coordinate system:
+    X = along the wall (tangent), rotated by bf.rotation
+    Y = vertical (up) or wall normal, depending on y_is_up
+    Z = wall normal or vertical (up)
+=#
+function wall_obj_transform(sp_begin, sp_end, base_height, bf::OBJFileFamily)
+  let p = in_world(sp_begin) + vz(base_height),
+      tangent = unitized(in_world(sp_end) - in_world(sp_begin)),
+      up = vz(1),
+      normal = unitized(cross(tangent, up)),
+      s = bf.scale,
+      θ = bf.rotation,
+      cθ = cos(θ), sθ = sin(θ),
+      rt = tangent * cθ + normal * sθ,
+      rn = -tangent * sθ + normal * cθ
+    if bf.y_is_up
+      # Y-up OBJ → Z-up world: X→tangent, Y→up, Z→-normal (preserves handedness)
+      let vx = rt * s,
+          vy = up * s,
+          vz = -rn * s,
+          local_offset = rt * bf.offset.x + up * bf.offset.y - rn * bf.offset.z
+        u0(cs_from_o_vx_vy_vz(p + local_offset, vx, vy, vz))
+      end
+    else
+      # Z-up OBJ (default): model X → tangent, model Y → normal, model Z → up
+      let vx = rt * s,
+          vy = rn * s,
+          vz = up * s,
+          local_offset = rt * bf.offset.x + rn * bf.offset.y + up * bf.offset.z
+        u0(cs_from_o_vx_vy_vz(p + local_offset, vx, vy, vz))
+      end
+    end
+  end
+end
+
+## ─────────────────────────────────────────────────────────────────────
+##  OBJ-based placement helpers
+## ─────────────────────────────────────────────────────────────────────
+
+export place_obj, place_obj_oriented, place_obj_at_wall
+
+place_obj(bf::OBJFileFamily, p::Loc=u0()) =
+  b_mesh_obj_fmt(current_backend(), bf.obj_name, standalone_obj_transform(p, bf))
+
+function place_obj_oriented(bf::OBJFileFamily, p::Loc, dir::Vec)
+  let pw = in_world(p),
+      tangent = unitized(in_world(dir)),
+      up = vz(1),
+      normal = unitized(cross(tangent, up)),
+      s = bf.scale,
+      local_offset = tangent * bf.offset.x + up * bf.offset.y + normal * bf.offset.z,
+      vx = tangent * s,
+      vy = up * s,
+      vz_out = normal * s
+    b_mesh_obj_fmt(current_backend(), bf.obj_name,
+      u0(cs_from_o_vx_vy_vz(pw + local_offset, vx, vy, vz_out)))
+  end
+end
+
+function place_obj_at_wall(bf::OBJFileFamily, w, dist, height; side=1)
+  let sp = subpath(w.path, dist, dist + 0.01),
+      tangent = unitized(in_world(sp[end]) - in_world(sp[begin])),
+      up = vz(1),
+      normal = unitized(cross(tangent, up)) * side,
+      p = in_world(sp[begin]) + vz(w.bottom_level.height + height),
+      s = bf.scale,
+      θ = bf.rotation,
+      cθ = cos(θ), sθ = sin(θ),
+      rt = tangent * cθ + normal * sθ,
+      rn = -tangent * sθ + normal * cθ,
+      local_offset = rt * bf.offset.x + up * bf.offset.y + rn * bf.offset.z,
+      vx = rt * s,
+      vy = up * s,
+      vz_out = rn * s
+    b_mesh_obj_fmt(current_backend(), bf.obj_name,
+      u0(cs_from_o_vx_vy_vz(p + local_offset, vx, vy, vz_out)))
+  end
+end
+
+## ─────────────────────────────────────────────────────────────────────
+##  BIM fixture defaults (toilet, sink, closet)
+##
+##  When the family has an OBJFamily backend implementation, the OBJ
+##  model is loaded at the element's position. Otherwise, a simple
+##  box placeholder is used.
+## ─────────────────────────────────────────────────────────────────────
+
 export b_toilet, b_sink, b_closet
 b_toilet(b::Backend, c, host, family) =
-  b_box(b, c - vxy(20, 20, c.cs), 40, 40, 40, nothing)
+  let bf = get(family.implemented_as, typeof(b), nothing)
+    bf isa OBJFamily ?
+      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
+      b_box(b, c - vxy(20, 20, c.cs), 40, 40, 40, nothing)
+  end
 
 b_sink(b::Backend, c, host, family) =
-  b_box(b, c - vxy(40, 40, c.cs), 80, 80, 80, nothing)
+  let bf = get(family.implemented_as, typeof(b), nothing)
+    bf isa OBJFamily ?
+      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
+      b_box(b, c - vxy(40, 40, c.cs), 80, 80, 80, nothing)
+  end
 
 b_closet(b::Backend, c, host, family) =
-  b_box(b, c - vxy(100, 40, c.cs), 200, 80, 200, nothing)
+  let bf = get(family.implemented_as, typeof(b), nothing)
+    bf isa OBJFamily ?
+      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
+      b_box(b, c - vxy(100, 40, c.cs), 200, 80, 200, nothing)
+  end
+
+## ─────────────────────────────────────────────────────────────────────
+##  OBJ file utilities
+##
+##  Path resolution and parsing for backends that load OBJ meshes by
+##  reading vertex/face data on the Julia side (e.g., when the backend
+##  has no native OBJ import).
+## ─────────────────────────────────────────────────────────────────────
+
+export obj_file_path, read_obj_mesh
+
+#=
+  obj_file_path(obj_name)
+
+  Resolve an OBJ model name to its file path following the convention:
+    resources/models/obj/{name}/{name}.obj
+=#
+obj_file_path(obj_name) =
+  joinpath("resources", "models", "obj", obj_name, "$obj_name.obj")
+
+#=
+  read_obj_mesh(filepath)
+
+  Parse an OBJ file and return (vertices, faces) where:
+    vertices — Vector of [x, y, z] Float64 arrays
+    faces    — Vector of Int arrays (1-based vertex indices)
+
+  Only processes 'v' (vertex) and 'f' (face) lines.
+  Face indices with texture/normal components (v/vt/vn) are handled.
+=#
+function read_obj_mesh(filepath)
+  vertices = Vector{Float64}[]
+  faces = Vector{Int}[]
+  open(filepath) do io
+    for line in eachline(io)
+      parts = split(strip(line))
+      isempty(parts) && continue
+      if parts[1] == "v" && length(parts) >= 4
+        push!(vertices, [parse(Float64, parts[2]),
+                         parse(Float64, parts[3]),
+                         parse(Float64, parts[4])])
+      elseif parts[1] == "f"
+        face = Int[]
+        for i in 2:length(parts)
+          push!(face, parse(Int, split(parts[i], '/')[1]))
+        end
+        push!(faces, face)
+      end
+    end
+  end
+  (vertices, faces)
+end
+
+#=
+  transform_obj_vertices(verts, transform)
+
+  Apply a Loc transform (from standalone_obj_transform or wall_obj_transform)
+  to raw OBJ vertex positions. Returns world-space Loc points.
+=#
+transform_obj_vertices(verts, transform) =
+  [in_world(transform + vxyz(v[1], v[2], v[3])) for v in verts]
+
+export b_family_element
+b_family_element(b::Backend, loc, angle, level, family) =
+  b_box(b, loc - vxy(0.5, 0.5, loc.cs), 1.0, 1.0, 1.0, nothing)
 
 # Lights
 

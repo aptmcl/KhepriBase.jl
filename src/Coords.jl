@@ -755,6 +755,10 @@ meta_program(x::Vector{T}) where T =
   isempty(x) ?
     Expr(:ref, meta_program(T)) :
     Expr(:vect, map(meta_program, x)...)
+meta_program(c::RGB) =
+  Expr(:call, :rgb, meta_program(Float64(red(c))), meta_program(Float64(green(c))), meta_program(Float64(blue(c))))
+meta_program(c::RGBA) =
+  Expr(:call, :rgba, meta_program(Float64(red(c))), meta_program(Float64(green(c))), meta_program(Float64(blue(c))), meta_program(Float64(alpha(c))))
 meta_program(p::Loc) =
     if cz(p) == 0
         Expr(:call, :xy, meta_program(cx(p)), meta_program(cy(p)))

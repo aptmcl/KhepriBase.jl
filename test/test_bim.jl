@@ -274,7 +274,7 @@ include("TestMockBackend.jl")
       b = mock_backend()
 
       set_backend_family(sf, b, lf)
-      @test sf.implemented_as[b] === lf
+      @test sf.implemented_as[typeof(b)] === lf
     end
   end
 

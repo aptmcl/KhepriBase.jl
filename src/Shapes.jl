@@ -24,6 +24,7 @@ export Shape,
        collecting_shapes,
        collected_shapes,
        with_transaction,
+       with_introspection,
        surface_boundary,
        curve_domain,
        surface_domain,
@@ -318,6 +319,15 @@ maybe_delete(t::ManualCommitTransaction, b, s) =
         deleteat!(t.proxies, idx)
       end
     end
+  end
+
+struct IntrospectionTransaction <: Transaction end
+maybe_realize(::IntrospectionTransaction, b, s) = nothing
+maybe_delete(::IntrospectionTransaction, b, s) = nothing
+
+with_introspection(f, b) =
+  with(current_transaction(b), IntrospectionTransaction()) do
+    f()
   end
 
 ensure_manual_commit_transaction(b) =
@@ -742,6 +752,34 @@ which is defined in Materials.jl and delegates to b_new_material.
   micro_thickness::Real=0.0,
   thickness::Real=0.0,
   data::BackendParameter=BackendParameter())
+
+# Override auto-generated meta_program for StandardMaterial to use keyword
+# arguments and skip the internal BackendParameter data field.
+meta_program(m::StandardMaterial) =
+  let defaults = (base_color=rgba(0.5, 0.5, 0.5, 1.0),
+                  metallic=0.0, roughness=0.5, reflectance=0.35,
+                  sheen_color=rgb(0,0,0), sheen_roughness=0.0,
+                  clear_coat=0.0, clear_coat_roughness=0.0,
+                  anisotropy=0.0, anisotropy_direction=rgb(0,0,0),
+                  ambient_occlusion=0.0, normal=rgb(0,0,0),
+                  bent_normal=rgb(0,0,0), clear_coat_normal=rgb(0,0,0),
+                  emissive=rgba(0,0,0,0), post_lighting_color=rgba(0,0,0,0),
+                  ior=1.5, transmission=0.0, absorption=0.0,
+                  micro_thickness=0.0, thickness=0.0),
+      fields = [:base_color, :metallic, :roughness, :reflectance,
+                :sheen_color, :sheen_roughness,
+                :clear_coat, :clear_coat_roughness,
+                :anisotropy, :anisotropy_direction,
+                :ambient_occlusion, :normal, :bent_normal, :clear_coat_normal,
+                :emissive, :post_lighting_color,
+                :ior, :transmission, :absorption, :micro_thickness, :thickness],
+      kwargs = [Expr(:kw, f, meta_program(getfield(m, f)))
+                for f in fields
+                if getfield(m, f) != defaults[f]]
+    Expr(:call, :standard_material,
+      Expr(:parameters, kwargs...),
+      meta_program(m.name))
+  end
 
 # When a StandardMaterial has a backend-specific override (set via set_material),
 # use the override via b_get_material. Otherwise, use the PBR path.
@@ -1517,6 +1555,13 @@ map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int, backend::Backend=top
 @defproxy(block, Shape0D, name::String="Block", shapes::Shapes = Shape[])
 @defproxy(block_instance, Shape0D, block::Block=required(), loc::Loc=u0(), scale::Real=1.0)
 
+# Groups (reusable collections of shapes, instantiated at multiple locations)
+# The factory function, when provided, allows backends without native group
+# support to re-create member shapes at each instance location.
+
+@defproxy(group, Shape0D, name::String="Group", shapes::Shapes = Shape[], factory::Union{Function,Nothing} = nothing)
+@defproxy(group_instance, Shape0D, group::Group=required(), loc::Loc=u0())
+
 ################################################################################
 ## Key locations for bounding box approximation
 
@@ -1883,3 +1928,4 @@ fill(path::Path;
 @defcb(gui_add_dropdown(gui, name, options, curr, handler))
 @defcb(gui_add_slider_parameter(gui, name, min, max, step, parameter))
 @defcb(gui_add_button_load_file(gui, name, handler))
+@defcb(gui_remove(gui))

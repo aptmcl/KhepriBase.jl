@@ -61,12 +61,11 @@ get_or_create_from_ref_value(b::Backend, r, storage, create) =
         return proxy
       end
     end
-    let new_sh = 
-          with(current_backends, ()) do # To avoid realizing shapes
-            create(b, r)
-          end
-      ref!(b, new_sh, r)
-      new_sh
+    with_introspection(b) do
+      let new_sh = create(b, r)
+        ref!(b, new_sh, r)
+        new_sh
+      end
     end
   end
 
@@ -107,6 +106,8 @@ reset_backend(b::RemoteBackend) =
     for f in b.remote
       reset_opcode(f)
     end
+    invalidate_family_refs(b)
+    empty!(b.refs)
     b.connection = missing
     close(c) # This might err, so it goes last
   end
@@ -764,7 +765,7 @@ KhepriBase.b_delete_all_shape_refs(b::LocalBackend) =
     for ss in values(b.layers)
       empty!(ss)
     end
-    empty!(b.refs)
+    empty!(b.refs.shapes)
     nothing
   end
 

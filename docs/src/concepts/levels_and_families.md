@@ -69,15 +69,104 @@ end
 
 ### Backend-Specific Families
 
-Khepri families are backend-portable by default. When a backend (e.g., Revit) needs to map a Khepri family to a native BIM family, use `set_backend_family`:
+Khepri families are backend-portable by default. When a backend needs to map a Khepri family to a native implementation, use `set_backend_family`:
 
 ```julia
 # Map Khepri's default wall family to a Revit-specific wall type
 set_backend_family(default_wall_family(), revit,
   revit_wall_family("Generic - 200mm"))
+
+# Map the default toilet to an OBJ model (works on any backend with OBJ support)
+set_backend_family(default_toilet_family(), THR,
+  obj_family("My_Toilet_Model"))
 ```
 
-This keeps user code backend-agnostic while allowing each backend to use its native element types.
+This keeps user code backend-agnostic while allowing each backend to use its native element types (Revit `.rfa` files, OBJ/MTL meshes, etc.).
+
+`set_backend_family` also accepts a backend **type** instead of an instance, which is useful for registering families at module load time before any connection exists:
+
+```julia
+# Register using the backend type (no instance needed)
+set_backend_family(default_door_family(), THR,
+  obj_family("My_Door"))
+```
+
+### OBJ/MTL File Families
+
+KhepriBase provides a generic `OBJFileFamily` for mapping any Khepri family to an OBJ/MTL 3D model. This works on **any backend** that implements `b_mesh_obj_fmt`: ThreeJS (native OBJ loader with materials), Blender (native import with full MTL support), Rhino (native import with full MTL support), and any future backend that adds the implementation.
+
+```julia
+# Create an OBJ backend family
+obj_family(obj_name;
+  scale=1.0,        # uniform scale factor
+  rotation=0.0,     # rotation around vertical axis (radians)
+  offset=vxyz(0,0,0), # local offset in model coordinates
+  y_is_up=false)    # true if OBJ uses Y-up convention (default: Z-up)
+```
+
+When an OBJ family is registered for a BIM element (toilet, sink, closet, table, chair, door, window), the element's `realize` function automatically loads the OBJ model with the correct position and orientation — including automatic wall alignment for doors and windows.
+
+```julia
+# Register OBJ models for fixtures
+set_backend_family(default_toilet_family(), THR,
+  obj_family("My_Toilet", y_is_up=true))
+
+set_backend_family(default_sink_family(), THR,
+  obj_family("My_Sink"))
+
+# Standalone OBJ placement (no BIM element)
+cabinet = obj_family("Kitchen_Cabinet")
+place_obj(cabinet, xy(3, 2))
+place_obj_oriented(cabinet, xy(5, 2), vx(1))
+place_obj_at_wall(cabinet, my_wall, 3.0, 0.0)
+```
+
+### Family Dispatch Chain
+
+When a BIM element is realized, Khepri resolves the family through this chain:
+
+1. **`backend_family(b, family)`** — looks up `family.implemented_as[typeof(b)]`. If not found, follows the `based_on` chain until a match is found or returns `family` itself.
+2. **`backend_get_family_ref(b, family, backend_family)`** — gives the backend a chance to load resources (e.g., Revit loads `.rfa` files, OBJ families return themselves). Default: returns `backend_family` unchanged.
+3. **`family_ref(b, family)`** — caches the result of step 2 in `family.ref[b]` so resources are loaded only once.
+
+This means user code never needs to know which backend is active:
+
+```julia
+# Same code works on any backend
+toilet(xy(1, 1), 0, floor_slab)
+
+# The backend resolves to its own implementation:
+#   Revit  → loads M_Toilet-Domestic-3D.rfa
+#   ThreeJS → loads OBJ/MTL mesh
+#   Others → default box geometry
+```
+
+### Overriding Default Families
+
+Each `@deffamily` generates a `default_xxx_family` parameter. Override it per-backend to change the default for the entire project:
+
+```julia
+# All doors on the ThreeJS backend use this OBJ model
+set_backend_family(default_door_family(), THR,
+  obj_family("Custom_Door"))
+
+# All toilets on Revit use this .rfa file
+set_backend_family(default_toilet_family(), revit,
+  revit_file_family("path/to/toilet.rfa"))
+```
+
+Project-specific variants can coexist with the defaults:
+
+```julia
+# Custom family that inherits from the default
+sliding_door = door_family("Sliding Door", width=1.5, height=2.0)
+set_backend_family(sliding_door, THR,
+  obj_family("Sliding_Panel_Model"))
+
+# Use it alongside default doors
+add_door(wall1, xy(1, 0))                  # uses default
+add_door(wall2, xy(1, 0), sliding_door)    # uses sliding
+```
 
 ## Materials
 

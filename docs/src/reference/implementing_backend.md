@@ -313,6 +313,20 @@ Everything above, plus:
 - [ ] Optionally implement `b_arealight` and `b_ieslight` for advanced lighting
       (default fallbacks approximate them as point/spot lights)
 
+### OBJ/MTL model support (optional)
+
+Implementing `b_mesh_obj_fmt(b, obj_name, transform)` enables OBJ/MTL-based
+BIM element models (toilets, sinks, closets, tables, chairs, doors, windows)
+via the `OBJFileFamily` system. See [Levels & Families](../concepts/levels_and_families.md#objmtl-file-families).
+
+- [ ] Implement `b_mesh_obj_fmt(b, obj_name, transform)` — load the OBJ file
+      at `obj_file_path(obj_name)` and apply the 4×4 transform
+- [ ] The transform encodes origin + 3 basis vectors (scale, rotation, Y-up/Z-up
+      handling) — extract columns from `transform.cs.transform`
+
+Currently implemented by: ThreeJS (native OBJ loader), Blender (`bpy.ops.wm.obj_import`),
+Rhino (`_-Import` command).
+
 ### BIM backend
 
 Everything above, plus:

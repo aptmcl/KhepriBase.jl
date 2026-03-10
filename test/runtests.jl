@@ -27,6 +27,7 @@ using Test
   @testset "Extended Features" begin
     include("test_materials.jl")
     include("test_bim.jl")
+    include("test_family_lifecycle.jl")
   end
 
   # Legacy tests (from original Test.jl)

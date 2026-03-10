@@ -216,6 +216,11 @@ family_ref(b::Backend, f::Family) =
     realize(b, f)
   end
 
+# When the proxy system realizes a Family, delegate to family_ref to avoid double realize.
+# family_ref caches in f.ref; we also store in b.refs.families for proxy system consistency.
+force_realize(b::Backend, f::Family) =
+  ref!(b, f, family_ref(b, f))
+
 #=
 Some families might specify materials (particularly, those that are not backed up by a BIM tool)
 We can retrieve those materials by querying the BIM shape.
@@ -227,15 +232,41 @@ used_materials(s::BIMShape) = used_materials(s.family)
 struct LayerFamily <: Family
   name::String
   color::RGB
-  ref::Parameter{Any}
+  ref::IdDict{Backend, Any}
 end
 
 export LayerFamily, layer_family
 layer_family(name, color::RGB=rgb(1,1,1)) =
-  LayerFamily(name, color, Parameter{Any}(nothing))
+  LayerFamily(name, color, IdDict{Backend, Any}())
 
 backend_get_family_ref(b::Backend, f::Family, af::LayerFamily) =
   b_layer(b, af.name, true, af.color)
+
+# OBJ/MTL file family — generic across all backends that implement b_mesh_obj_fmt.
+#
+# Backends store an OBJFileFamily in family.implemented_as[BackendType].
+# When a BIM element (toilet, sink, door, etc.) is realized, the generic
+# realize / b_xxx code checks for an OBJFamily and calls b_mesh_obj_fmt
+# with a computed 4×4 transform.
+abstract type OBJFamily <: Family end
+
+struct OBJFileFamily <: OBJFamily
+  obj_name::String
+  scale::Float64
+  rotation::Float64   # rotation around vertical axis (radians)
+  offset::Vec         # local offset in model coordinates
+  y_is_up::Bool       # true if OBJ uses Y-up convention (default false = Z-up)
+end
+
+export OBJFamily, OBJFileFamily, obj_family
+
+obj_family(obj_name; scale=1.0, rotation=0.0, offset=vxyz(0, 0, 0), y_is_up=false) =
+  OBJFileFamily(obj_name, Float64(scale), Float64(rotation), offset, y_is_up)
+
+# OBJ families are backend-level families (the value in implemented_as).
+# backend_get_family_ref returns the family itself — actual loading
+# happens in b_mesh_obj_fmt at element placement time.
+backend_get_family_ref(b::Backend, f::Family, bf::OBJFileFamily) = bf
 
 
 
@@ -281,19 +312,18 @@ macro deffamily(name, parent, fields...)
     struct $struct_name <: $parent
       $(struct_fields...)
       based_on::Union{Family, Nothing}
-      implemented_as::IdDict{<:Backend, <:Family}
-      ref::IdDict{<:Backend, Any}
-      data::BackendParameter
+      implemented_as::IdDict{Type{<:Backend}, <:Family}
+      ref::IdDict{Backend, Any}
     end
     $(constructor_name)($(opt_params...);
                         $(key_params...),
                         based_on=nothing,
-                        implemented_as=IdDict{Backend, Family}(),
-                        data=BackendParameter()) =
-      $(struct_name)($(field_names...), based_on, implemented_as, IdDict{Backend, Any}(), data)
+                        implemented_as=IdDict{Type{<:Backend}, Family}()) =
+      $(struct_name)($(field_names...), based_on, implemented_as, IdDict{Backend, Any}())
     $(instance_name)(family:: Family, implemented_as=copy(family.implemented_as); $(instance_params...)) =
-      $(struct_name)($(field_names...), family, implemented_as, IdDict{Backend, Any}(), copy(family.data))
+      $(struct_name)($(field_names...), family, implemented_as, IdDict{Backend, Any}())
     $(default_name) = Parameter{$struct_name}($(constructor_name)())
+    KhepriBase._register_family_default!($(default_name))
     $(predicate_name)(v::$(struct_name)) = true
     $(predicate_name)(v::Any) = false
     $(with_name)(f::Function; family :: $(struct_name) = $(default_name)(), $(instance_params...)) =
@@ -301,7 +331,10 @@ macro deffamily(name, parent, fields...)
 #    $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
 #          selector_names, field_names)...)
     KhepriBase.meta_program(v::$(struct_name)) =
-        Expr(:call, $(Expr(:quote, name)), $(map(field_name -> :(meta_program(v.$(field_name))), field_names)...))
+        Expr(:call, $(Expr(:quote, name)),
+             $(map(field_name -> :(meta_program(v.$(field_name))),
+                   [fn for (fn, ft) in zip(field_names, field_types)
+                    if ft != :Material])...))
     KhepriBase.meta_program(v::Parameter{$struct_name}) =
         Expr(:call, $(Expr(:quote, default_name)))
     Base.@doc $(docstr) $(constructor_name)
@@ -333,27 +366,40 @@ Khepri module.
 # When dispatching a BIM operation to a backend, we also need to dispatch the family
 
 backend_family(b::Backend, family::Family) =
-  get(family.implemented_as, b) do
+  get(family.implemented_as, typeof(b)) do
     isnothing(family.based_on) ? # this is not a family_element (nor a derivation of a family_element)
       error("Family $(family) is missing the implementation for backend $(b)") :
       backend_family(b, family.based_on)
   end
 
-copy_struct(s::T) where T = T([getfield(s, k) for k ∈ fieldnames(T)]...)
-
 # Backends will install their own families on top of the default families, e.g.,
 # set_backend_family(default_beam_family(), revit, revit_beam_family)
 set_backend_family(family::Family, backend::Backend, backend_family::Family) =
   begin
-    family.implemented_as[backend]=backend_family
+    family.implemented_as[typeof(backend)]=backend_family
     delete!(family.ref, backend) #force recreation
   end
+
+set_backend_family(family::Family, ::Type{B}, backend_family::Family) where {B<:Backend} =
+  family.implemented_as[B] = backend_family
 
 realize(b::Backend, f::Family) =
   backend_get_family_ref(b, f, backend_family(b, f))
 
 backend_get_family_ref(b::Backend, f::Family, bf) = bf
 export backend_family, set_backend_family
+
+# Registry of default family parameters for invalidation on backend reconnection.
+# Each @deffamily generates a default_xxx_family Parameter; we register them here
+# so that invalidate_family_refs can clear stale cached refs.
+const _family_defaults = Any[]
+_register_family_default!(p) = push!(_family_defaults, p)
+
+export invalidate_family_refs
+invalidate_family_refs(b::Backend) =
+  for p in _family_defaults
+    delete!(p().ref, b)
+  end
 
 #=
 We can now define specific families for slabs, beams, etc., the corresponding
@@ -643,17 +689,27 @@ used_materials(f::WindowFamily) = (f.right_material, f.left_material, f.side_mat
 @defproxy(window, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, angle::Real=0, family::WindowFamily=default_window_family())
 
 realize(b::Backend, s::Union{Door, Window}) =
-  let base_height = s.wall.bottom_level.height + s.loc.y + 0.0001, #To avoid z-fighting :-(
-      height = s.family.height - 0.0001, #To avoid z-fighting :-(,
-      subpath = translate(subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width), vz(base_height)),
-      subpath = s.flip_x ? reverse(subpath) : subpath,
-      subpath = rotate(subpath, s.angle),
-      r_thickness = r_thickness(s.wall),
-      l_thickness = l_thickness(s.wall),
-      thickness = s.family.thickness
-    vcat(b_wall_no_openings(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family),
-         b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, ref_value(b, s.family.frame.material))
-    )
+  let bf = get(s.family.implemented_as, typeof(b), nothing)
+    if bf isa OBJFamily
+      let base_height = s.wall.bottom_level.height + s.loc.y,
+          sp = subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width),
+          loc = wall_obj_transform(sp[begin], sp[end], base_height, bf)
+        [ensure_ref(b, b_mesh_obj_fmt(b, bf.obj_name, loc))]
+      end
+    else
+      let base_height = s.wall.bottom_level.height + s.loc.y + 0.0001, #To avoid z-fighting :-(
+          height = s.family.height - 0.0001, #To avoid z-fighting :-(,
+          subpath = translate(subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width), vz(base_height)),
+          subpath = s.flip_x ? reverse(subpath) : subpath,
+          subpath = rotate(subpath, s.angle),
+          r_thickness = r_thickness(s.wall),
+          l_thickness = l_thickness(s.wall),
+          thickness = s.family.thickness
+        vcat(b_wall_no_openings(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family),
+             b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, ref_value(b, s.family.frame.material))
+        )
+      end
+    end
   end
 
 frame_path(s::Door, subpath, height) =
@@ -953,22 +1009,34 @@ used_materials(f::TableChairFamily) =
 table(loc::Loc, angle::Real, level=default_level(), family::TableFamily=default_table_family()) =
   table(loc_from_o_phi(loc, angle), level, family)
 realize(b::Backend, s::Table) =
-  let tf = s.family
-    b_table(b, add_z(s.loc, s.level.height),
-            tf.length, tf.width, tf.height,
-            tf.top_thickness, tf.leg_thickness,
-            material_ref(b, tf.material))
+  let bf = get(s.family.implemented_as, typeof(b), nothing)
+    if bf isa OBJFamily
+      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(add_z(s.loc, s.level.height), bf))
+    else
+      let tf = s.family
+        b_table(b, add_z(s.loc, s.level.height),
+                tf.length, tf.width, tf.height,
+                tf.top_thickness, tf.leg_thickness,
+                material_ref(b, tf.material))
+      end
+    end
   end
 
 @defproxy(chair, BIMShape, loc::Loc=u0(), level::Level=default_level(), family::ChairFamily=default_chair_family())
 chair(loc::Loc, angle::Real, level::Level=default_level(), family::ChairFamily=default_chair_family()) =
   chair(loc_from_o_phi(loc, angle), level, family)
 realize(b::Backend, s::Chair) =
-  let cf = s.family
-    b_chair(b, add_z(s.loc, s.level.height),
-            cf.length, cf.width, cf.height,
-            cf.seat_height, cf.thickness,
-            material_ref(b, cf.material))
+  let bf = get(s.family.implemented_as, typeof(b), nothing)
+    if bf isa OBJFamily
+      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(add_z(s.loc, s.level.height), bf))
+    else
+      let cf = s.family
+        b_chair(b, add_z(s.loc, s.level.height),
+                cf.length, cf.width, cf.height,
+                cf.seat_height, cf.thickness,
+                material_ref(b, cf.material))
+      end
+    end
   end
 
 @defproxy(table_and_chairs, BIMShape, loc::Loc=u0(), level::Level=default_level(), family::TableChairFamily=default_table_chair_family())
@@ -1032,7 +1100,7 @@ realize(b::Backend, s::Toilet) =
 @deffamily(sink_family, Family,
   )
 
-@defproxy(sink, BIMShape, cb::Loc=u0(), host::BIMShape=missing_slab(), family::SinkFamily=default_sink_closed_family())
+@defproxy(sink, BIMShape, cb::Loc=u0(), host::BIMShape=missing_slab(), family::SinkFamily=default_sink_family())
 sink(cb::Loc, Angle::Real=0, Host::BIMShape=missing_slab(), Family::SinkFamily=default_sink_family(); 
              angle::Real=Angle, host::BIMShape=Host, family::SinkFamily=Family) =
   sink(loc_from_o_phi(cb, angle), host, family)
@@ -1051,6 +1119,18 @@ closet(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::ClosetFamily=defau
 
 realize(b::Backend, s::Closet) =
   b_closet(b, s.cb, s.host, s.family)
+# Family Element (generic catch-all for family instances not matching specific proxies)
+@deffamily(family_element_family, Family,
+  )
+
+@defproxy(family_element, BIMShape,
+  loc::Loc=u0(),
+  angle::Real=0,
+  level::Level=default_level(),
+  family::FamilyElementFamily=default_family_element_family())
+realize(b::Backend, s::FamilyElement) =
+  b_family_element(b, s.loc, s.angle, s.level, s.family)
+
 #################################
 # Node support
 Base.@kwdef struct TrussNodeSupport

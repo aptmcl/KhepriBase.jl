@@ -245,6 +245,7 @@ Furniture and illustrations.
 | `b_table` | Create table |
 | `b_chair` | Create chair |
 | `b_table_and_chairs` | Create table with chairs |
+| `b_mesh_obj_fmt` | Load OBJ/MTL mesh with transform |
 | `b_labels` | Create labels |
 | `b_radii_illustration` | Radii illustration |
 | `b_vectors_illustration` | Vectors illustration |
@@ -265,26 +266,26 @@ Light sources. Operations with default fallbacks degrade gracefully on backends 
 
 ## Backend Coverage Summary
 
-| Backend | Type | Curves | Surfaces | Solids | Boolean | BIM | Selection | Rendering | Materials | Lighting |
-|---------|------|--------|----------|--------|---------|-----|-----------|-----------|-----------|----------|
-| **Rhino** | Socket/C# | Full | Full | Full | Partial | No | Full | Yes | Yes | Point, Spot, IES, Area* |
-| **AutoCAD** | Socket/C# | Full | Full | Full | Full | Yes | Full | Yes | Yes | Point, Spot, IES, Area* |
-| **Blender** | Socket/Python | Good | Good | Good | Good | No | No | Yes | Yes | Point, Spot, IES, Area |
-| **Mitsuba** | IO/file | No | Good | Good | No | No | No | Yes | Yes | Point, Spot, IES, Area |
-| **GL** | Local | Full | Full | Full | No-op | No | No | Yes | Yes | Point, Spot, IES*, Area* |
-| **Thebes** | Local | Full | Full | Full | No-op | No | No | Yes | Yes | (fallbacks) |
-| **Makie** | Local | Good | Good | Good | No | No | No | Yes | Yes | (fallbacks) |
-| **MeshCat** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes | (fallbacks) |
-| **Unity** | Socket/C# | Good | Good | Good | Yes | No | No | Yes | Yes | Point, IES*, Area* |
-| **Revit** | Socket/C# | No | Partial | Partial | Yes | Full | No | Yes | Read-only | (fallbacks) |
-| **Three.js** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes | (fallbacks) |
-| **Xeokit** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes | (fallbacks) |
-| **TikZ** | IO/file | Good | Good | No | No | No | No | No | No | None |
-| **POVRay** | IO/file | No | Partial | Good | No | No | No | Yes | Yes | Point, IES*, Area* |
-| **Radiance** | IO/file | No | Partial | Partial | No | No | No | Yes | Yes | Point, Spot, IES, Area |
-| **FreeCAD** | Socket/Python | Good | Good | Good | Good | No | No | No | Yes | (fallbacks) |
-| **Unreal** | Socket/C++ | Good | Good | Good | No | No | No | Yes | Yes | Point, Spot, IES*, Area* |
-| **3dsMax** | Socket | Good | Good | Good | No | No | No | No | Yes | (fallbacks) |
+| Backend | Type | Curves | Surfaces | Solids | Boolean | BIM | Selection | Rendering | Materials | Lighting | OBJ/MTL |
+|---------|------|--------|----------|--------|---------|-----|-----------|-----------|-----------|----------|---------|
+| **Rhino** | Socket/C# | Full | Full | Full | Partial | No | Full | Yes | Yes | Point, Spot, IES, Area* | Yes |
+| **AutoCAD** | Socket/C# | Full | Full | Full | Full | Yes | Full | Yes | Yes | Point, Spot, IES, Area* | No |
+| **Blender** | Socket/Python | Good | Good | Good | Good | No | No | Yes | Yes | Point, Spot, IES, Area | Yes |
+| **Mitsuba** | IO/file | No | Good | Good | No | No | No | Yes | Yes | Point, Spot, IES, Area | No |
+| **GL** | Local | Full | Full | Full | No-op | No | No | Yes | Yes | Point, Spot, IES*, Area* | No |
+| **Thebes** | Local | Full | Full | Full | No-op | No | No | Yes | Yes | (fallbacks) | No |
+| **Makie** | Local | Good | Good | Good | No | No | No | Yes | Yes | (fallbacks) | No |
+| **MeshCat** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes | (fallbacks) | No |
+| **Unity** | Socket/C# | Good | Good | Good | Yes | No | No | Yes | Yes | Point, IES*, Area* | No |
+| **Revit** | Socket/C# | No | Partial | Partial | Yes | Full | No | Yes | Read-only | (fallbacks) | No |
+| **Three.js** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes | (fallbacks) | Yes |
+| **Xeokit** | WebSocket | Good | Good | Good | No | No | No | Partial | Yes | (fallbacks) | No |
+| **TikZ** | IO/file | Good | Good | No | No | No | No | No | No | None | No |
+| **POVRay** | IO/file | No | Partial | Good | No | No | No | Yes | Yes | Point, IES*, Area* | No |
+| **Radiance** | IO/file | No | Partial | Partial | No | No | No | Yes | Yes | Point, Spot, IES, Area | No |
+| **FreeCAD** | Socket/Python | Good | Good | Good | Good | No | No | No | Yes | (fallbacks) | No |
+| **Unreal** | Socket/C++ | Good | Good | Good | No | No | No | Yes | Yes | Point, Spot, IES*, Area* | No |
+| **3dsMax** | Socket | Good | Good | Good | No | No | No | No | Yes | (fallbacks) | No |
 
 *\* = approximated via simpler light type (IES→spotlight, Area→pointlight)*
 

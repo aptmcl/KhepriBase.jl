@@ -165,6 +165,33 @@ large_window = window_family(width=2.0, height=1.5)
 add_window(w, xy(4, 0.8), large_window)
 ```
 
+### Backend-Specific Door and Window Models
+
+Backends can provide custom realizations for doors and windows. When a family has a backend-specific implementation registered via `set_backend_family`, the backend's `realize` method uses it instead of the default flat-panel geometry.
+
+For example, on any backend that supports OBJ loading (ThreeJS, Blender, Rhino), doors and windows can be rendered as 3D OBJ models that **automatically orient to the wall direction**:
+
+```julia
+# Register an OBJ model for a door family
+my_door = door_family("Custom Door", width=0.9, height=2.1)
+set_backend_family(my_door, THR,
+  obj_family("My_Door_Model",
+    scale=1.0,
+    rotation=0.0,
+    offset=vxyz(0, 0, 0)))
+
+# The door mesh automatically rotates to match any wall direction
+w1 = wall(open_polygonal_path([xy(0, 0), xy(5, 0)]), ground, first_floor)
+add_door(w1, xy(1, 0), my_door)
+
+w2 = wall(open_polygonal_path([xy(0, 0), xy(3, 4)]), ground, first_floor)
+add_door(w2, xy(1, 0), my_door)  # same door, aligned to diagonal wall
+```
+
+The automatic wall alignment works by computing a local coordinate system from the wall's path: the X-axis follows the wall tangent, the Y-axis follows the wall normal, and the Z-axis points up. The mesh is oriented, scaled, and offset within this coordinate system.
+
+If no backend-specific family is registered, doors and windows fall back to the default realization (a flat panel with frame sweep).
+
 ## Curtain Wall
 
 A curtain wall is a glazed facade system composed of panels divided by mullions (vertical) and transoms (horizontal), surrounded by a boundary frame.

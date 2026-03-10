@@ -179,6 +179,47 @@ sink(xy(2, 3), 0, floor)
 closet(xy(0.5, 0.5), pi/2, floor)
 ```
 
+### Backend-Specific Furnishing and Fixture Models
+
+Backends can replace the default box geometry with detailed 3D models using `set_backend_family`. This works for all furnishing and fixture families.
+
+```julia
+# Register OBJ models for a backend (e.g., ThreeJS)
+set_backend_family(default_toilet_family(), THR,
+  obj_family("My_Toilet_Model"))
+
+set_backend_family(default_sink_family(), THR,
+  obj_family("My_Sink_Model"))
+
+set_backend_family(default_table_family(), THR,
+  obj_family("My_Table_Model"))
+
+set_backend_family(default_chair_family(), THR,
+  obj_family("My_Chair_Model"))
+
+# User code is unchanged — the backend resolves to the registered model
+toilet(xy(0.5, 3), 0, floor)
+table(xy(3, 3), ground)
+```
+
+Project-specific variants can be created alongside the defaults:
+
+```julia
+kitchen_sink = sink_family("Kitchen Double Sink")
+set_backend_family(kitchen_sink, THR,
+  obj_family("Double_Sink_Model"))
+
+lounge_chair = chair_family("Lounge Chair")
+set_backend_family(lounge_chair, THR,
+  obj_family("Lounge_Chair_Model"))
+
+# Use the variant explicitly
+sink(xy(2, 3), 0, floor, kitchen_sink)
+chair(xy(5, 2), 0, ground, lounge_chair)
+```
+
+For backends that support 3D model assets (ThreeJS, Blender, and Rhino with OBJ/MTL; Revit with `.rfa` files), the `scale`, `rotation`, and `offset` parameters of the backend family control how the model is placed relative to the element's position. See [Levels & Families](../concepts/levels_and_families.md) for details on the family dispatch chain.
+
 ## Lights
 
 Lights define illumination sources for rendering. They are BIM elements with position and intensity parameters.

@@ -554,7 +554,7 @@ meta_program(p::OpenPolygonalPath) =
     Expr(:call, :open_polygonal_path, meta_program(p.vertices))
 
 meta_program(p::ClosedPolygonalPath) =
-  Expr(:call, :closed_polygonal_path, map(meta_program, p.vertices)...)
+  Expr(:call, :closed_polygonal_path, meta_program(p.vertices))
 
 meta_program(p::ArcPath) =
   Expr(:call, :arc_path, meta_program(p.center), meta_program(p.radius),
@@ -771,6 +771,9 @@ end
 # Should we just use tuples instead of arrays?
 path_set(paths...) =
   PathSet([paths...])
+
+meta_program(r::Region) =
+  Expr(:call, :region, map(meta_program, r.paths)...)
 
 export region
 region(outer, inners...) =
