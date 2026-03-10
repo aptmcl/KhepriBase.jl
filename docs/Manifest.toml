@@ -167,7 +167,7 @@ version = "1.12.0"
 deps = ["ColorTypes", "Dates", "Dierckx", "HTTP", "LinearAlgebra", "Sockets", "StaticArrays"]
 path = ".."
 uuid = "4cc0fe96-1163-46f3-ba32-de1e65d9548f"
-version = "0.7.0"
+version = "0.7.1"
 
 [[LazilyInitializedFields]]
 git-tree-sha1 = "0f2da712350b020bc3957f269c9caad516383ee0"
