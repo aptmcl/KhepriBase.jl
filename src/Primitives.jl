@@ -226,7 +226,7 @@ request_operation(f::RemoteFunction, conn) =
     encode(i.namespace, Val(:string), buf, i.canonical)
     send(conn, buf)
     let buf = receive(conn)
-      decode(i.namespace, Val(:size), buf)
+      decode_with_prefix(i.namespace, Val(:int), buf)
     end
   end
 
@@ -274,7 +274,7 @@ remote_function_meta_program(nssym, sig, canon, local_name, remote_name, params,
                  for p in params]...)
               send(conn, buf)
               let buf = receive(conn)
-                decode($(namespace), $(type_constructor(ret)), buf)
+                decode_with_prefix($(namespace), $(type_constructor(ret)), buf)
               end
             end))
   end
@@ -369,6 +369,14 @@ def get_view()->Tuple[Point3d, Point3d, float]:
 decode_or_error(ns::Val{NS}, t::Val{T}, c::IO, err) where {NS,T} =
   let v = decode(ns, t, c)
     v == err ? backend_error(ns, c) : v
+  end
+
+# Prefix-based error detection: 0x00 = OK (value follows), 0x01 = NOTOK (error string follows)
+decode_with_prefix(ns::Val{NS}, t, c::IO) where {NS} =
+  let prefix = read(c, UInt8)
+    prefix == 0x00 ? decode(ns, t, c) :
+    prefix == 0x01 ? backend_error(ns, c) :
+    error("Unknown RPC response prefix: $prefix")
   end
 
 struct BackendError
