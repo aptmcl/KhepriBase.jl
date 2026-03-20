@@ -97,25 +97,32 @@ KhepriBase provides a generic `OBJFileFamily` for mapping any Khepri family to a
 
 ```julia
 # Create an OBJ backend family
-obj_family(obj_name;
-  scale=1.0,        # uniform scale factor
-  rotation=0.0,     # rotation around vertical axis (radians)
-  offset=vxyz(0,0,0), # local offset in model coordinates
-  y_is_up=false)    # true if OBJ uses Y-up convention (default: Z-up)
+obj_family(obj_name;     # relative subpath under resources/models/obj/
+  scale=1.0,             # uniform scale factor
+  rotation=0.0,          # rotation around vertical axis (radians)
+  offset=vxyz(0,0,0),   # local offset in model coordinates
+  y_is_up=false)         # true if OBJ uses Y-up convention (default: Z-up)
+```
+
+The `obj_name` is a relative subpath under `resources/models/obj/` (without the `.obj` extension). This supports both subfolder and flat layouts:
+
+```julia
+obj_family("My_Toilet/My_Toilet")  # → resources/models/obj/My_Toilet/My_Toilet.obj
+obj_family("My_Toilet")            # → resources/models/obj/My_Toilet.obj
 ```
 
 When an OBJ family is registered for a BIM element (toilet, sink, closet, table, chair, door, window), the element's `realize` function automatically loads the OBJ model with the correct position and orientation — including automatic wall alignment for doors and windows.
 
 ```julia
-# Register OBJ models for fixtures
+# Register OBJ models for fixtures (subfolder layout)
 set_backend_family(default_toilet_family(), THR,
-  obj_family("My_Toilet", y_is_up=true))
+  obj_family("My_Toilet/My_Toilet", y_is_up=true))
 
 set_backend_family(default_sink_family(), THR,
-  obj_family("My_Sink"))
+  obj_family("My_Sink/My_Sink"))
 
 # Standalone OBJ placement (no BIM element)
-cabinet = obj_family("Kitchen_Cabinet")
+cabinet = obj_family("Kitchen_Cabinet/Kitchen_Cabinet")
 place_obj(cabinet, xy(3, 2))
 place_obj_oriented(cabinet, xy(5, 2), vx(1))
 place_obj_at_wall(cabinet, my_wall, 3.0, 0.0)

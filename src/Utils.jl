@@ -448,14 +448,15 @@ Base.show(io::IO, ::MIME"image/svg+xml", f::DVIFile) =
 
 # Conditional evaluation of expressions, useful for backends that don't support all features
 export @ifbackend
-macro ifbackend(mod, body)
+macro ifbackend(mod, consequent, alternative=nothing)
   let mod_sym = QuoteNode(mod),
       m = __module__
     quote
       if isdefined($m, $mod_sym)
-        $(esc(body))
+        $(esc(consequent))
+      else
+        $(esc(alternative))
       end
     end
   end
 end
-

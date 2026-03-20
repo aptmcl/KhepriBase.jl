@@ -1818,7 +1818,7 @@ curtain_wall_panel_path(b::Backend, path, family) =
 abstract type OBJFamily <: Family end
 
 struct OBJFileFamily <: OBJFamily
-  obj_name::String
+  obj_name::String    # relative subpath under resources/models/obj/ (without .obj)
   scale::Float64
   rotation::Float64   # rotation around vertical axis (radians)
   offset::Vec         # local offset in model coordinates
@@ -1827,6 +1827,9 @@ end
 
 export OBJFamily, OBJFileFamily, obj_family
 
+# obj_name is a relative subpath under resources/models/obj/:
+#   obj_family("name/name")  → subfolder layout (name/name.obj)
+#   obj_family("name")       → flat layout (name.obj)
 obj_family(obj_name; scale=1.0, rotation=0.0, offset=vxyz(0, 0, 0), y_is_up=false) =
   OBJFileFamily(obj_name, Float64(scale), Float64(rotation), offset, y_is_up)
 
@@ -1996,11 +1999,13 @@ export obj_file_path, read_obj_mesh
 #=
   obj_file_path(obj_name)
 
-  Resolve an OBJ model name to its file path following the convention:
-    resources/models/obj/{name}/{name}.obj
+  Resolve an OBJ model subpath to its file path. The obj_name is a relative
+  subpath under resources/models/obj/:
+    obj_family("Porta/Porta")  → resources/models/obj/Porta/Porta.obj  (subfolder)
+    obj_family("Porta")        → resources/models/obj/Porta.obj        (flat)
 =#
 obj_file_path(obj_name) =
-  joinpath("resources", "models", "obj", obj_name, "$obj_name.obj")
+  joinpath("resources", "models", "obj", "$obj_name.obj")
 
 #=
   read_obj_mesh(filepath)

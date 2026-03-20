@@ -320,7 +320,8 @@ BIM element models (toilets, sinks, closets, tables, chairs, doors, windows)
 via the `OBJFileFamily` system. See [Levels & Families](../concepts/levels_and_families.md#objmtl-file-families).
 
 - [ ] Implement `b_mesh_obj_fmt(b, obj_name, transform)` — load the OBJ file
-      at `obj_file_path(obj_name)` and apply the 4×4 transform
+      at `obj_file_path(obj_name)` and apply the 4×4 transform.
+      `obj_name` is a relative subpath (e.g., `"name/name"` or just `"name"`)
 - [ ] The transform encodes origin + 3 basis vectors (scale, rotation, Y-up/Z-up
       handling) — extract columns from `transform.cs.transform`
 

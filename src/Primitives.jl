@@ -165,6 +165,8 @@ clr_name(::Val, name::AbstractString) = clr_name(name)
 
 clr_type_str(ns, ::Type{Val{T}}) where T = clr_name(ns, string(T))
 clr_type_str(ns, ::Type{Vector{T}}) where T = clr_type_str(ns, T) * "Array"
+clr_type_str(ns, ::Type{T}) where T <: Tuple =
+  "Tuple" * join([clr_type_str(ns, t) for t in T.types], "")
 
 canonical_signature(ns, params, ret) =
   clr_type_str(ns, ret) * "(" * join([clr_type_str(ns, p[1]) for p in params], ",") * ")"
@@ -218,6 +220,24 @@ Note that in the case of sockets, the receive operation might return the socket 
 send(conn, buf) = write(conn, take!(buf))
 receive(conn) = conn
 
+# Each RPC call is wrapped in a length-prefixed frame: send writes Int32 length + payload,
+# receive reads Int32 length then that many bytes into an IOBuffer. This matches
+# Channel.cs's BeginFrame/EndFrame on the C# side.
+send(conn::TCPSocket, buf::IOBuffer) =
+  let data = take!(buf)
+    write(conn, Int32(length(data)))
+    write(conn, data)
+  end
+
+receive(conn::TCPSocket) =
+  let len = read(conn, Int32)
+    IOBuffer(read(conn, len))
+  end
+
+# Julia side of the lazy registration protocol: sends opcode 0 (ProvideOperation) with the
+# method name and canonical signature, receives back the assigned opcode for future calls.
+# The response goes through decode_with_prefix so registration errors (method not found,
+# signature mismatch) are caught as BackendError.
 request_operation(f::RemoteFunction, conn) =
   let i = f.info,
       buf = f.buffer
@@ -233,6 +253,8 @@ request_operation(f::RemoteFunction, conn) =
 
 #interrupt_processing(conn) = write(conn, Int32(-1))
 
+# Opcodes are lazily assigned: first call triggers registration via request_operation;
+# subsequent calls reuse the cached opcode.
 ensure_opcode(f::RemoteFunction, conn) =
   f.opcode == -1 ?
     f.opcode = Int32(request_operation(f, conn)) :
@@ -241,6 +263,8 @@ ensure_opcode(f::RemoteFunction, conn) =
 reset_opcode(f::RemoteFunction) =
   f.opcode = -1
 
+# Encode opcode + arguments into the buffer, send as a frame, receive the response
+# frame, decode with prefix-based error detection.
 call_remote(f::RemoteFunction, conn, args...) =
   f.info.encoder(ensure_opcode(f, conn), conn, f.buffer, args...)
 
@@ -364,13 +388,6 @@ def get_view()->Tuple[Point3d, Point3d, float]:
 """
 =#
 
-# We need to detect errors by recognizing a particular value
-# Note that this is parametric on namespace and type
-decode_or_error(ns::Val{NS}, t::Val{T}, c::IO, err) where {NS,T} =
-  let v = decode(ns, t, c)
-    v == err ? backend_error(ns, c) : v
-  end
-
 # Prefix-based error detection: 0x00 = OK (value follows), 0x01 = NOTOK (error string follows)
 decode_with_prefix(ns::Val{NS}, t, c::IO) where {NS} =
   let prefix = read(c, UInt8)
@@ -436,17 +453,17 @@ const SizeIsInt = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS},Val{:PY}}
 encode(ns::SizeIsInt, t::Val{:size}, c::IO, v) =
   encode(ns, Val(:int), c, v)
 decode(ns::SizeIsInt, t::Val{:size}, c::IO) =
-  decode_or_error(ns, Val(:int), c, -1)
+  decode(ns, Val(:int), c)
 encode(ns::SizeIsInt, t::Val{:address}, c::IO, v) =
   encode(ns, Val(:long), c, v)
 decode(ns::SizeIsInt, t::Val{:address}, c::IO) =
-  decode_or_error(ns, Val(:long), c, -1)
+  decode(ns, Val(:long), c)
 
 const BoolIsByte = Union{Val{:CS},Val{:JS},Val{:TS},Val{:PY}}
 encode(ns::BoolIsByte, t::Val{:bool}, c::IO, v::Bool) =
   encode(ns, Val(:byte), c, v ? 1 : 0)
 decode(ns::BoolIsByte, t::Val{:bool}, c::IO) =
-  decode_or_error(ns, Val(:byte), c, UInt8(127)) == UInt8(1)
+  decode(ns, Val(:byte), c) == UInt8(1)
 
 const ByteIsUInt8 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS},Val{:PY}}
 encode(::ByteIsUInt8, t::Val{:byte}, c::IO, v) =
@@ -480,27 +497,21 @@ const FloatIsFloat32 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS}}
 encode(::FloatIsFloat32, t::Val{:float}, c::IO, v) =
   write(c, convert(Float32, v))
 decode(ns::FloatIsFloat32, t::Val{:float}, c::IO) =
-  let d = read(c, Float32)
-    isnan(d) ? backend_error(ns, c) : convert(Float64, d)
-  end
+  convert(Float64, read(c, Float32))
 
 # Assuming float is eight bytes in Python
 const FloatIsFloat64 = Union{Val{:PY}}
 encode(::FloatIsFloat64, t::Val{:float}, c::IO, v) =
   write(c, convert(Float64, v))
 decode(ns::FloatIsFloat64, t::Val{:float}, c::IO) =
-  let d = read(c, Float64)
-    isnan(d) ? backend_error(ns, c) : convert(Float64, d)
-  end
+  convert(Float64, read(c, Float64))
 
 # Assuming double is eight bytes in C#, C++, JavaScript
 const DoubleIsFloat64 = Union{Val{:CS},Val{:CPP},Val{:JS},Val{:TS}}
 encode(::DoubleIsFloat64, t::Val{:double}, c::IO, v) =
   write(c, convert(Float64, v))
 decode(ns::DoubleIsFloat64, t::Val{:double}, c::IO) =
-  let d = read(c, Float64)
-    isnan(d) ? backend_error(ns, c) : d
-  end
+  read(c, Float64)
 
 # The binary_stream we use with C++, JavaScript, and Python replicates C# behavior
 const StringIsCSString = Union{Val{:CS},Val{:CPP},Val{:PY},Val{:JS},Val{:TS}}
@@ -544,9 +555,7 @@ decode(ns::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO
     size = size | ((b & 0x7f) << shift)
     if (b & 0x80) == 0
       str = String(read(c, size))
-      str == "This an error!" ?
-        backend_error(ns, c) :
-        return str
+      return str
     else
       shift += 7
     end
@@ -555,7 +564,7 @@ end
 
 const VoidIsByte = Union{Val{:CS},Val{:PY},Val{:JS},Val{:TS}}
 decode(ns::VoidIsByte, t::Union{Val{:void},Val{:None}}, c::IO) =
-  decode_or_error(ns, Val(:byte), c, 0x7f) == 0x00
+  decode(ns, Val(:byte), c) == 0x00
 
 # Useful CS types
 export Guid, Guids
@@ -565,9 +574,7 @@ const Guids = Vector{Guid}
 encode(::Val{:CS}, ::Val{:Guid}, c::IO, v) =
   write(c, v % UInt128)
 decode(ns::Val{:CS}, ::Val{:Guid}, c::IO) =
-  let guid = read(c, UInt128)
-    iszero(guid) ? backend_error(ns, c) : guid
-  end
+  read(c, UInt128)
 
 # It is also useful to encode/decode generic objects.
 const SupportsObjects = Union{Val{:JS},Val{:TS},Val{:PY},Val{:CS}}

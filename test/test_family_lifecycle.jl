@@ -152,6 +152,57 @@ include("TestMockBackend.jl")
     end
   end
 
+  @testset "fallback to default family when based_on is nothing" begin
+    with_mock_backend() do b
+      # Set up the default slab family with a backend mapping
+      sf_default = default_slab_family()
+      lf = layer_family("DefaultFallback")
+      set_backend_family(sf_default, b, lf)
+
+      # Create a new slab_family (based_on=nothing, empty implemented_as)
+      sf_new = slab_family(thickness=0.5)
+      @test isnothing(sf_new.based_on)
+      @test !haskey(sf_new.implemented_as, typeof(b))
+
+      # Should fall back to the default family's implemented_as
+      bf = backend_family(b, sf_new)
+      @test bf === lf
+    end
+  end
+
+  @testset "no infinite loop when default has no implemented_as" begin
+    with_mock_backend() do b
+      # Ensure the default slab family has NO mapping for this backend
+      sf_default = default_slab_family()
+      delete!(sf_default.implemented_as, typeof(b))
+
+      sf_new = slab_family(thickness=0.5)
+      @test_throws ErrorException backend_family(b, sf_new)
+    end
+  end
+
+  @testset "based_on chain takes priority over default fallback" begin
+    with_mock_backend() do b
+      # Set up two different layer families
+      lf_parent = layer_family("ParentLayer")
+      lf_default = layer_family("DefaultLayer")
+
+      # Parent family with its own implemented_as
+      sf_parent = slab_family(thickness=0.3)
+      set_backend_family(sf_parent, b, lf_parent)
+
+      # Default family with a different mapping
+      sf_default = default_slab_family()
+      set_backend_family(sf_default, b, lf_default)
+
+      # Child family based_on parent
+      sf_child = slab_family_element(sf_parent, thickness=0.6)
+      bf = backend_family(b, sf_child)
+      # Should resolve via based_on chain to parent, NOT fall back to default
+      @test bf === lf_parent
+    end
+  end
+
   @testset "family_element_element inherits implemented_as" begin
     with_mock_backend() do b
       sf = slab_family()

@@ -343,9 +343,17 @@ Khepri module.
 
 backend_family(b::Backend, family::Family) =
   get(family.implemented_as, typeof(b)) do
-    isnothing(family.based_on) ? # this is not a family_element (nor a derivation of a family_element)
-      error("Family $(family) is missing the implementation for backend $(b)") :
+    if !isnothing(family.based_on)
       backend_family(b, family.based_on)
+    else
+      let default = _default_family_for(typeof(family))
+        if default !== nothing && default !== family
+          backend_family(b, default)
+        else
+          error("Family $(family) is missing the implementation for backend $(b)")
+        end
+      end
+    end
   end
 
 # Backends will install their own families on top of the default families, e.g.,
@@ -370,6 +378,17 @@ export backend_family, set_backend_family
 # so that invalidate_family_refs can clear stale cached refs.
 const _family_defaults = Any[]
 _register_family_default!(p) = push!(_family_defaults, p)
+
+_default_family_for(::Type{T}) where T <: Family =
+  let result = nothing
+    for p in _family_defaults
+      if p isa Parameter{T}
+        result = p()
+        break
+      end
+    end
+    result
+  end
 
 export invalidate_family_refs
 invalidate_family_refs(b::Backend) =
@@ -533,7 +552,10 @@ realize(b::B, w::Wall) where B<:Backend =
   realize(has_boolean_ops(B), b, w)
 
 realize(::HasBooleanOps{true}, b::Backend, w::Wall) =
-    realize_wall_openings(b, w, realize_wall_no_openings(b, w), [w.doors..., w.windows...])
+  let w_ref = ensure_ref(b, realize_wall_no_openings(b, w))
+    ref!(b, w, w_ref)  # Cache wall ref before processing openings so that opening realization can access it
+    realize_wall_openings(b, w, w_ref, [w.doors..., w.windows...])
+  end
 
 realize_wall_no_openings(b::Backend, w::Wall) =
   let w_base_height = w.bottom_level.height,
