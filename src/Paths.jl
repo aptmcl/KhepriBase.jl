@@ -52,6 +52,8 @@ export empty_path,
        subtract_paths,
        path_vertices,
        path_frames,
+       path_interpolated_frames,
+       curve_interpolator,
        mirrored_path,
        mirrored_on_x,
        mirrored_on_y,
@@ -1073,7 +1075,7 @@ Base.reverse(path::Region) =
 
 
 mirrored_path(path::Path, p::Loc, v::Vec) =
-  error("Must be finished: mirrored_path for $(typeof(path))")
+  error("mirrored_path is not yet implemented for $(typeof(path))")
 
 mirrored_on_x(path::OpenPolygonalPath) =
   join_paths(path, open_polygonal_path(reverse(map(p->xyz(p.x, -p.y, -p.z, p.cs), path_vertices(path)))))

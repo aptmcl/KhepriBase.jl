@@ -49,19 +49,25 @@ include("TestMockBackend.jl")
   end
 
   @testset "Material creation" begin
-    @testset "material_in_layer" begin
+    @testset "material from layer" begin
       with_mock_backend() do b
         l = layer("TestLayer")
-        m = material_in_layer(l)
-        @test is_material(m)
+        m = material(l)
+        @test is_layer_material(m)
         @test m.layer === l
       end
     end
 
-    @testset "material with name" begin
+    @testset "material from name (PBR)" begin
+      m = material("TestMaterial")
+      @test is_pbr_material(m)
+      @test pbr_material_name(m) == "TestMaterial"
+    end
+
+    @testset "layer_material from name" begin
       with_mock_backend() do b
-        m = material("TestMaterial")
-        @test is_material(m)
+        m = layer_material("TestMaterial")
+        @test is_layer_material(m)
         @test m.layer.name == "TestMaterial"
       end
     end
@@ -69,7 +75,7 @@ include("TestMockBackend.jl")
 
   @testset "Material accessor functions" begin
     @testset "material_color" begin
-      @testset "StandardMaterial" begin
+      @testset "PbrMaterial" begin
         @test material_color(material_glass) == rgba(0.95, 0.95, 1.0, 0.3)
         @test material_color(material_metal) == rgba(0.8, 0.8, 0.85, 1.0)
       end
@@ -77,14 +83,14 @@ include("TestMockBackend.jl")
       @testset "MaterialInLayer" begin
         with_mock_backend() do b
           l = layer("TestLayer", true, rgba(1, 0, 0, 1))
-          m = material_in_layer(l)
+          m = material(l)
           @test material_color(m) == rgba(1, 0, 0, 1)
         end
       end
     end
 
     @testset "material_name" begin
-      @testset "StandardMaterial" begin
+      @testset "PbrMaterial" begin
         @test material_name(material_glass) == "Glass"
         @test material_name(material_point) == "Points"
       end
@@ -97,78 +103,78 @@ include("TestMockBackend.jl")
       end
     end
 
-    @testset "material_layer" begin
+    @testset "layer(material)" begin
       with_mock_backend() do b
-        @testset "StandardMaterial derives layer from name" begin
-          l = material_layer(material_glass)
+        @testset "PbrMaterial derives layer from name" begin
+          l = layer(material_glass)
           @test is_layer(l)
           @test layer_name(l) == "Glass"
         end
 
         @testset "MaterialInLayer returns its layer" begin
           orig_layer = layer("TestLayer")
-          m = material_in_layer(orig_layer)
-          @test material_layer(m) === orig_layer
+          m = material(orig_layer)
+          @test layer(m) === orig_layer
         end
       end
     end
   end
 
   @testset "Predefined materials" begin
-    # Pre-defined materials are StandardMaterial instances (not MaterialInLayer).
+    # Pre-defined materials are PbrMaterial instances (not MaterialInLayer).
     # They no longer have a layer field; use material_name instead.
     @testset "material_point" begin
-      @test is_standard_material(material_point)
+      @test is_pbr_material(material_point)
       @test material_name(material_point) == "Points"
     end
 
     @testset "material_curve" begin
-      @test is_standard_material(material_curve)
+      @test is_pbr_material(material_curve)
       @test material_name(material_curve) == "Curves"
     end
 
     @testset "material_surface" begin
-      @test is_standard_material(material_surface)
+      @test is_pbr_material(material_surface)
       @test material_name(material_surface) == "Surfaces"
     end
 
     @testset "material_basic" begin
-      @test is_standard_material(material_basic)
+      @test is_pbr_material(material_basic)
       @test material_name(material_basic) == "Basic"
     end
 
     @testset "material_glass" begin
-      @test is_standard_material(material_glass)
+      @test is_pbr_material(material_glass)
       @test material_name(material_glass) == "Glass"
     end
 
     @testset "material_metal" begin
-      @test is_standard_material(material_metal)
+      @test is_pbr_material(material_metal)
       @test material_name(material_metal) == "Metal"
     end
 
     @testset "material_wood" begin
-      @test is_standard_material(material_wood)
+      @test is_pbr_material(material_wood)
       @test material_name(material_wood) == "Wood"
     end
 
     @testset "material_concrete" begin
-      @test is_standard_material(material_concrete)
+      @test is_pbr_material(material_concrete)
       @test material_name(material_concrete) == "Concrete"
     end
 
     @testset "material_plaster" begin
-      @test is_standard_material(material_plaster)
+      @test is_pbr_material(material_plaster)
       @test material_name(material_plaster) == "Plaster"
     end
 
     @testset "material_grass" begin
-      @test is_standard_material(material_grass)
+      @test is_pbr_material(material_grass)
       @test material_name(material_grass) == "Grass"
     end
 
     @testset "material_clay" begin
-      @test is_standard_material(material_clay)
+      @test is_pbr_material(material_clay)
       @test material_name(material_clay) == "Clay"
     end
   end
@@ -206,7 +212,7 @@ include("TestMockBackend.jl")
       m1 = material("Material1")
       m2 = material("Material2")
       merged = merge_materials(m1, m2)
-      @test is_material(merged)
+      @test is_layer_material(merged)
       @test occursin("Material1", material_name(merged))
       @test occursin("Material2", material_name(merged))
     end
@@ -321,7 +327,7 @@ include("TestMockBackend.jl")
 
       @testset "backend override takes precedence over default" begin
         # Create a fresh structural material to avoid mutating the global one
-        m = standard_material(
+        m = material(
           name="TestStruct",
           base_color=rgba(1.0, 1.0, 0.0, 1.0),
           data=BackendParameter(default=backend_default))
@@ -332,41 +338,41 @@ include("TestMockBackend.jl")
     end
   end
 
-  @testset "material_as_layer parameter" begin
-    @test material_as_layer() == false
-    with(material_as_layer, true) do
-      @test material_as_layer() == true
+  @testset "use_layers_for_materials parameter" begin
+    @test use_layers_for_materials() == false
+    with(use_layers_for_materials, true) do
+      @test use_layers_for_materials() == true
     end
-    @test material_as_layer() == false
+    @test use_layers_for_materials() == false
   end
 
-  @testset "standard_material" begin
+  @testset "material" begin
     with_mock_backend() do b
       @testset "creation with defaults" begin
-        sm = standard_material()
+        sm = material()
         @test sm isa Material
-        @test is_standard_material(sm)
-        @test standard_material_name(sm) == "Material"
+        @test is_pbr_material(sm)
+        @test material_name(sm) == "Material"
       end
 
       @testset "creation with custom base_color" begin
-        sm = standard_material(base_color=rgba(1, 0, 0, 1))
-        @test standard_material_base_color(sm) == rgba(1, 0, 0, 1)
+        sm = material(base_color=rgba(1, 0, 0, 1))
+        @test pbr_material_base_color(sm) == rgba(1, 0, 0, 1)
       end
 
-      @testset "standard_material has no layer field" begin
-        sm = standard_material()
-        @test !hasfield(StandardMaterial, :layer)
+      @testset "pbr_material has no layer field" begin
+        sm = material()
+        @test !hasfield(PbrMaterial, :layer)
       end
 
       @testset "assignment to shape" begin
-        sm = standard_material(base_color=rgba(1, 0, 0, 1))
+        sm = material(base_color=rgba(1, 0, 0, 1))
         s = sphere(u0(), 5, material=sm)
         @test s.material === sm
       end
 
       @testset "material_ref returns valid reference" begin
-        sm = standard_material(base_color=rgba(0, 1, 0, 1))
+        sm = material(base_color=rgba(0, 1, 0, 1))
         ref = material_ref(b, sm)
         @test ref isa Integer
         @test ref != 0  # not void_ref
@@ -381,8 +387,8 @@ include("TestMockBackend.jl")
     end
   end
 
-  @testset "set_material with StandardMaterial" begin
-    sm = standard_material(name="TestSetOn", base_color=rgba(1, 0, 0, 1))
+  @testset "set_material with PbrMaterial" begin
+    sm = material(name="TestSetOn", base_color=rgba(1, 0, 0, 1))
     set_material(MockBackend, sm, "SomeBackendRef")
     @test sm.data(MockBackend) == "SomeBackendRef"
   end

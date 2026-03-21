@@ -248,15 +248,7 @@ KhepriBase.b_create_layer_from_ref_value(b::MockBackend, r) = layer("Default")
 KhepriBase.b_get_material(b::MockBackend, spec::Nothing) = 0
 KhepriBase.b_get_material(b::MockBackend, spec) = 0
 KhepriBase.b_get_material(b::MockBackend, ::BackendDefault) = 0
-KhepriBase.b_new_material(b::MockBackend, name, base_color, metallic, specular, roughness,
-                          clearcoat, clearcoat_roughness, ior,
-                          transmission, transmission_roughness,
-                          emission_color, emission_strength,
-                          sheen_color, sheen_roughness,
-                          anisotropy, anisotropy_direction,
-                          ambient_occlusion, normal_map, bent_normal, clearcoat_normal,
-                          post_lighting_color,
-                          absorption, micro_thickness, thickness) =
+KhepriBase.b_material(b::MockBackend, name, base_color) =
   next_ref!(b)
 
 # Create global mock backend instance

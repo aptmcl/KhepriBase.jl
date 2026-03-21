@@ -135,9 +135,9 @@ export rotated_x_cs, rotated_y_cs, rotated_z_cs, rotated_zyx_cs
 
 
 center_scaled_cs(cs::CS, x::Real, y::Real, z::Real) =
-    let xt = cs.transform[4,1]
-        yt = cs.transform[4,2]
-        zt = cs.transform[4,3]
+    let xt = cs.transform[1,4]
+        yt = cs.transform[2,4]
+        zt = cs.transform[3,4]
         translated_cs(
             scaled_cs(
                 translated_cs(cs, -xt, -yt, -zt),
@@ -655,6 +655,7 @@ cs_from_o_rot_zyx(o::Loc, z::Real, y::Real, x::Real) =
 loc_from_o_vx(o::Loc, vx::Vec) = loc_from_o_vx_vy(o, vx, vpol(1, pol_phi(vx) + pi/2))
 loc_from_o_vx_vy(o::Loc, vx::Vec, vy::Vec) = u0(cs_from_o_vx_vy(o, vx, vy))
 loc_from_o_vz(o::Loc, vz::Vec) = u0(cs_from_o_vz(o, vz))
+export loc_from_o_phi
 loc_from_o_phi(o::Loc, ϕ::Real) = u0(cs_from_o_phi(o, ϕ))
 loc_from_o_rot_x(o::Loc, ϕ::Real) = u0(cs_from_o_rot_x(o, ϕ))
 loc_from_o_rot_y(o::Loc, ϕ::Real) = u0(cs_from_o_rot_y(o, ϕ))

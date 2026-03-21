@@ -23,8 +23,8 @@ show(io::IO, b::Backend) = print(io, backend_name(b))
 
 # Backends need to implement operations or an exception is triggered
 struct UnimplementedBackendOperationException <: Exception
-	backend
-	operation
+  backend
+  operation
   args
 end
 showerror(io::IO, e::UnimplementedBackendOperationException) =
@@ -362,7 +362,7 @@ b_quad(b::Backend, p1, p2, p3, p4, mat) =
 b_ngon(b::Backend, ps, pivot, smooth, mat) =
   [(b_trig(b, pivot, ps[i], ps[i+1], mat)
     for i in 1:size(ps,1)-1)...,
-	 b_trig(b, pivot, ps[end], ps[1], mat)]
+   b_trig(b, pivot, ps[end], ps[1], mat)]
 
 b_quad_strip(b::Backend, ps, qs, smooth, mat) =
   vcat([b_quad(b, ps[i], ps[i+1], qs[i+1], qs[i], mat) for i in 1:size(ps,1)-1]...)
@@ -372,9 +372,9 @@ b_quad_strip_closed(b::Backend, ps, qs, smooth, mat) =
 
 b_strip(b::Backend, path1, path2, mat) =
   let v1s = path_vertices(path1),
-	    v2s = path_vertices(path2)
+      v2s = path_vertices(path2)
     length(v1s) != length(v2s) ?
-  	  error("Paths with different resolution ($(length(v1s)) vs $(length(v2s)))") :
+      error("Paths with different resolution ($(length(v1s)) vs $(length(v2s)))") :
       is_closed_path(path1) && is_closed_path(path2) ?
         b_quad_strip_closed(
           b, v1s, v2s, is_smooth_path(path1) || is_smooth_path(path2), mat) :
@@ -391,8 +391,8 @@ b_strip(b::Backend, path1::Region, path2::Region, mat) =
 # Second tier: surfaces
 export b_surface_polygon, b_surface_polygon_with_holes,
        b_surface_regular_polygon, b_surface_rectangle,
-	     b_surface_circle, b_surface_ring, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
-	     b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
+       b_surface_circle, b_surface_ring, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
+       b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
 
 # Ear clipping triangulation for simple (possibly concave) polygons.
 # Takes a vector of 3D coordinates (anything indexable with [1],[2],[3])
@@ -526,11 +526,11 @@ to be smooth in both u,v dimensions. We opt to be smooth in just the v dimension
 b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, mat) =
   let ptss = maybe_interpolate_grid(ptss, smooth_u, smooth_v),
       (nu, nv) = size(ptss)
-	  closed_v ?
+    closed_v ?
       vcat([b_quad_strip_closed(b, ptss[i,:], ptss[i+1,:], smooth_v, mat) for i in 1:nu-1]...,
-	         (closed_u ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_v, mat)] : new_refs(b))...) :
-	    vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_v, mat) for i in 1:nu-1]...,
-	         (closed_u ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_v, mat)] : new_refs(b))...)
+           (closed_u ? [b_quad_strip_closed(b, ptss[end,:], ptss[1,:], smooth_v, mat)] : new_refs(b))...) :
+      vcat([b_quad_strip(b, ptss[i,:], ptss[i+1,:], smooth_v, mat) for i in 1:nu-1]...,
+           (closed_u ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_v, mat)] : new_refs(b))...)
   end
 
 export maybe_interpolate_grid
@@ -539,7 +539,7 @@ maybe_interpolate_grid(ptss, smooth_u, smooth_v) =
     let interpolator = grid_interpolator(ptss),
         (nu, nv) = size(ptss)
       [location_at(interpolator, u, v)
-	     for u in division(0, 1, smooth_u ? 4*nu-7 : nu-1),
+       for u in division(0, 1, smooth_u ? 4*nu-7 : nu-1),
            v in division(0, 1, smooth_v ? 4*nv-7 : nv-1)] # 2->1, 3->5, 4->9, 5->13
     end :
     ptss
@@ -549,12 +549,12 @@ b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
 
 b_surface_mesh(b::Backend, vertices, faces, mat) =
   map(faces) do face
-	  if length(face) == 3
-	    b_trig(b, vertices[face]..., mat)
-    	elseif length(face) == 4
-    	  b_quad(b, vertices[face]..., mat)
+    if length(face) == 3
+      b_trig(b, vertices[face]..., mat)
+      elseif length(face) == 4
+        b_quad(b, vertices[face]..., mat)
       else
-	    b_surface_polygon(b, vertices[face], mat)
+      b_surface_polygon(b, vertices[face], mat)
       end
     end
 
@@ -587,14 +587,14 @@ proper solid.
 
 export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
        b_generic_pyramid_frustum_with_holes, b_generic_prism_with_holes,
-  	   b_pyramid_frustum, b_pyramid, b_prism,
-  	   b_regular_pyramid_frustum, b_regular_pyramid, b_regular_prism,
-  	   b_cylinder,
-  	   b_cuboid,
-  	   b_box,
-  	   b_sphere,
-  	   b_cone_frustum, b_cone,
-  	   b_torus,
+       b_pyramid_frustum, b_pyramid, b_prism,
+       b_regular_pyramid_frustum, b_regular_pyramid, b_regular_prism,
+       b_cylinder,
+       b_cuboid,
+       b_box,
+       b_sphere,
+       b_cone_frustum, b_cone,
+       b_torus,
        b_solidify
 
 b_solidify(b::Backend, refs) = refs
@@ -617,7 +617,7 @@ b_generic_pyramid_frustum_with_holes(b::Backend, bs, ts, smooth, bbs, tts, smoot
 b_generic_pyramid(b::Backend, bs, t, smooth, bmat, smat) =
   b_solidify(b,
     vcat(b_surface_polygon(b, reverse(bs), bmat),
-	       b_ngon(b, bs, t, smooth, smat)))
+         b_ngon(b, bs, t, smooth, smat)))
 
 b_generic_prism(b::Backend, bs, smooth, v, bmat, tmat, smat) =
   b_generic_pyramid_frustum(b, bs, translate(bs, v), smooth, bmat, tmat, smat)
@@ -631,17 +631,17 @@ b_pyramid_frustum(b::Backend, bs, ts, bmat, tmat, smat) =
   b_generic_pyramid_frustum(b, bs, ts, false, bmat, tmat, smat)
 
 b_pyramid(b::Backend, bs, t, mat) =
-	b_pyramid(b, bs, t, mat, mat)
+  b_pyramid(b, bs, t, mat, mat)
 b_pyramid(b::Backend, bs, t, bmat, smat) =
   b_generic_pyramid(b, bs, t, false, bmat, smat)
 
 b_prism(b::Backend, bs, v, mat) =
-	b_prism(b, bs, v, mat, mat, mat)
+  b_prism(b, bs, v, mat, mat, mat)
 b_prism(b::Backend, bs, v, bmat, tmat, smat) =
   b_pyramid_frustum(b, bs, translate(bs, v), bmat, tmat, smat)
 
 b_regular_pyramid_frustum(b::Backend, edges, cb, rb, angle, h, rt, inscribed, mat) =
-	b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rt, inscribed, mat, mat, mat)
+  b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rt, inscribed, mat, mat, mat)
 b_regular_pyramid_frustum(b::Backend, edges, cb, rb, angle, h, rt, inscribed, bmat, tmat, smat) =
   b_pyramid_frustum(
     b,
@@ -650,28 +650,28 @@ b_regular_pyramid_frustum(b::Backend, edges, cb, rb, angle, h, rt, inscribed, bm
     bmat, tmat, smat)
 
 b_regular_pyramid(b::Backend, edges, cb, rb, angle, h, inscribed, mat) =
-	b_regular_pyramid(b, edges, cb, rb, angle, h, inscribed, mat, mat)
+  b_regular_pyramid(b, edges, cb, rb, angle, h, inscribed, mat, mat)
 b_regular_pyramid(b::Backend, edges, cb, rb, angle, h, inscribed, bmat, smat) =
   b_pyramid(
-  	b,
-  	regular_polygon_vertices(edges, cb, rb, angle, inscribed),
-  	add_z(cb, h),
-  	bmat, smat)
+    b,
+    regular_polygon_vertices(edges, cb, rb, angle, inscribed),
+    add_z(cb, h),
+    bmat, smat)
 
 b_regular_prism(b::Backend, edges, cb, rb, angle, h, inscribed, mat) =
-	b_regular_prism(b, edges, cb, rb, angle, h, inscribed, mat, mat, mat)
+  b_regular_prism(b, edges, cb, rb, angle, h, inscribed, mat, mat, mat)
 b_regular_prism(b::Backend, edges, cb, rb, angle, h, inscribed, bmat, tmat, smat) =
-	b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rb, inscribed, bmat, tmat, smat)
+  b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rb, inscribed, bmat, tmat, smat)
 
 b_cylinder(b::Backend, cb, r, h, mat) =
-	b_cylinder(b, cb, r, h, mat, mat, mat)
+  b_cylinder(b, cb, r, h, mat, mat, mat)
 b_cylinder(b::Backend, cb, r, h, bmat, tmat, smat) =
   b_generic_prism(
-  	b,
-  	regular_polygon_vertices(32, cb, r, 0, true),
-  	true,
+    b,
+    regular_polygon_vertices(32, cb, r, 0, true),
+    true,
     vz(h, cb.cs),
-  	bmat, tmat, smat)
+    bmat, tmat, smat)
 
 b_cuboid(b::Backend, pb0, pb1, pb2, pb3, pt0, pt1, pt2, pt3, mat) =
   b_solidify(b,
@@ -695,43 +695,43 @@ b_sphere(b::Backend, c, r, mat) =
   let ϕs = division(0, 2π, 32, false)
     b_solidify(b,
       [b_ngon(b, [add_sph(c, r, ϕ, π/16) for ϕ in ϕs], add_sph(c, r, 0, 0), true, mat),
-    	 [b_quad_strip_closed(b,
-    			[add_sph(c, r, ϕ, ψ+π/16) for ϕ in ϕs],
-    			[add_sph(c, r, ϕ, ψ) for ϕ in ϕs],
-    			true, mat) for ψ in π/16:π/16:π-π/16]...,
-    	 b_ngon(b, reverse!([add_sph(c, r, ϕ, π-π/16) for ϕ in ϕs]), add_sph(c, r, 0, π), true, mat)])
-	end
+       [b_quad_strip_closed(b,
+          [add_sph(c, r, ϕ, ψ+π/16) for ϕ in ϕs],
+          [add_sph(c, r, ϕ, ψ) for ϕ in ϕs],
+          true, mat) for ψ in π/16:π/16:π-π/16]...,
+       b_ngon(b, reverse!([add_sph(c, r, ϕ, π-π/16) for ϕ in ϕs]), add_sph(c, r, 0, π), true, mat)])
+  end
 
 b_cone(b::Backend, cb, r, h, mat) =
   b_cone(b, cb, r, h, mat, mat)
 
 b_cone(b::Backend, cb, r, h, bmat, smat) =
   b_generic_pyramid(
-	b,
-	regular_polygon_vertices(32, cb, r, 0, true),
-	add_z(cb, h),
-	true,
-	bmat, smat)
+  b,
+  regular_polygon_vertices(32, cb, r, 0, true),
+  add_z(cb, h),
+  true,
+  bmat, smat)
 
 b_cone_frustum(b::Backend, cb, rb, h, rt, mat) =
-	b_cone_frustum(b, cb, rb, h, rt, mat, mat, mat)
+  b_cone_frustum(b, cb, rb, h, rt, mat, mat, mat)
 
 b_cone_frustum(b::Backend, cb, rb, h, rt, bmat, tmat, smat) =
   b_generic_pyramid_frustum(
-  	b,
-  	regular_polygon_vertices(32, cb, rb, 0, true),
-  	regular_polygon_vertices(32, add_z(cb, h), rt, 0, true),
-	  true,
-  	bmat, tmat, smat)
+    b,
+    regular_polygon_vertices(32, cb, rb, 0, true),
+    regular_polygon_vertices(32, add_z(cb, h), rt, 0, true),
+    true,
+    bmat, tmat, smat)
 
 b_torus(b::Backend, c, ra, rb, mat) =
   b_surface_grid(
     b,
-  	[add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
-  	 for ψ in division(0, 2π, 32, false), ϕ in division(0, 2π, 64, false)],
+    [add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
+     for ψ in division(0, 2π, 32, false), ϕ in division(0, 2π, 64, false)],
       true, true,
-    	true, true,
-    	mat)
+      true, true,
+      mat)
 
 export b_mesh_obj_fmt
 @bdef(b_mesh_obj_fmt(obj_name, transform))
@@ -759,17 +759,17 @@ b_surface(b::Backend, frontier::Shapes, mat) =
 # In theory, this should be implemented using a loft
 b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
   let blength = path_length(bpath),
-	  tlength = path_length(tpath),
-	  n = max(length(path_vertices(bpath)), length(path_vertices(bpath))),
-	  bs = division(bpath, n),
-	  ts = division(tpath, n)
-	  # We should rotate one of the vertices array to minimize the distance
-	  # between corresponding so that they align better.
-	b_generic_pyramid_frustum(
-	  b, bs, ts,
-	  is_smooth_path(bpath) || is_smooth_path(tpath),
-	  bmat, tmat, smat)
-	end
+    tlength = path_length(tpath),
+    n = max(length(path_vertices(bpath)), length(path_vertices(bpath))),
+    bs = division(bpath, n),
+    ts = division(tpath, n)
+    # We should rotate one of the vertices array to minimize the distance
+    # between corresponding so that they align better.
+  b_generic_pyramid_frustum(
+    b, bs, ts,
+    is_smooth_path(bpath) || is_smooth_path(tpath),
+    bmat, tmat, smat)
+  end
 
 # Extrusions, lofts, sweeps, etc
 export b_extruded_point, b_extruded_curve, b_extruded_surface, b_sweep, b_loft
@@ -783,41 +783,26 @@ b_extruded_point(b::Backend, path, v, cb, mat) =
 @bdef(b_extruded_curve(path, v, cb, mat))
 
 b_extruded_curve(b::Backend, path::OpenPolygonalPath, v, cb, mat) =
- 	let bs = path_vertices_on(path, cb),
-	  	ts = translate(bs, v)
-  	b_quad_strip(b, bs, ts, is_smooth_path(path), mat)
+  let bs = path_vertices_on(path, cb),
+      ts = translate(bs, v)
+    b_quad_strip(b, bs, ts, is_smooth_path(path), mat)
   end
 
 b_extruded_curve(b::Backend, path::ClosedPolygonalPath, v, cb, mat) =
   b_extruded_curve(b, convert(OpenPolygonalPath, path), v, cb, mat)
 
-#=
-b_extrusion(b::Backend, path, v, cb, bmat, tmat, smat) =
-  b_generic_prism(
-    b,
-    path_vertices_on(path, cb),
-    is_smooth_path(path),
-    v,
-    bmat, tmat, smat)
-=#
-
 b_extruded_curve(b::Backend, profile::CircularPath, v, cb, mat) =
   v.cs === cb.cs && iszero(v.x) && iszero(v.y) ?
     # HACK: This is wrong. It should be an open cylinder
-  	b_cylinder(b, add_xy(cb, profile.center.x, profile.center.y), profile.radius, v.z, nothing, nothing, mat) :
-	b_generic_prism(b,
-	  path_vertices_on(profile, cb),
-	  is_smooth_path(profile),
-	  v,
-	  nothing, nothing, mat)
+    b_cylinder(b, add_xy(cb, profile.center.x, profile.center.y), profile.radius, v.z, nothing, nothing, mat) :
+  b_generic_prism(b,
+    path_vertices_on(profile, cb),
+    is_smooth_path(profile),
+    v,
+    nothing, nothing, mat)
 
 b_extruded_surface(b::Backend, profile, v, cb, mat) =
   b_extruded_surface(b, profile, v, cb, mat, mat, mat)
-
-#=
-b_extruded_surface(b::Backend, path::Path, v, cb, bmat, tmat, smat) =
-  b_extruded_surface(b, region(path), v, cb, bmat, tmat, smat)
-=#
 
 b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
   let outer = outer_path(profile),
@@ -827,40 +812,16 @@ b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
          b_surface(b, path_on(profile, cb), bmat),
          b_surface(b, translate(path_on(profile, cb), v), tmat))
   end
-    #=
-      isempty(inners) ?
-      b_generic_prism(
-        b,
-        path_vertices_on(outer, cb),
-        is_smooth_path(outer),
-        v,
-        bmat, tmat, smat) :
-      b_generic_prism_with_holes(b,
-        path_vertices_on(outer, cb),
-        is_smooth_path(outer),
-        path_vertices_on.(inners, cb),
-        is_smooth_path.(inners),
-        v,
-        bmat, tmat, smat)
-  end
-=#
 b_extruded_curve(b::Backend, profile::PathSequence, v, cb, mat) =
   vcat([b_extruded_curve(b, subprofile, v, cb, mat) for subprofile in profile.paths]...)
 b_extruded_curve(b::Backend, profile::Path, v, cb, mat) =
   b_extruded_curve(b, convert(OpenPolygonalPath, profile), v, cb, mat)
 
-#=
-b_extruded_curve(b::Backend, profile::Shape1D, v, cb, mat) =
-  b_extruded_curve(b, convert(Path, profile), v, cb, mat)
-b_extruded_surface(b::Backend, profile::Shape2D, v, cb, mat) =
-  b_extruded_surface(b, convert(Region, profile), v, cb, mat)
-=#
-
 b_loft(b::Backend, profiles, closed, smooth, mat) =
   let ptss = path_vertices.(profiles),
-	  n = mapreduce(length, max, ptss),
-	  vss = map(profile->map_division(identity, profile, n), profiles)
-	b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
+    n = mapreduce(length, max, ptss),
+    vss = map(profile->map_division(identity, profile, n), profiles)
+  b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
   end
 
 
@@ -897,21 +858,21 @@ b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
                 end,
       profiles = map_division(s->scale(profile, s, u0()), 1, scaling, length(frames)-1),
       verticess = map(path_vertices, profiles),
-	    verticess = is_smooth_path(profile) ?
-	  	  let n = mapreduce(length, max, verticess)-1
-		      map(path->map_division(identity, path, n), profiles)
-	      end :
-	      verticess,
-   	  points = hcat(map(on_cs, verticess, frames)...)
+      verticess = is_smooth_path(profile) ?
+        let n = mapreduce(length, max, verticess)-1
+          map(path->map_division(identity, path, n), profiles)
+        end :
+        verticess,
+      points = hcat(map(on_cs, verticess, frames)...)
     #[b_sphere(b, p, 0.01, mat) for p in points]
     b_surface_grid(
       b,
       points,
-  	  is_closed_path(profile),
+      is_closed_path(profile),
       is_closed_path(path),
-  	  is_smooth_path(profile),
+      is_smooth_path(profile),
       is_smooth_path(path),
-	    mat)
+      mat)
   end
 
 b_revolved_point(b::Backend, profile, p, n, start_angle, amplitude, mat) =
@@ -1025,27 +986,6 @@ b_slice_ref(b::Backend, r, p, v) =
 # Stroke and fill operations over paths
 # This is specially useful for debuging
 
-#=
-backend_stroke_op(b::Backend, op::MoveToOp, start::Loc, curr::Loc, refs) =
-    (op.loc, op.loc, refs)
-backend_stroke_op(b::Backend, op::MoveOp, start::Loc, curr::Loc, refs) =
-    (start, curr + op.vec, refs)
-backend_stroke_op(b::Backend, op::LineToOp, start::Loc, curr::Loc, refs) =
-    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, op.loc])))
-backend_stroke_op(b::Backend, op::LineXThenYOp, start::Loc, curr::Loc, refs) =
-    (start,
-     start + op.vec,
-     push!(refs, backend_stroke_line(b, [curr, curr + vec_in(op.vec, curr.cs).x, curr + op.vec])))
-backend_stroke_op(b::Backend, op::LineYThenXOp, start::Loc, curr::Loc, refs) =
-    (start,
-     start + op.vec,
-     push!(refs, backend_stroke_line(b, [curr, curr + vec_in(op.vec, curr.cs).y, curr + op.vec])))
-backend_stroke_op(b::Backend, op::LineToXThenToYOp, start::Loc, curr::Loc, refs) =
-    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, xy(curr.x, loc_in(op.loc, curr.cs).x, curr.cs), op.loc])))
-backend_stroke_op(b::Backend, op::LineToYThenToXOp, start::Loc, curr::Loc, refs) =
-    (start, op.loc, push!(refs, backend_stroke_line(b, [curr, xy(curr.x, loc_in(op.loc, curr.cs).y, curr.cs), op.loc])))
-=#
-
 b_stroke(b::Backend, path::CircularPath, mat) =
   b_circle(b, path.center, path.radius, mat)
 b_stroke(b::Backend, path::RectangularPath, mat) =
@@ -1108,15 +1048,15 @@ export b_dimension, b_ext_line, b_dim_line, b_text, b_text_size, b_arc_dimension
 
 b_dimension(b::Backend, p, q, str, size, offset, mat) =
   let qp = in_world(q - p),
-	    phi = pol_phi(qp),
-	    outside = pi/2 <= phi <= 3pi/2,
-	    v = vpol(outside ? size : 2*size, phi-pi/2),
-	    uv = unitized(v),
-	    (si, se) = (offset*size, 2*offset*size),
-	    (vi, ve) = (uv*si, uv*se),
-	    (tp, tq, tv) = outside ? (q, p, vpol(1, phi + pi)) : (p, q, vpol(1, phi))
-	  offset == 0 ?
-	    b_dim_line(b, tp, tq, tv, str, size, outside, mat) :
+      phi = pol_phi(qp),
+      outside = pi/2 <= phi <= 3pi/2,
+      v = vpol(outside ? size : 2*size, phi-pi/2),
+      uv = unitized(v),
+      (si, se) = (offset*size, 2*offset*size),
+      (vi, ve) = (uv*si, uv*se),
+      (tp, tq, tv) = outside ? (q, p, vpol(1, phi + pi)) : (p, q, vpol(1, phi))
+    offset == 0 ?
+      b_dim_line(b, tp, tq, tv, str, size, outside, mat) :
       [b_ext_line(b, p + vi, p + v + ve, mat),
        b_ext_line(b, q + vi, q + v + ve, mat),
        b_dim_line(b, tp + v, tq + v, tv, str, size, outside, mat)]
@@ -1125,13 +1065,13 @@ b_ext_line(b::Backend, p, q, mat) =
   b_line(b, [p, q], mat)
 b_dim_line(b::Backend, p, q, tv, str, size, outside, mat) =
   let (minx, maxx, miny, maxy) = b_text_size(b, str, size, mat),
-	  tp = p + tv*((distance(p, q)-(maxx-minx))/2)
+    tp = p + tv*((distance(p, q)-(maxx-minx))/2)
     [b_line(b, [p, q], mat),
      b_text(b, str, add_y(loc_from_o_vx(tp, tv), size*0.1-miny), size, mat)]
   end
 
 b_arc_dimension(b::Backend, c, r, α, Δα, rstr, dstr, size, offset, mat) =
-  error("To be finished")
+  missing_specialization(b, :b_arc_dimension, c, r, α, Δα, rstr, dstr, size, offset, mat)
 
 ##################################################################
 # Text
@@ -1236,32 +1176,32 @@ const letter_glyph = Dict(
 
 b_text(b::Backend, str, p, size, mat) =
   let dx = 0,
-	  inter_letter_spacing_factor = 1/3,
-	  refs = new_refs(b)
+    inter_letter_spacing_factor = 1/3,
+    refs = new_refs(b)
     for c in str
-  	  let glyph = letter_glyph[c]
-  	    for vs in glyph.vss
-  	  	  push!(refs, b_line(b, [add_xy(p, dx + v[1]*size, v[2]*size) for v in vs], mat))
-  	    end
-  	    dx += (glyph.bb[2][1]-glyph.bb[1][1] + inter_letter_spacing_factor)*size
-  	  end
+      let glyph = letter_glyph[c]
+        for vs in glyph.vss
+          push!(refs, b_line(b, [add_xy(p, dx + v[1]*size, v[2]*size) for v in vs], mat))
+        end
+        dx += (glyph.bb[2][1]-glyph.bb[1][1] + inter_letter_spacing_factor)*size
+      end
     end
-	  refs
+    refs
   end
 
 b_text_size(b::Backend, str, size, mat) =
   let dx = 0, minx = 0, maxx = 0, miny = 0, maxy = 0,
-	  inter_letter_spacing_factor = 1/3
+    inter_letter_spacing_factor = 1/3
     for c in str
-  	  let glyph = letter_glyph[c]
-		minx = min(minx, dx + glyph.bb[1][1])
-		maxx = max(maxx, dx + glyph.bb[2][1]-glyph.bb[1][1])
-  	    dx += glyph.bb[2][1]-glyph.bb[1][1] + inter_letter_spacing_factor
-		miny = min(miny, glyph.bb[1][2])
-		maxy = max(maxy, glyph.bb[2][2])
-  	  end
+      let glyph = letter_glyph[c]
+    minx = min(minx, dx + glyph.bb[1][1])
+    maxx = max(maxx, dx + glyph.bb[2][1]-glyph.bb[1][1])
+        dx += glyph.bb[2][1]-glyph.bb[1][1] + inter_letter_spacing_factor
+    miny = min(miny, glyph.bb[1][2])
+    maxy = max(maxy, glyph.bb[2][2])
+      end
     end
-	(minx, maxx, miny, maxy).*size
+  (minx, maxx, miny, maxy).*size
   end
 
 ##################################################################
@@ -1313,19 +1253,57 @@ convert the generic material parameters into specific model parameters.
 
 =#
 
-@bdef b_new_material(name, base_color, metallic, specular, roughness,
-	           	       clearcoat, clearcoat_roughness, ior,
-                     transmission, transmission_roughness,
-	           	       emission_color, emission_strength,
-                     sheen_color, sheen_roughness,
-                     anisotropy, anisotropy_direction,
-                     ambient_occlusion, normal_map, bent_normal, clearcoat_normal,
-                     post_lighting_color,
-                     absorption, micro_thickness, thickness)
-@bdef b_plastic_material(name, color, roughness)
-@bdef b_metal_material(name, color, roughness, ior)
-@bdef b_glass_material(name, color, roughness, ior)
-@bdef b_mirror_material(name, color)
+# Material cascade: each tier strips parameters and calls the next tier down.
+# Backends override at the tier matching their capabilities.
+
+export b_material
+
+# Tier 1 — Color only
+b_material(b::Backend, name, base_color) =
+  void_ref(b)
+
+# Tier 2 — Basic PBR
+b_material(b::Backend, name, base_color, metallic, roughness, specular) =
+  b_material(b, name, base_color)
+
+# Tier 3 — Standard PBR (transparency + coating + emission)
+b_material(b::Backend, name, base_color, metallic, roughness, specular,
+           ior, transmission, transmission_roughness,
+           clearcoat, clearcoat_roughness,
+           emission_color, emission_strength) =
+  b_material(b, name, base_color, metallic, roughness, specular)
+
+# Tier 4 — Full PBR (all Filament parameters)
+b_material(b::Backend, name, base_color, metallic, roughness, specular,
+           ior, transmission, transmission_roughness,
+           clearcoat, clearcoat_roughness,
+           emission_color, emission_strength,
+           sheen_color, sheen_roughness,
+           anisotropy, anisotropy_direction,
+           ambient_occlusion, normal_map, bent_normal, clearcoat_normal,
+           post_lighting_color,
+           absorption, micro_thickness, thickness) =
+  b_material(b, name, base_color, metallic, roughness, specular,
+             ior, transmission, transmission_roughness,
+             clearcoat, clearcoat_roughness,
+             emission_color, emission_strength)
+
+# Specialized material constructors — default to b_material with appropriate PBR values
+export b_plastic_material, b_metal_material, b_glass_material, b_mirror_material
+
+b_plastic_material(b::Backend, name, color, roughness) =
+  b_material(b, name, color, 0.0, roughness, 0.5)
+
+b_metal_material(b::Backend, name, color, roughness, ior) =
+  b_material(b, name, color, 1.0, roughness, 0.9)
+
+b_glass_material(b::Backend, name, color, roughness, ior) =
+  b_material(b, name, color, 0.0, roughness, 0.5,
+             ior, 0.8, roughness, 0.0, 0.0,
+             rgba(0, 0, 0, 0), 0.0)
+
+b_mirror_material(b::Backend, name, color) =
+  b_material(b, name, color, 1.0, 0.0, 1.0)
 
 #=
 Backends might store shapes locally (in b.refs.shapes) or remotely
@@ -1595,9 +1573,9 @@ b_stair_landing(b::Backend, region, level, family) =
 
 # b_panel(b::Backend, region, family) =
 #   let th = family.thickness,
-# 	    v = planar_path_normal(region),
-#   	  left = translate(region, v*-th),
-#   	  right = translate(region, v*th)
+#       v = planar_path_normal(region),
+#       left = translate(region, v*-th),
+#       right = translate(region, v*th)
 #     [materialize_path(b, right, family.right_material),
 #      materialize_path(b, left, right, family.side_material)...,
 #      materialize_path(b, reverse(left), family.left_material)]
@@ -1613,10 +1591,10 @@ b_panel(b::Backend, profile, family) =
 
 b_beam(b::Backend, c, h, angle, family) =
   let c = loc_from_o_phi(c, angle),
-	    mat = material_ref(b, family.material)
-  	with_material_as_layer(b, family.material) do
-      b_extruded_surface(b, region(family_profile(b, family)), vz(h, c.cs), c,	mat, mat, mat)
-	  end
+      mat = material_ref(b, family.material)
+    with_material_as_layer(b, family.material) do
+      b_extruded_surface(b, region(family_profile(b, family)), vz(h, c.cs), c,  mat, mat, mat)
+    end
   end
 
 b_column(b::Backend, cb, angle, bottom_level, top_level, family) =
@@ -1994,7 +1972,7 @@ b_closet(b::Backend, c, host, family) =
 ##  has no native OBJ import).
 ## ─────────────────────────────────────────────────────────────────────
 
-export obj_file_path, read_obj_mesh
+export obj_file_path, read_obj_mesh, transform_obj_vertices
 
 #=
   obj_file_path(obj_name)
@@ -2072,7 +2050,7 @@ export b_truss_node, b_truss_node_support, b_truss_bar
 
 b_truss_node(b::Backend, p, family) =
   with_material_as_layer(b, family.material) do
-  	b_sphere(b, p, family.radius, material_ref(b, family.material))
+    b_sphere(b, p, family.radius, material_ref(b, family.material))
   end
 
 b_truss_node_support(b::Backend, cb, family) =
@@ -2197,10 +2175,10 @@ purge_backends() =
 # where there is no backend-specific value available
 export BackendParameter
 struct BackendParameter
-	value::IdDict{Type{<:Backend}, Any}
-	default::Any
-	BackendParameter(ps...; default=nothing) = new(IdDict{Type{<:Backend}, Any}(ps...), default)
-	BackendParameter(p::BackendParameter) = new(copy(p.value), p.default)
+  value::IdDict{Type{<:Backend}, Any}
+  default::Any
+  BackendParameter(ps...; default=nothing) = new(IdDict{Type{<:Backend}, Any}(ps...), default)
+  BackendParameter(p::BackendParameter) = new(copy(p.value), p.default)
 end
 
 (p::BackendParameter)(b::Backend=top_backend()) = error("Don't do this") #get(p.value, b, nothing)
@@ -2215,8 +2193,8 @@ Base.copy(p::BackendParameter) = BackendParameter(p)
 export @backend
 macro backend(b, expr)
   quote
-	with(current_backends, ($(esc(b)),)) do
-	  $(esc(expr))
+  with(current_backends, ($(esc(b)),)) do
+    $(esc(expr))
     end
   end
 end
@@ -2224,8 +2202,8 @@ end
 export @backends
 macro backends(b, expr)
   quote
-	with(current_backends, $(esc(b))) do
-	  $(esc(expr))
+  with(current_backends, $(esc(b))) do
+    $(esc(expr))
     end
   end
 end
@@ -2242,20 +2220,6 @@ end
 # delete_all_shapes(backend::Backend) = throw(UndefinedBackendException())
 # Hopefully, backends will specialize the function for each specific backend
 
-#macro defop(name_params)
-#    name, params = name_params.args[1], name_params.args[2:end]
-#    quote
-#        export $(esc(name))
-#        $(esc(name))($(map(esc,params)...), backend::Backend=top_backend()) =
-#          throw(UndefinedBackendException())
-#    end
-#end
-#=
-@macroexpand @bdef(stroke(path::Path))
-@macroexpand @bcall(Base.backend, stroke(Main.my_path))
-@macroexpand @bscall(Base.backends, stroke(Main.my_path))
-@macroexpand @cbscall(stroke(path))
-=#
 
 #=
 
@@ -2276,14 +2240,14 @@ also be used without materials or classification.
 export b_table
 b_table(b::Backend, p, length, width, height, top_thickness, leg_thickness, mat) =
   let dx = length/2,
-	  dy = width/2,
-	  leg_x = dx - leg_thickness/2,
-	  leg_y = dy - leg_thickness/2,
-	  c = add_xy(p, -dx, -dy),
-	  table_top = b_box(b, add_z(c, height - top_thickness), length, width, top_thickness, mat),
-	  pts = add_xy.(add_xy.(p, [+leg_x, +leg_x, -leg_x, -leg_x], [-leg_y, +leg_y, +leg_y, -leg_y]), -leg_thickness/2, -leg_thickness/2),
-	  legs = [b_box(b, pt, leg_thickness, leg_thickness, height - top_thickness, mat) for pt in pts]
-	[table_top, legs]
+    dy = width/2,
+    leg_x = dx - leg_thickness/2,
+    leg_y = dy - leg_thickness/2,
+    c = add_xy(p, -dx, -dy),
+    table_top = b_box(b, add_z(c, height - top_thickness), length, width, top_thickness, mat),
+    pts = add_xy.(add_xy.(p, [+leg_x, +leg_x, -leg_x, -leg_x], [-leg_y, +leg_y, +leg_y, -leg_y]), -leg_thickness/2, -leg_thickness/2),
+    legs = [b_box(b, pt, leg_thickness, leg_thickness, height - top_thickness, mat) for pt in pts]
+  [table_top, legs]
   end
 
 export b_chair
@@ -2414,18 +2378,6 @@ b_render_view(b::Backend, name) =
     b_render_and_save_view(b, path)
   end
 
-#=
-prepare_for_saving_file(path::String) =
-  let p = normpath(path)
-    mkpath(dirname(p))
-    rm(p, force=true)
-    isfile(p) ? # rm failed because file is locked
-      let (base, ext) = splitext(path)
-        prepare_for_saving_file(base*"_"*ext)
-      end :
-      p
-  end
-=#
 prepare_for_saving_file(path::String) =
   let p = normpath(path)
     mkpath(dirname(p))
@@ -2592,8 +2544,8 @@ b_set_view(::FrontendView, b, camera, target, lens, aperture) =
     b.view.camera = camera
     b.view.target = target
     b.view.lens = lens
-	  b.view.aperture = aperture
-	  b.view.is_top_view = norm(cross(target - camera, vz(1, world_cs))) < 1e-9  # aligned with Z?
+    b.view.aperture = aperture
+    b.view.is_top_view = norm(cross(target - camera, vz(1, world_cs))) < 1e-9  # aligned with Z?
   end
 
 b_set_view_top(::FrontendView, b) =
@@ -2601,7 +2553,7 @@ b_set_view_top(::FrontendView, b) =
     b.view.camera = z(1000)
     b.view.target = z(0)
     b.view.lens = 1000
-	  b.view.is_top_view = true
+    b.view.is_top_view = true
   end
 
 # For legacy reasons, we only return camera, target, and lens.

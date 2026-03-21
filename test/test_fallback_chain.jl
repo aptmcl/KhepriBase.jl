@@ -14,7 +14,7 @@ import KhepriBase: Backend, void_ref, new_refs, backend_name,
   b_delete_ref, b_delete_refs, b_delete_all_shape_refs,
   b_layer, b_current_layer_ref, b_delete_all_shapes_in_layer,
   b_create_layer_from_ref_value,
-  b_get_material, b_new_material
+  b_get_material, b_material
 
 # Minimal backend key
 struct MinTriKey end
@@ -69,15 +69,7 @@ KhepriBase.b_create_layer_from_ref_value(b::MinimalTriangleBackend, r) = layer("
 KhepriBase.b_get_material(b::MinimalTriangleBackend, spec::Nothing) = 0
 KhepriBase.b_get_material(b::MinimalTriangleBackend, spec) = 0
 KhepriBase.b_get_material(b::MinimalTriangleBackend, ::BackendDefault) = 0
-KhepriBase.b_new_material(b::MinimalTriangleBackend, name, base_color, metallic, specular,
-                           roughness, clearcoat, clearcoat_roughness, ior,
-                           transmission, transmission_roughness,
-                           emission_color, emission_strength,
-                           sheen_color, sheen_roughness,
-                           anisotropy, anisotropy_direction,
-                           ambient_occlusion, normal_map, bent_normal, clearcoat_normal,
-                           post_lighting_color,
-                           absorption, micro_thickness, thickness) =
+KhepriBase.b_material(b::MinimalTriangleBackend, name, base_color) =
   next_ref!(b)
 
 function reset!(b::MinimalTriangleBackend)

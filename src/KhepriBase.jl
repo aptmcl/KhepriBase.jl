@@ -90,6 +90,7 @@ include("Materials.jl")
 include("Primitives.jl")
 include("Camera.jl")
 include("Simulation.jl")
+include("PluginManagement.jl")
 
 export khepribase_interface_file
 khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")

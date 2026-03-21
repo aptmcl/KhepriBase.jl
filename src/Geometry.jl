@@ -210,6 +210,7 @@ circle_from_three_points(p0::Loc, p1::Loc, p2::Loc) =
   end
 
 
+export collinearity_tolerance
 const collinearity_tolerance = Parameter(1e-2)
 # are the three points sufficiently collinear?
 collinear_points(p0, pm, p1, epsilon=collinearity_tolerance()) =

@@ -270,7 +270,7 @@ Backends must handle material references.  The key functions:
 | `b_current_layer_ref(b)` | Get the current layer reference. Default: reads `b.current_layer`. |
 | `b_current_layer_ref(b, layer)` | Set the current layer reference. Default: sets `b.current_layer`. |
 
-For the `standard_material` proxy system, override `realize` for your backend to
+For the `material` proxy system, override `realize` for your backend to
 interpret the material's PBR properties (base_color, metallic, roughness,
 transmission, etc.) appropriately.
 
@@ -307,7 +307,7 @@ Everything above, plus:
 - [ ] Implement `b_render_and_save_view(b, path)`
 - [ ] Implement `b_render_initial_setup(b, kind)` and
       `b_render_final_setup(b, kind)` for material/environment switching
-- [ ] Implement `b_get_material(b, spec)` for `standard_material` support
+- [ ] Implement `b_get_material(b, spec)` for `material` support
 - [ ] Set `view_type` to `FrontendView()` if storing camera locally
 - [ ] Implement `b_pointlight` and `b_spotlight` for scene lighting
 - [ ] Optionally implement `b_arealight` and `b_ieslight` for advanced lighting

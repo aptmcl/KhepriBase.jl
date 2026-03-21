@@ -248,7 +248,7 @@ default value depends on the shape's dimensionality:
 You can override the default on any individual shape:
 
 ```julia
-red = standard_material(base_color=rgba(1, 0, 0, 1))
+red = material(base_color=rgba(1, 0, 0, 1))
 sphere(xyz(0, 0, 0), 5, material=red)
 ```
 

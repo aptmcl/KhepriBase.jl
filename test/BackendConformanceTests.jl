@@ -263,31 +263,19 @@ function test_materials(b, reset!)
   @testset "Materials" begin
     reset!()
 
-    @testset "b_new_material" begin
-      r = b_new_material(b, "TestMat",
+    @testset "b_material tier 3" begin
+      r = b_material(b, "TestMat",
         rgba(1,0,0,1),    # base_color
         0.0,              # metallic
-        0.5,              # specular
         0.5,              # roughness
-        0.0,              # clearcoat
-        0.0,              # clearcoat_roughness
+        0.5,              # specular
         1.5,              # ior
         0.0,              # transmission
         0.0,              # transmission_roughness
+        0.0,              # clearcoat
+        0.0,              # clearcoat_roughness
         rgba(0,0,0,0),    # emission_color
-        1.0,              # emission_strength
-        RGB(0,0,0),       # sheen_color
-        0.0,              # sheen_roughness
-        0.0,              # anisotropy
-        RGB(0,0,0),       # anisotropy_direction
-        0.0,              # ambient_occlusion
-        RGB(0,0,0),       # normal_map
-        RGB(0,0,0),       # bent_normal
-        RGB(0,0,0),       # clearcoat_normal
-        rgba(0,0,0,0),    # post_lighting_color
-        0.0,              # absorption
-        0.0,              # micro_thickness
-        0.0)              # thickness
+        1.0)              # emission_strength
       @test !isnothing(r)
     end
 

@@ -177,7 +177,7 @@ add_door(wall2, xy(1, 0), sliding_door)    # uses sliding
 
 ## Materials
 
-Materials define the visual appearance of BIM elements. KhepriBase provides two systems: **named materials** for BIM element defaults, and **standard materials** for fine-grained appearance control.
+Materials define the visual appearance of BIM elements. KhepriBase provides two systems: **named materials** for BIM element defaults, and **PBR materials** for fine-grained appearance control.
 
 ### Predefined Named Materials
 
@@ -191,22 +191,22 @@ These are used as defaults in family definitions:
 | `material_metal` | Beams, railings, frames |
 | `material_glass` | Windows, panels |
 
-### Standard Materials
+### PBR Materials
 
-For precise appearance control, use `standard_material` based on the Filament PBR model:
+For precise appearance control, use `material` based on the Filament PBR model:
 
 ```julia
 # Simple colored material
-red_mat = standard_material(base_color=rgba(1, 0, 0, 1))
+red_mat = material(base_color=rgba(1, 0, 0, 1))
 
 # Metallic material
-gold = standard_material(
+gold = material(
   base_color=rgba(1, 0.84, 0, 1),
   metallic=1.0,
   roughness=0.3)
 
 # Glass-like material
-glass = standard_material(
+glass = material(
   base_color=rgba(0.9, 0.9, 1.0, 0.3),
   transmission=0.8,
   roughness=0.0)
@@ -215,7 +215,7 @@ glass = standard_material(
 sphere(xyz(0, 0, 0), 5, material=red_mat)
 ```
 
-Key `standard_material` properties:
+Key `material` properties:
 
 | Property | Range | Description |
 |----------|-------|-------------|
@@ -236,12 +236,12 @@ Each backend interprets these properties using the best available shading model 
 The `data` field allows passing backend-specific material definitions that bypass
 the PBR pipeline. When a material has a `data` entry for the active backend,
 Khepri calls `b_get_material(backend, spec)` with the backend-specific value
-instead of the default `b_standard_material` PBR path. The PBR properties
+instead of the default `b_material` PBR path. The PBR properties
 (`base_color`, etc.) serve as fallback for backends without an override.
 
 ```julia
 # Radiance-specific material with PBR fallback
-chrome = standard_material(
+chrome = material(
   name="chrome",
   base_color=rgba(0.8, 0.8, 0.8, 1.0),
   metallic=1.0,

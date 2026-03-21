@@ -219,7 +219,7 @@ Material and layer management.
 | Operation | Description |
 |-----------|-------------|
 | `b_get_material` | Get material |
-| `b_new_material` | Create material |
+| `b_material` | Create material (cascading tiers: full PBR → standard → basic → color) |
 | `b_plastic_material` | Create plastic material |
 | `b_metal_material` | Create metal material |
 | `b_glass_material` | Create glass material |

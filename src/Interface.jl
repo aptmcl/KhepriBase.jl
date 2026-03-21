@@ -27,5 +27,4 @@ import KhepriBase:
   save_shape!,
   switch_to_layer,
   truss_bar_family_cross_section_area,
-  with_material_as_layer,
-  use_material_as_layer
+  with_material_as_layer

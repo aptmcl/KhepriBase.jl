@@ -8,7 +8,7 @@ Here we define the relevant types used in Khepri.
 export Loc1D, Loc2D, Loc3D, Loc, 
        Vec1D, Vec2D, Vec3D, Vec,
        Locs1D, Locs2D, Locs3D, Locs,
-       Vecs1D, Vecs1D, Vecs1D, Vecs
+       Vecs1D, Vecs2D, Vecs3D, Vecs
 
 # We distinguish between locations and vectors, as they transform differently
 
@@ -113,10 +113,9 @@ Vectors of shapes are also useful:
 
 const Shapes = Vector{<:Shape}
 
-# HACK: Fix element type
-const Shapes0D = Vector{<:Any}
-const Shapes1D = Vector{<:Any}
-const Shapes2D = Vector{<:Any}
+const Shapes0D = Vector{<:Shape0D}
+const Shapes1D = Vector{<:Shape1D}
+const Shapes2D = Vector{<:Shape2D}
 
 # Materials
 export Material, Materials

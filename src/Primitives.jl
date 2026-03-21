@@ -558,6 +558,7 @@ decode(ns::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO
       return str
     else
       shift += 7
+      shift >= 63 && error("Malformed variable-length integer in wire protocol")
     end
   end
 end

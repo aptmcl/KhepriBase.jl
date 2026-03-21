@@ -108,7 +108,7 @@ ceiling(rectangular_path(xy(0, 0), 10, 8), first_floor)
 
 # Custom ceiling material
 painted_ceiling = ceiling_family(
-  bottom_material=standard_material(base_color=rgba(0.95, 0.95, 0.95, 1)))
+  bottom_material=material(base_color=rgba(0.95, 0.95, 0.95, 1)))
 ceiling(rectangular_path(xy(0, 0), 10, 8), first_floor, painted_ceiling)
 ```
 

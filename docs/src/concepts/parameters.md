@@ -124,7 +124,7 @@ KhepriBase defines many parameters across its modules. Below are representative 
 | `default_curve_material` | `Parameter` | `material_curve` | Default for curves |
 | `default_surface_material` | `Parameter` | `material_surface` | Default for surfaces |
 
-See [Levels & Families](levels_and_families.md) for material details and `standard_material`.
+See [Levels & Families](levels_and_families.md) for material details and `material()`.
 
 ### BIM
 
