@@ -663,15 +663,22 @@ b_regular_prism(b::Backend, edges, cb, rb, angle, h, inscribed, mat) =
 b_regular_prism(b::Backend, edges, cb, rb, angle, h, inscribed, bmat, tmat, smat) =
   b_regular_pyramid_frustum(b, edges, cb, rb, angle, h, rb, inscribed, bmat, tmat, smat)
 
+# Tessellation resolution for smooth solids (spheres, cylinders, cones, tori).
+# Backends that produce vector output (TikZ, SVG) should override with a lower value.
+export tessellation_divisions
+tessellation_divisions(b::Backend) = 32
+
 b_cylinder(b::Backend, cb, r, h, mat) =
   b_cylinder(b, cb, r, h, mat, mat, mat)
 b_cylinder(b::Backend, cb, r, h, bmat, tmat, smat) =
-  b_generic_prism(
-    b,
-    regular_polygon_vertices(32, cb, r, 0, true),
-    true,
-    vz(h, cb.cs),
-    bmat, tmat, smat)
+  let n = tessellation_divisions(b)
+    b_generic_prism(
+      b,
+      regular_polygon_vertices(n, cb, r, 0, true),
+      true,
+      vz(h, cb.cs),
+      bmat, tmat, smat)
+  end
 
 b_cuboid(b::Backend, pb0, pb1, pb2, pb3, pt0, pt1, pt2, pt3, mat) =
   b_solidify(b,
@@ -692,14 +699,16 @@ b_box(b::Backend, c, dx, dy, dz, mat) =
   end
 
 b_sphere(b::Backend, c, r, mat) =
-  let ϕs = division(0, 2π, 32, false)
+  let n = tessellation_divisions(b),
+      step = π/n,
+      ϕs = division(0, 2π, n, false)
     b_solidify(b,
-      [b_ngon(b, [add_sph(c, r, ϕ, π/16) for ϕ in ϕs], add_sph(c, r, 0, 0), true, mat),
+      [b_ngon(b, [add_sph(c, r, ϕ, step) for ϕ in ϕs], add_sph(c, r, 0, 0), true, mat),
        [b_quad_strip_closed(b,
-          [add_sph(c, r, ϕ, ψ+π/16) for ϕ in ϕs],
+          [add_sph(c, r, ϕ, ψ+step) for ϕ in ϕs],
           [add_sph(c, r, ϕ, ψ) for ϕ in ϕs],
-          true, mat) for ψ in π/16:π/16:π-π/16]...,
-       b_ngon(b, reverse!([add_sph(c, r, ϕ, π-π/16) for ϕ in ϕs]), add_sph(c, r, 0, π), true, mat)])
+          true, mat) for ψ in step:step:π-step]...,
+       b_ngon(b, reverse!([add_sph(c, r, ϕ, π-step) for ϕ in ϕs]), add_sph(c, r, 0, π), true, mat)])
   end
 
 b_cone(b::Backend, cb, r, h, mat) =
@@ -708,7 +717,7 @@ b_cone(b::Backend, cb, r, h, mat) =
 b_cone(b::Backend, cb, r, h, bmat, smat) =
   b_generic_pyramid(
   b,
-  regular_polygon_vertices(32, cb, r, 0, true),
+  regular_polygon_vertices(tessellation_divisions(b), cb, r, 0, true),
   add_z(cb, h),
   true,
   bmat, smat)
@@ -717,21 +726,25 @@ b_cone_frustum(b::Backend, cb, rb, h, rt, mat) =
   b_cone_frustum(b, cb, rb, h, rt, mat, mat, mat)
 
 b_cone_frustum(b::Backend, cb, rb, h, rt, bmat, tmat, smat) =
-  b_generic_pyramid_frustum(
-    b,
-    regular_polygon_vertices(32, cb, rb, 0, true),
-    regular_polygon_vertices(32, add_z(cb, h), rt, 0, true),
-    true,
-    bmat, tmat, smat)
+  let n = tessellation_divisions(b)
+    b_generic_pyramid_frustum(
+      b,
+      regular_polygon_vertices(n, cb, rb, 0, true),
+      regular_polygon_vertices(n, add_z(cb, h), rt, 0, true),
+      true,
+      bmat, tmat, smat)
+  end
 
 b_torus(b::Backend, c, ra, rb, mat) =
-  b_surface_grid(
-    b,
-    [add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
-     for ψ in division(0, 2π, 32, false), ϕ in division(0, 2π, 64, false)],
-      true, true,
-      true, true,
-      mat)
+  let n = tessellation_divisions(b)
+    b_surface_grid(
+      b,
+      [add_sph(add_pol(c, ra, ϕ), rb, ϕ, ψ)
+       for ψ in division(0, 2π, n, false), ϕ in division(0, 2π, 2n, false)],
+        true, true,
+        true, true,
+        mat)
+  end
 
 export b_mesh_obj_fmt
 @bdef(b_mesh_obj_fmt(obj_name, transform))

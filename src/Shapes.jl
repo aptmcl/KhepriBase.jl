@@ -792,13 +792,15 @@ realize(b::Backend, s::PbrMaterial) =
   end
 
 # material() is the unified constructor:
-#   material(base_color=red)        → PbrMaterial (via pbr_material)
-#   material("Glass", base_color=…) → PbrMaterial (via pbr_material)
-#   material(my_layer)              → MaterialInLayer (via layer_material)
+#   material(base_color=red)             → PbrMaterial (via pbr_material)
+#   material("Glass", base_color=…)      → PbrMaterial (via pbr_material)
+#   material(my_layer)                   → MaterialInLayer (via layer_material)
+#   material("name", Backend=>spec, …)   → MaterialInLayer (via layer_material, for backend overrides)
 export material, standard_material
 material(; kwargs...) = pbr_material(; kwargs...)
 material(name::String; kwargs...) = pbr_material(name; kwargs...)
 material(l::Layer, data::BackendParameter=BackendParameter()) = layer_material(l, data)
+material(name::String, bvs::Pair...) = layer_material(name, bvs...)
 const standard_material = pbr_material
 
 # Pre-defined materials with physically-based properties.

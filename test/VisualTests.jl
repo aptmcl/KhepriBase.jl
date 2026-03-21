@@ -657,7 +657,7 @@ register_test("abacus", :primitives_3d) do
       end
     end
 
-  with(current_cs, cs_from_o_vx_vy(xyz(0, 0, 0), vxyz(1, 0, 0), vxyz(0, 0, -1))) do
+  with(current_cs, cs_from_o_vx_vy(xyz(0, 0, 1), vxyz(1, 0, 0), vxyz(0, 0, -1))) do
     abacus(u0(),
            15,
            1.5,
@@ -1360,12 +1360,14 @@ function run_visual_tests(b;
     width::Int = 1920,
     height::Int = 1080,
     compare::Function = text_compare,
-    skip::Vector{Symbol} = Symbol[])
+    skip::Vector{Symbol} = Symbol[],
+    skip_tests::Vector{String} = String[])
 
   rendering_with(dir=mktempdir(), width=width, height=height) do
     setup_backend()
     for (name, category, test_fn) in VISUAL_TESTS
       category in skip && continue
+      name in skip_tests && continue
       @testset "$name" begin
         reset!()
         test_path = try
