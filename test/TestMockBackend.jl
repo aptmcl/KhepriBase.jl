@@ -238,7 +238,7 @@ b_cylinder(b::MockBackend, cb, r, h, bmat, tmat, smat) = begin
 end
 
 # Layer operations (minimal implementation)
-KhepriBase.b_layer(b::MockBackend, name, active, color) = next_ref!(b)
+KhepriBase.b_layer(b::MockBackend, name, visible, color) = next_ref!(b)
 KhepriBase.b_current_layer_ref(b::MockBackend) = 0
 KhepriBase.b_current_layer_ref(b::MockBackend, r) = nothing
 KhepriBase.b_delete_all_shapes_in_layer(b::MockBackend, layer) = nothing

@@ -28,6 +28,7 @@ using Test
     include("test_materials.jl")
     include("test_bim.jl")
     include("test_family_lifecycle.jl")
+    include("test_wall_graph.jl")
   end
 
   # Legacy tests (from original Test.jl)

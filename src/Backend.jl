@@ -2165,6 +2165,7 @@ backend(backend::Backend) =
 switch_to_backend(from::Backend, to::Backend) =
   current_backend(to)
 
+export top_backend
 export purge_backends
 purge_backends() =
   let bs = current_backends(),

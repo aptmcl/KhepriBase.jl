@@ -613,10 +613,10 @@ set_on!(tb::Type{<:Backend}, proxy, ref) =
 #=
 Layers are just a classification mechanism.
 Some backends, however, can colorize the shapes that have that layer, or can make
-those shapes appear and disappear by activating or deactivating the layer.
+those shapes visible or invisible.
 =#
 @defproxy(base_layer, Layer)
-@defproxy((layer, StandardLayer), Layer, name::String="Layer", active::Bool=true, color::RGBA=rgba(1,1,1,1))
+@defproxy((layer, StandardLayer), Layer, name::String="Layer", visible::Bool=true, color::RGBA=rgba(1,1,1,1))
 export layer
 create_layer(args...; kargs...) =
   let s = layer(args...; kargs...)
@@ -625,7 +625,7 @@ create_layer(args...; kargs...) =
   end
 #=
 realize(b::Backend, l::StandardLayer) =
-  b_layer(b, l.name, l.active, l.color)
+  b_layer(b, l.name, l.visible, l.color)
 =#
 current_layer(backends::Backends=current_backends()) =
   isempty(backends) ?

@@ -19,7 +19,7 @@ include("TestMockBackend.jl")
         l = layer()
         @test is_layer(l)
         @test layer_name(l) == "Layer"
-        @test layer_active(l) == true
+        @test layer_visible(l) == true
       end
     end
 
@@ -40,10 +40,10 @@ include("TestMockBackend.jl")
       end
     end
 
-    @testset "inactive layer" begin
+    @testset "invisible layer" begin
       with_mock_backend() do b
-        l = layer("InactiveLayer", false)
-        @test layer_active(l) == false
+        l = layer("InvisibleLayer", false)
+        @test layer_visible(l) == false
       end
     end
   end

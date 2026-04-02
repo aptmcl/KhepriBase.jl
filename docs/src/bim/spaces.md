@@ -260,12 +260,13 @@ Generate all BIM elements from a floor plan. Returns a `BuildResult` containing 
 build(plan::FloorPlan) -> BuildResult
 ```
 
-The build process performs four steps:
+The build process performs five steps:
 
 1. **Edge classification**: every edge of every space is classified as `:interior` (shared with another space) or `:exterior`. Interior edges are deduplicated so that only one wall is generated per shared boundary.
-2. **Wall generation**: walls are created for each classified edge, except where an arch connection suppresses wall generation on a shared boundary.
-3. **Opening placement**: doors and windows are placed on the appropriate wall segments. Interior openings are centered on the shared wall unless `loc` overrides the position. Exterior openings use `loc` to find the nearest exterior wall.
-4. **Slab generation**: if `generate_slabs` is `true`, a floor slab is generated for each space using its boundary path.
+2. **Wall graph construction**: classified edges are assembled into a [WallGraph](wall_graph.md), with junctions at every polygon vertex. This captures the topology of the wall network.
+3. **Chain resolution**: the wall graph is resolved into chains -- maximal runs of same-family segments that can be merged into single multi-vertex wall paths. L-corners get proper miter joints; abutting walls at T-junctions are extended to meet the through-wall's face. This typically reduces the number of wall objects significantly (e.g., a 5-room house with 16 edge segments produces 5 merged walls).
+4. **Opening placement**: doors and windows are placed on the merged wall paths. Positions are adjusted to account for chain offset and segment orientation within the merged path. Interior openings are centered on the shared wall unless `loc` overrides the position. Exterior openings use `loc` to find the nearest exterior wall.
+5. **Slab generation**: if `generate_slabs` is `true`, a floor slab is generated for each space using its boundary path.
 
 Throughout the process, `SpaceBoundary` records are accumulated to build the boundary model.
 
@@ -556,5 +557,7 @@ This alignment means that `BuildResult` data can be mapped directly to IFC expor
 ## See Also
 
 - [Spaces Tutorial](../tutorials/spaces_tutorial.md) -- a guided walkthrough covering house design, parameterized layouts (office grids, radial plans), and custom validation rules.
+- [Wall Graph](wall_graph.md) -- the junction-aware wall network layer used internally by `build()`. Can also be used directly for precise wall layout control.
+- [Wall Graph Tutorial](../tutorials/wall_graph_tutorial.md) -- a guided walkthrough of direct wall graph construction.
 - [Vertical Elements](vertical_elements.md) -- reference for `wall`, `door`, and `window`, which are the BIM primitives that `build()` generates.
 - [Horizontal Elements](horizontal_elements.md) -- reference for `slab`, generated for each space when `generate_slabs` is `true`.

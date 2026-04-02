@@ -231,16 +231,17 @@ used_materials(s::BIMShape) = used_materials(s.family)
 # CAD tools that support Layers might benefit from this typical implementation:
 struct LayerFamily <: Family
   name::String
+  visible::Bool
   color::RGB
   ref::IdDict{Backend, Any}
 end
 
 export LayerFamily, layer_family
-layer_family(name, color::RGB=rgb(1,1,1)) =
-  LayerFamily(name, color, IdDict{Backend, Any}())
+layer_family(name, color::RGB=rgb(1,1,1); visible::Bool=true) =
+  LayerFamily(name, visible, color, IdDict{Backend, Any}())
 
 backend_get_family_ref(b::Backend, f::Family, af::LayerFamily) =
-  b_layer(b, af.name, true, af.color)
+  b_layer(b, af.name, af.visible, af.color)
 
 # OBJ family types (OBJFamily, OBJFileFamily, obj_family) are defined in
 # Backend.jl because the OBJ transform functions and BIM fallbacks there

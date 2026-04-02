@@ -10,6 +10,7 @@ makedocs(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://aptmcl.github.io/KhepriBase.jl",
         assets=String[],
+        size_threshold=300 * 1024,  # 300 KiB — api.md is large
     ),
     pages=[
         "Home" => "index.md",
@@ -31,10 +32,12 @@ makedocs(;
             "Circulation" => "bim/circulation.md",
             "Furnishings & Lights" => "bim/furnishings_and_lights.md",
             "Spaces" => "bim/spaces.md",
+            "Wall Graph" => "bim/wall_graph.md",
         ],
         "Tutorials" => [
             "Building a Complete Building" => "tutorials/building_tutorial.md",
             "Space-First Layout Design" => "tutorials/spaces_tutorial.md",
+            "Wall Graph Networks" => "tutorials/wall_graph_tutorial.md",
             "Rendering & Animation" => "tutorials/rendering_tutorial.md",
             "Algorithmic Design" => "tutorials/algorithmic_tutorial.md",
         ],

@@ -190,7 +190,7 @@ current_layer()                           # get the active layer
 current_layer(my_layer)                   # set the active layer
 
 # Layer operations
-set_layer_active(layer, true)             # show/hide a layer
+set_layer_visible(layer, true)            # show/hide a layer
 switch_to_layer(layer)                    # change the active layer
 delete_all_shapes_in_layer(layer)         # clear a layer's shapes
 ```

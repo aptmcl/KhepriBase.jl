@@ -159,7 +159,8 @@ current_layer(layer, backends::Backends=current_backends()) =
 	b_current_layer_ref(b, l)
   end
 =#
-@defcbs set_layer_active(layer, status)
+@defcbs set_layer_visible(layer, status)
+@defcbs set_layer_opacity(layer, opacity)
 @defcbs switch_to_layer(layer)
 
 @defcb disable_update()

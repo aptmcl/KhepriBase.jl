@@ -120,6 +120,12 @@ at the broadcast points (maybe_realize, @defcbs) and automatically remove
 the dead backend. try/catch is zero-cost in Julia when no exception is
 thrown, so this has no performance impact in normal operation.
 =#
+close_connection!(b::RemoteBackend) =
+  begin
+    try close(b.connection) catch end
+    b.connection = missing
+  end
+
 retire_dead_backend(b::RemoteBackend) =
   begin
     @warn "Backend $(backend_name(b)) disconnected. Removing from active backends."
@@ -127,12 +133,11 @@ retire_dead_backend(b::RemoteBackend) =
     for f in b.remote
       reset_opcode(f)
     end
-    try close(b.connection) catch end
-    b.connection = missing
+    close_connection!(b)
   end
 
 handle_backend_error(e, b::Backend) = rethrow()
-handle_backend_error(e::Base.IOError, b::RemoteBackend) =
+handle_backend_error(e::Union{Base.IOError, ArgumentError}, b::RemoteBackend) =
   retire_dead_backend(b)
 
 export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting,
@@ -301,19 +306,22 @@ struct WebSocketBackend{K,T} <: RemoteBackend{K,T}
   handlers::Vector{Function}
 
   WebSocketBackend{K,T}(name, websocket, static_remote) where {K,T} =
-    new{K,T}(name, websocket, IOBuffer(UInt8[], read=true, write=true), 
-        static_remote, remote_functions(static_remote), 
-        Parameter{Transaction}(AutoCommitTransaction()), 
+    new{K,T}(name, websocket, IOBuffer(UInt8[], read=true, write=true),
+        static_remote, remote_functions(static_remote),
+        Parameter{Transaction}(AutoCommitTransaction()),
         References{K,T}(), Function[])
 end
 
-# A WebSocketBackend is always connected
+# WebSocketBackend is its own connection object (send/receive dispatch on it)
 connection(b::WebSocketBackend) = b
 
-send(b::WebSocketBackend, buffer) = 
+close_connection!(b::WebSocketBackend) =
+  try close(b.websocket) catch end
+
+send(b::WebSocketBackend, buffer) =
   HTTP.WebSockets.send(b.websocket, take!(buffer))
 
-receive(b::WebSocketBackend) = 
+receive(b::WebSocketBackend) =
   let bytes = HTTP.WebSockets.receive(b.websocket)
     take!(b.buffer) # Clear the buffer
     write(b.buffer, bytes)
@@ -552,21 +560,23 @@ export AbstractLayer, BasicLayer
 abstract type AbstractLayer end
 struct BasicLayer <: AbstractLayer
   name::String
-  active::Bool
+  visible::Bool
   color::RGBA
 end
 
 export b_layer, b_current_layer_ref,
        b_all_shapes_in_layer, b_delete_all_shapes_in_layer,
-       b_set_layer_material
+       b_set_layer_material, b_set_layer_visible, b_set_layer_opacity
 
 # Default implementation assumes that backends have properties for current_layer and layers (a dict)
-b_layer(b::Backend, name, active, color) = BasicLayer(name, active, color)
+b_layer(b::Backend, name, visible, color) = BasicLayer(name, visible, color)
 b_current_layer_ref(b::Backend) = b.current_layer
 b_current_layer_ref(b::Backend, layer) = b.current_layer = layer
 b_all_shapes_in_layer(b::Backend, layer) = b.layers[layer]
 b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_in_layer(b, layer))
 b_set_layer_material(b::Backend, layer_ref, material_ref) = nothing
+b_set_layer_visible(b::Backend, layer, visible) = nothing
+b_set_layer_opacity(b::Backend, layer, opacity) = nothing
 
 
 ################################################################

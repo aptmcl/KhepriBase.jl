@@ -59,7 +59,7 @@ b_delete_ref(b::MinimalTriangleBackend, r::MinTriId) = filter!(x -> x != r, b.al
 b_delete_refs(b::MinimalTriangleBackend, rs::Vector{MinTriId}) = filter!(x -> !(x in rs), b.all_refs)
 
 # Layer stubs
-KhepriBase.b_layer(b::MinimalTriangleBackend, name, active, color) = next_ref!(b)
+KhepriBase.b_layer(b::MinimalTriangleBackend, name, visible, color) = next_ref!(b)
 KhepriBase.b_current_layer_ref(b::MinimalTriangleBackend) = 0
 KhepriBase.b_current_layer_ref(b::MinimalTriangleBackend, r) = nothing
 KhepriBase.b_delete_all_shapes_in_layer(b::MinimalTriangleBackend, layer) = nothing

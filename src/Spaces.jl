@@ -287,18 +287,49 @@ function build(plan::FloorPlan)
     !(kind == :interior && !isnothing(sp_b) &&
       minmax(objectid(sp_a), objectid(sp_b)) in arch_pairs)
   end
-  # Create walls and record wall boundaries
+  # Build WallGraph from classified edge segments
+  wg = wall_graph(level=plan.level, height=plan.height)
+  edge_to_seg = Int[]  # maps edge index → graph segment index
+  for (p1, p2, _, _, _) in segments
+    let j1 = find_or_create_junction!(wg, p1, tol),
+        j2 = find_or_create_junction!(wg, p2, tol)
+      push!(edge_to_seg, segment!(wg, j1, j2, family=plan.wall_family))
+    end
+  end
+  # Resolve chains and create walls (without openings)
+  chains = resolve(wg)
   walls = []
+  seg_to_wall = Dict{Int, Int}()    # graph_seg → wall index
+  seg_offset = Dict{Int, Real}()    # graph_seg → cumulative distance in merged wall
+  seg_forward = Dict{Int, Bool}()   # graph_seg → same orientation as chain?
+  for chain in chains
+    let w = wall(chain.path,
+                 bottom_level=wg.bottom_level, top_level=wg.top_level,
+                 family=chain.family, offset=chain.offset),
+        wall_idx = length(walls) + 1,
+        junctions = chain_junctions(wg, chain.source_segments),
+        cumulative = 0.0
+      push!(walls, w)
+      for (k, s) in enumerate(chain.source_segments)
+        seg_to_wall[s] = wall_idx
+        seg_obj = wg.segments[s]
+        # Check if segment is forward (junction_a matches chain direction)
+        fwd = seg_obj.junction_a == junctions[k]
+        seg_forward[s] = fwd
+        seg_offset[s] = cumulative
+        cumulative += segment_length(wg, s)
+      end
+    end
+  end
+  # Create wall boundaries
   boundaries = SpaceBoundary[]
-  for (p1, p2, kind, sp_a, sp_b) in segments
-    w = wall(open_polygonal_path([p1, p2]),
-             bottom_level=plan.level, top_level=top,
-             family=plan.wall_family)
-    push!(walls, w)
-    push!(boundaries, SpaceBoundary(sp_a, w, :physical,
-          kind == :interior ? :interior : :exterior, sp_b, p1, p2))
-    if kind == :interior && !isnothing(sp_b)
-      push!(boundaries, SpaceBoundary(sp_b, w, :physical, :interior, sp_a, p1, p2))
+  for (i, (p1, p2, kind, sp_a, sp_b)) in enumerate(segments)
+    let w = walls[seg_to_wall[edge_to_seg[i]]]
+      push!(boundaries, SpaceBoundary(sp_a, w, :physical,
+            kind == :interior ? :interior : :exterior, sp_b, p1, p2))
+      if kind == :interior && !isnothing(sp_b)
+        push!(boundaries, SpaceBoundary(sp_b, w, :physical, :interior, sp_a, p1, p2))
+      end
     end
   end
   # Record arch boundaries (virtual, no element)
@@ -310,15 +341,19 @@ function build(plan::FloorPlan)
       end
     end
   end
-  # Place doors and windows, recording their boundaries
+  # Place doors and windows on merged walls, recording their boundaries
   doors = []
   windows = []
   for conn in plan.connections
     conn.kind == :arch && continue
     if conn.space_b isa Space
-      place_interior_connection!(conn, segments, walls, doors, windows, boundaries)
+      place_interior_connection!(conn, segments, edge_to_seg, walls,
+                                 seg_to_wall, seg_offset, seg_forward, wg,
+                                 doors, windows, boundaries)
     elseif !isnothing(conn.loc)
-      place_exterior_connection!(conn, segments, walls, doors, windows, boundaries)
+      place_exterior_connection!(conn, segments, edge_to_seg, walls,
+                                 seg_to_wall, seg_offset, seg_forward, wg,
+                                 doors, windows, boundaries)
     else
       error("Exterior connections require a loc parameter")
     end
@@ -330,7 +365,23 @@ function build(plan::FloorPlan)
   BuildResult(plan, walls, doors, windows, slabs, boundaries)
 end
 
-function place_interior_connection!(conn, segments, walls, doors, windows, boundaries)
+# Compute the position along a merged wall path for an opening on a given edge.
+# local_x is the distance from edge start (p1) to the opening's left edge.
+# opening_width is needed when the segment is reversed in the chain.
+function edge_to_wall_x(local_x, opening_width, edge_idx, edge_to_seg, seg_offset, seg_forward, wg)
+  let gs = edge_to_seg[edge_idx],
+      offset = seg_offset[gs],
+      fwd = seg_forward[gs]
+    fwd ? offset + local_x :
+      let seg_len = segment_length(wg, gs)
+        offset + seg_len - local_x - opening_width
+      end
+  end
+end
+
+function place_interior_connection!(conn, segments, edge_to_seg, walls,
+                                    seg_to_wall, seg_offset, seg_forward, wg,
+                                    doors, windows, boundaries)
   target = minmax(objectid(conn.space_a), objectid(conn.space_b))
   for (i, seg) in enumerate(segments)
     _, _, kind, sp_a, sp_b = seg
@@ -338,19 +389,20 @@ function place_interior_connection!(conn, segments, walls, doors, windows, bound
     isnothing(sp_b) && continue
     minmax(objectid(sp_a), objectid(sp_b)) == target || continue
     p1, p2 = seg[1], seg[2]
-    w = walls[i]
+    w = walls[seg_to_wall[edge_to_seg[i]]]
     wall_len = distance(p1, p2)
     opening_width = conn.family.width
-    wall_x = if isnothing(conn.loc)
+    local_x = if isnothing(conn.loc)
       (wall_len - opening_width) / 2
     else
       let d = unitized(p2 - p1)
         dot(conn.loc - p1, d) - opening_width / 2
       end
     end
+    wall_x = edge_to_wall_x(local_x, opening_width, i, edge_to_seg, seg_offset, seg_forward, wg)
     d = unitized(p2 - p1)
-    op_start = p1 + d * wall_x
-    op_end = p1 + d * (wall_x + opening_width)
+    op_start = p1 + d * local_x
+    op_end = p1 + d * (local_x + opening_width)
     wall_loc = xy(wall_x, 0)
     if conn.kind == :door
       add_door(w, wall_loc, conn.family)
@@ -372,7 +424,9 @@ function place_interior_connection!(conn, segments, walls, doors, windows, bound
   error("No shared wall found between '$(conn.space_a.name)' and '$(conn.space_b.name)'")
 end
 
-function place_exterior_connection!(conn, segments, walls, doors, windows, boundaries)
+function place_exterior_connection!(conn, segments, edge_to_seg, walls,
+                                    seg_to_wall, seg_offset, seg_forward, wg,
+                                    doors, windows, boundaries)
   best_idx = 0
   best_t = 0.0
   best_dist = Inf
@@ -395,11 +449,12 @@ function place_exterior_connection!(conn, segments, walls, doors, windows, bound
     error("No exterior wall found for '$(conn.space_a.name)' near $(conn.loc)")
   p1, p2 = segments[best_idx][1], segments[best_idx][2]
   d = unitized(p2 - p1)
-  w = walls[best_idx]
+  w = walls[seg_to_wall[edge_to_seg[best_idx]]]
   opening_width = conn.family.width
-  wall_x = best_t - opening_width / 2
-  op_start = p1 + d * wall_x
-  op_end = p1 + d * (wall_x + opening_width)
+  local_x = best_t - opening_width / 2
+  wall_x = edge_to_wall_x(local_x, opening_width, best_idx, edge_to_seg, seg_offset, seg_forward, wg)
+  op_start = p1 + d * local_x
+  op_end = p1 + d * (local_x + opening_width)
   wall_loc = xy(wall_x, 0)
   if conn.kind == :door
     add_door(w, wall_loc, conn.family)

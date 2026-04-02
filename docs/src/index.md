@@ -69,7 +69,8 @@ Jump into building design:
 5. [Circulation](bim/circulation.md) -- stairs, ramps, railings
 6. [Furnishings and Lights](bim/furnishings_and_lights.md) -- tables, chairs, lights
 7. [Spaces](bim/spaces.md) -- space-first layout design
-8. [Building a Complete Building](tutorials/building_tutorial.md) -- end-to-end tutorial
+8. [Wall Graph](bim/wall_graph.md) -- junction-aware wall networks (used internally by Spaces, also available directly)
+9. [Building a Complete Building](tutorials/building_tutorial.md) -- end-to-end tutorial
 
 ### Backend Developer?
 
@@ -101,10 +102,12 @@ Implement a new Khepri backend:
 - **[Circulation](bim/circulation.md)** -- Stair, Spiral Stair, Stair Landing, Ramp, Railing
 - **[Furnishings and Lights](bim/furnishings_and_lights.md)** -- Table, Chair, Fixtures, Point/Spot/IES Lights
 - **[Spaces](bim/spaces.md)** -- Space, FloorPlan, BuildResult, validation rules
+- **[Wall Graph](bim/wall_graph.md)** -- Junction-aware wall networks, chain merging, T-junction geometry
 
 ### Tutorials
 - **[Building a Complete Building](tutorials/building_tutorial.md)** -- End-to-end: a 2-story office building from levels to render
 - **[Space-First Layout Design](tutorials/spaces_tutorial.md)** -- Define rooms and connections, auto-generate walls
+- **[Wall Graph Networks](tutorials/wall_graph_tutorial.md)** -- Direct wall network construction with junction geometry
 - **[Rendering and Animation](tutorials/rendering_tutorial.md)** -- Camera, render settings, film workflow
 - **[Algorithmic Design](tutorials/algorithmic_tutorial.md)** -- Parametric patterns, subdivision, recursive structures
 

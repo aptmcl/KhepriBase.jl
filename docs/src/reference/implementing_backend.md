@@ -266,7 +266,7 @@ Backends must handle material references.  The key functions:
 | Function | Description |
 |----------|-------------|
 | `b_get_material(b, spec)` | Resolve a material specification to a backend reference. Default: returns `void_ref(b)` for `nothing`, or `spec` itself otherwise. |
-| `b_layer(b, name, active, color)` | Create a layer. Default: returns a `BasicLayer` struct. |
+| `b_layer(b, name, visible, color)` | Create a layer. Default: returns a `BasicLayer` struct. |
 | `b_current_layer_ref(b)` | Get the current layer reference. Default: reads `b.current_layer`. |
 | `b_current_layer_ref(b, layer)` | Set the current layer reference. Default: sets `b.current_layer`. |
 

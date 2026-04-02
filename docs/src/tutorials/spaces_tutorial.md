@@ -10,7 +10,9 @@ closed polygonal areas and declare *connections* (doors, windows, arches) betwee
 them. A single call to `build()` generates all the walls, doors, windows, and
 floor slabs automatically. Shared walls between adjacent rooms are detected and
 built only once, doors are centered on the shared edge, and exterior walls are
-placed around the perimeter.
+placed around the perimeter. Internally, `build()` uses a
+[WallGraph](../bim/wall_graph.md) to merge adjacent wall segments into
+multi-vertex paths with proper corner miters and T-junction geometry.
 
 After building, the result can be *introspected*: which walls bound a room, which
 spaces share a door, what is the area of each room. Validation rules can check
@@ -649,3 +651,12 @@ construction site.
 | `has_door_rule(kind)` | Spaces of a kind must have a door |
 | `has_connection_rule()` | Every space must have a connection |
 | `SpaceRule(name, check)` | Custom validation rule |
+
+## Going Further: Direct Wall Control
+
+The Spaces module handles wall layout automatically from room definitions. If you need
+more precise control over wall placement -- mixing wall families at specific
+segments, building partial walls, or working without room polygons -- see the
+[Wall Graph Tutorial](wall_graph_tutorial.md). The WallGraph layer provides
+the same junction-aware geometry that `build()` uses internally, but with
+direct control over every junction and segment.
