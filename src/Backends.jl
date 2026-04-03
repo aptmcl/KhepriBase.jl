@@ -109,7 +109,7 @@ reset_backend(b::RemoteBackend) =
     invalidate_family_refs(b)
     empty!(b.refs)
     b.connection = missing
-    close(c) # This might err, so it goes last
+    try close(c) catch end
   end
 
 #=
@@ -137,7 +137,7 @@ retire_dead_backend(b::RemoteBackend) =
   end
 
 handle_backend_error(e, b::Backend) = rethrow()
-handle_backend_error(e::Union{Base.IOError, ArgumentError}, b::RemoteBackend) =
+handle_backend_error(e::Union{Base.IOError, ArgumentError, EOFError}, b::RemoteBackend) =
   retire_dead_backend(b)
 
 export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting,

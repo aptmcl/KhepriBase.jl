@@ -705,7 +705,7 @@ realize(b::Backend, s::Union{Door, Window}) =
           l_thickness = l_thickness(s.wall),
           thickness = s.family.thickness
         vcat(b_wall_no_openings(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family),
-             b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, ref_value(b, s.family.frame.material))
+             b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, material_ref(b, s.family.frame.material))
         )
       end
     end
