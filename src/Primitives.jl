@@ -263,10 +263,28 @@ ensure_opcode(f::RemoteFunction, conn) =
 reset_opcode(f::RemoteFunction) =
   f.opcode = -1
 
+# RPC instrumentation: count calls and optionally record per-call times.
+export rpc_count, reset_rpc_count!, rpc_timing, rpc_times
+const rpc_count = Ref(0)
+reset_rpc_count!() = (rpc_count[] = 0)
+const rpc_timing = Parameter(false)
+const rpc_times = Float64[]
+
 # Encode opcode + arguments into the buffer, send as a frame, receive the response
 # frame, decode with prefix-based error detection.
 call_remote(f::RemoteFunction, conn, args...) =
-  f.info.encoder(ensure_opcode(f, conn), conn, f.buffer, args...)
+  begin
+    rpc_count[] += 1
+    if rpc_timing()
+      let t0 = time_ns()
+        result = f.info.encoder(ensure_opcode(f, conn), conn, f.buffer, args...)
+        push!(rpc_times, (time_ns() - t0) / 1e6)  # ms
+        result
+      end
+    else
+      f.info.encoder(ensure_opcode(f, conn), conn, f.buffer, args...)
+    end
+  end
 
 (f::RemoteFunction)(conn, args...) = call_remote(f, conn, args...)
 
