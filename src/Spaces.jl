@@ -328,6 +328,7 @@ function build(plan::FloorPlan)
   # Create wall boundaries
   boundaries = SpaceBoundary[]
   for (i, (p1, p2, kind, sp_a, sp_b)) in enumerate(segments)
+    edge_to_seg[i] == 0 && continue  # skip degenerate edges
     let w = walls[seg_to_wall[edge_to_seg[i]]]
       push!(boundaries, SpaceBoundary(sp_a, w, :physical,
             kind == :interior ? :interior : :exterior, sp_b, p1, p2))
@@ -388,6 +389,7 @@ function place_interior_connection!(conn, segments, edge_to_seg, walls,
                                     doors, windows, boundaries)
   target = minmax(objectid(conn.space_a), objectid(conn.space_b))
   for (i, seg) in enumerate(segments)
+    edge_to_seg[i] == 0 && continue  # skip degenerate edges
     _, _, kind, sp_a, sp_b = seg
     kind == :interior || continue
     isnothing(sp_b) && continue
@@ -435,6 +437,7 @@ function place_exterior_connection!(conn, segments, edge_to_seg, walls,
   best_t = 0.0
   best_dist = Inf
   for (i, seg) in enumerate(segments)
+    edge_to_seg[i] == 0 && continue  # skip degenerate edges
     _, _, kind, sp_a, _ = seg
     kind == :exterior || continue
     sp_a !== conn.space_a && continue
