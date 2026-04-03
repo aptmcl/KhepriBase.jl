@@ -1534,6 +1534,7 @@ b_stair(b::Backend, base_point, direction, bottom_level, top_level, family) =
       perp = cross(vz(1), dir),
       tmat = material_ref(b, family.tread_material),
       rmat = material_ref(b, family.riser_material),
+      # TODO: generate stringer geometry using family.stringer_material
       refs = new_refs(b)
     for i in 0:(n_steps - 1)
       let base = in_world(base_point) + dir * (i * tread_d) + vz(bottom_h + i * riser_h),
@@ -1565,17 +1566,27 @@ b_spiral_stair(b::Backend, center, radius, start_angle, included_angle,
       r_inner = radius - w/2,
       r_outer = radius + w/2,
       tmat = material_ref(b, family.tread_material),
+      rmat = material_ref(b, family.riser_material),
       c = in_world(center),
       refs = new_refs(b)
     for i in 0:(n_steps - 1)
       let a0 = start_angle + i * angle_step,
           a1 = a0 + angle_step,
-          h = bottom_h + (i + 1) * riser_h,
-          tread = [c + vpol(r_inner, a0) + vz(h),
-                   c + vpol(r_outer, a0) + vz(h),
-                   c + vpol(r_outer, a1) + vz(h),
-                   c + vpol(r_inner, a1) + vz(h)]
+          h_base = bottom_h + i * riser_h,
+          h_top = h_base + riser_h,
+          tread = [c + vpol(r_inner, a0) + vz(h_top),
+                   c + vpol(r_outer, a0) + vz(h_top),
+                   c + vpol(r_outer, a1) + vz(h_top),
+                   c + vpol(r_inner, a1) + vz(h_top)]
         collect_ref!(refs, b_surface_polygon(b, tread, tmat))
+        if family.has_risers
+          let riser = [c + vpol(r_inner, a0) + vz(h_base),
+                       c + vpol(r_outer, a0) + vz(h_base),
+                       c + vpol(r_outer, a0) + vz(h_top),
+                       c + vpol(r_inner, a0) + vz(h_top)]
+            collect_ref!(refs, b_surface_polygon(b, riser, rmat))
+          end
+        end
       end
     end
     refs

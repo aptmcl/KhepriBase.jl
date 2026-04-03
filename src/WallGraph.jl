@@ -78,6 +78,7 @@ end
 function segment!(wg::WallGraph, j_a::Int, j_b::Int;
                    family=default_wall_family(),
                    offset=0)
+  j_a == j_b && error("Cannot create a self-loop segment (junction $j_a)")
   push!(wg.segments, WallSegment(j_a, j_b, family, offset, WallSegmentOpening[]))
   let idx = length(wg.segments)
     push!(wg.junctions[j_a].segments, idx)

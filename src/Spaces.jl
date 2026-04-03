@@ -293,7 +293,11 @@ function build(plan::FloorPlan)
   for (p1, p2, _, _, _) in segments
     let j1 = find_or_create_junction!(wg, p1, tol),
         j2 = find_or_create_junction!(wg, p2, tol)
-      push!(edge_to_seg, segment!(wg, j1, j2, family=plan.wall_family))
+      if j1 == j2
+        push!(edge_to_seg, 0)  # degenerate edge, skip
+      else
+        push!(edge_to_seg, segment!(wg, j1, j2, family=plan.wall_family))
+      end
     end
   end
   # Resolve chains and create walls (without openings)

@@ -545,7 +545,6 @@ with_wall(f, args...) =
 export HasBooleanOps, has_boolean_ops
 
 struct HasBooleanOps{T} end
-# By default, we rely on boolean operations
 # By default, we DON'T rely on boolean operations
 has_boolean_ops(::Type{<:Backend}) = HasBooleanOps{false}()
 
