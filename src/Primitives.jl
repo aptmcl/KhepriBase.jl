@@ -224,9 +224,10 @@ receive(conn) = conn
 # receive reads Int32 length then that many bytes into an IOBuffer. This matches
 # Channel.cs's BeginFrame/EndFrame on the C# side.
 send(conn::TCPSocket, buf::IOBuffer) =
-  let data = take!(buf)
-    write(conn, Int32(length(data)))
-    write(conn, data)
+  let n = buf.size
+    write(conn, Int32(n))
+    unsafe_write(conn, pointer(buf.data), n)
+    truncate(buf, 0)
   end
 
 receive(conn::TCPSocket) =
@@ -307,7 +308,7 @@ remote_function_meta_program(nssym, sig, canon, local_name, remote_name, params,
            $(local_name),
            $(remote_name),
            (opcode, conn, buf, $([p[2] for p in params]...)) -> begin
-              take!(buf) # Reset the buffer just in case there was an encoding error on a previous call
+              truncate(buf, 0) # Reset the buffer just in case there was an encoding error on a previous call
               encode($(namespace), Val(:int), buf, opcode)
               $([:(encode($(namespace),
                           $(type_constructor(p[1])),
