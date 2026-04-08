@@ -275,6 +275,7 @@ run_khepri_socket_server(host=default_khepri_socket_server_host(), port=default_
     while true
       println("Waiting for a connection")
       let conn = accept(server)
+        Sockets.nagle(conn, false)
         try
           println("Connected!")
           let backend_name = decode(Val(:CS), Val(:string), conn),
