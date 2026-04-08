@@ -144,7 +144,7 @@ julia> using ImageIO
 julia> using VideoIO
 julia> encodevideo("video.mp4", map(load, filter(contains(r"DomeTrussRibsDay-frame-...\.png"), readdir())), framerate=30)
 Progress: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| Time: 0:00:05
-[ Info: Video file saved: C:\Users\aml\OneDrive - Universidade de Lisboa\AML\Projects\SuperComputing\Sync\aleitao\ParallelRendering\FilmPOV/video.mp4
+[ Info: Video file saved: C:\Users\aml\Vault\AML\Projects\SuperComputing\Sync\aleitao\ParallelRendering\FilmPOV/video.mp4
 [ Info: frame=  157 fps=0.0 q=-1.0 Lsize=    2518kB time=00:00:05.13 bitrate=4019.0kbits/s speed=1.72e+03x
 [ Info: video:2516kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.096221%
 "video.mp4"

@@ -174,7 +174,10 @@ start_connection(b::SocketBackend) =
   let attempts = 10
     for i in 1:attempts
       try
-        return connect(b.port)
+        let conn = connect(b.port)
+          Sockets.nagle(conn, false)
+          return conn
+        end
       catch e
         if i == attempts
 		      failed_connecting(b)
