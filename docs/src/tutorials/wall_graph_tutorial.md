@@ -267,6 +267,7 @@ add_door(plan, kitchen, corridor)
 add_door(plan, bedroom, corridor)
 add_door(plan, wc, corridor)
 add_door(plan, living, kitchen)
+add_door(plan, living, :exterior, loc=xy(3, 0))   # front door on south facade
 
 large_win = window_family(width=1.4, height=1.5)
 add_window(plan, living, :exterior, loc=xy(3, 0), family=large_win)

@@ -104,8 +104,23 @@ KhepriBase defines many parameters across its modules. Below are representative 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `current_cs` | `Parameter` | `world_cs` | Active coordinate system |
-| `epsilon` | `Parameter` | `1e-8` | Geometric comparison tolerance |
-| `path_tolerance` | `Parameter` | `1e-10` | Path operations tolerance |
+
+### Geometric tolerances
+
+Khepri needs several numerical tolerances to decide when two geometric quantities, computed independently, should be treated as equal. All such tolerances follow the naming rule `<property>_tolerance`: the name describes the geometric property being classified, so knowing one tells you the pattern for the rest. Each tolerance is documented in detail at its point of definition — follow the `file:line` column below for the full rationale (why the tolerance is needed, what quantity it is compared against, why this default value, when a user might want to override).
+
+| Tolerance | Defined at | Compared against | Default |
+|-----------|-----------|------------------|---------|
+| `coincidence_tolerance` | `Paths.jl:75` | `distance(a, b)` | `1e-10` m |
+| `collinearity_tolerance` | `Geometry.jl:214` | `triangle_area(a, b, c)` | `1e-2` m² |
+| `planarity_tolerance` | `Paths.jl:810` | `|dot(p - p₀, n̂)|` | `1e-6` m |
+| `parallelism_tolerance` | `Geometry.jl:150` | `|cross(u, v)|` (or an analogous line determinant) | `1e-8` |
+| `zero_vector_tolerance` | `Coords.jl:555` | `norm(v)` | `1e-20` |
+| `truss_node_coincidence_tolerance` | `BIM.jl:1214` | `distance(n_a, n_b)` | `1e-6` m |
+
+Defaults assume Khepri's canonical unit (metre). Rescale via `with(tolerance, new_value) do ... end` when working at non-metric scales (mm, km) or with measured (rather than computed) input.
+
+**Adding a new tolerance.** Follow the convention `<property>_tolerance` and define it beside the first function that needs it, prefaced by a multi-line comment block (`#= ... =#`) explaining the motivation, the comparison quantity and unit, and the rationale for the default value. See `Paths.jl:75` (`coincidence_tolerance`) for the canonical example.
 
 ### Rendering and Camera
 

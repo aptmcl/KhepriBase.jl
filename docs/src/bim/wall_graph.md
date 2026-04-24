@@ -326,8 +326,25 @@ The Spaces module uses WallGraph internally. When you call `build(plan::FloorPla
 
 This means floor plans automatically benefit from junction geometry without any changes to existing Spaces code. A house with 16 edge segments might produce only 3-5 merged walls instead of 16 individual ones.
 
+## Curved walls
+
+Wall segments may carry an `ArcPath` so the graph preserves circular
+curvature end-to-end. This is the native representation for arc-
+shaped buildings: the BIM backend receives a curved `wall(arc_path,
+…)` rather than a polyline approximation, adjacency classification
+uses `cocircular_overlap` for arc-arc shared boundaries, and the
+chain resolver merges co-circular sub-arcs into a single
+`ArcPath`.
+
 ## See Also
 
 - [Wall Graph Tutorial](../tutorials/wall_graph_tutorial.md) -- guided examples from simple walls to complex layouts.
 - [Spaces](spaces.md) -- the space-first layout system that uses WallGraph internally.
 - [Vertical Elements](vertical_elements.md) -- reference for `wall`, `door`, and `window`, the BIM primitives that `build_walls` generates.
+
+## API Reference
+
+```@autodocs
+Modules = [KhepriBase]
+Pages = ["WallGraph.jl"]
+```

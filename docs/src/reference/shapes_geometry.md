@@ -245,13 +245,14 @@ vertices `ps`.  If `closed` is `true`, the polygon is treated as closed.
 ### Collinearity
 
 ```julia
-collinear_points(p0, pm, p1, epsilon=collinearity_tolerance()) -> Bool
+collinear_points(p0, pm, p1, tol=collinearity_tolerance()) -> Bool
 ```
 
-Returns `true` when the triangle `p0-pm-p1` has area less than `epsilon`,
+Returns `true` when the triangle `p0-pm-p1` has area less than `tol`,
 indicating that the three points are approximately collinear.  The default
 tolerance is controlled by the `collinearity_tolerance` parameter (default
-`1e-2`).
+`1e-2` m²). See [Geometric tolerances](../concepts/parameters.md#geometric-tolerances)
+for the full family of named tolerances.
 
 ### Circle from three points
 

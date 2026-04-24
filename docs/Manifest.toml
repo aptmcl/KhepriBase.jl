@@ -165,9 +165,9 @@ version = "1.12.0"
 
 [[KhepriBase]]
 deps = ["ColorTypes", "Dates", "Dierckx", "HTTP", "LinearAlgebra", "Sockets", "StaticArrays"]
-path = ".."
+path = "/home/aml/Projects/Khepri/Julia/KhepriBase"
 uuid = "4cc0fe96-1163-46f3-ba32-de1e65d9548f"
-version = "0.7.1"
+version = "0.7.2"
 
 [[LazilyInitializedFields]]
 git-tree-sha1 = "0f2da712350b020bc3957f269c9caad516383ee0"
@@ -249,7 +249,7 @@ version = "2.28.1010+0"
 
 [[MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
-version = "2025.5.20"
+version = "2025.11.4"
 
 [[NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"

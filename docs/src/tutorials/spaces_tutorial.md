@@ -125,6 +125,15 @@ without going through the corridor.
 add_door(plan, living, kitchen)
 ```
 
+The house also needs a way in from outside. An exterior door uses
+`:exterior` as the second space and a `loc=xy(...)` point on the
+facade where the door should land:
+
+```julia
+# Front door: living room onto the south facade
+add_door(plan, living, :exterior, loc=xy(3.0, 0))
+```
+
 ### Step 4: Add Windows
 
 Windows go on exterior walls. The `loc` parameter gives a world-space point on
@@ -283,116 +292,123 @@ plan and check them against the built model.
 ### Predefined Rules
 
 ```julia
+using KhepriBase: min_area, has_door, has_connection, max_area
+
 plan = floor_plan(
   height=2.8,
   wall_family=wall_family(thickness=0.2),
   rules=[
     # Every space must have at least one door
-    has_door_rule(),
+    has_door(),
     # Bathrooms must be at least 3m²
-    min_area_rule(:wc, 3.0),
+    min_area(:wc, 3.0),
     # Bedrooms must be at least 9m²
-    min_area_rule(:bedroom, 9.0),
+    min_area(:bedroom, 9.0),
     # Kitchens must be at least 6m²
-    min_area_rule(:kitchen, 6.0),
+    min_area(:kitchen, 6.0),
   ])
 ```
 
-Rules can also be added after construction:
+(KhepriBase's constraint library is not auto-exported so that it
+doesn't shadow AlgorithmicArchitecture's parallel library when both
+packages are in scope. Either `using KhepriBase: min_area, …` as
+above, or qualify each call as `KhepriBase.min_area(…)`.)
+
+Constraints can also be added after construction:
 
 ```julia
-add_rule(plan, max_area_rule(:wc, 12.0))
-add_rule(plan, has_connection_rule())
+add_rule(plan, max_area(:wc, 12.0))
+add_rule(plan, has_connection())
 ```
 
 ### Running Validation
 
-After building, call `validate` to check all rules:
+After building, call `validate` to check all constraints:
 
 ```julia
 result = build(plan)
-violations = validate(result)
+vr = validate(result)
 
-if isempty(violations)
-  println("All rules pass.")
+if vr.passed
+  println("All constraints pass.")
 else
-  println("Violations found:")
-  for v in violations
-    println("  - $v")
-  end
+  report(vr)
 end
 ```
 
-If the bathroom is undersized (e.g., only 1.5x1.5m = 2.25m²), the output is:
+`validate` returns a `ValidationResult` grouping typed `Violation`s by
+severity (`vr.hard_violations`, `vr.soft_violations`,
+`vr.preferences`), with a composite `vr.score`
+(1000·hard + 10·soft + 1·pref). `report(vr)` pretty-prints by
+severity and category. If the bathroom is undersized (e.g. 1.5×1.5 m
+= 2.25 m²), the output is:
 
 ```
-Violations found:
-  - Bathroom (wc): area 2.25m² < minimum 3.0m²
+Status: FAILED (score: 1000.0)
+
+--- HARD (1) ---
+  [AREA_PROPORTION] Bathroom: Bathroom (wc): area 2.25m² < 3.0m²
 ```
 
-### Custom Rules
+### Custom Constraints
 
-A `SpaceRule` is a name and a function `(Space, BuildResult) -> Union{Nothing, String}`.
-Return `nothing` if the rule passes, or a message string if it fails.
+A `Constraint` is a name, severity, category, and a check function
+that takes a `BuildResult` and returns `Vector{Violation}`.
 
 ```julia
 # Every bedroom must have at least one window
-bedroom_window_rule = SpaceRule(
-  "Bedrooms must have a window",
-  (space, result) ->
-    space.kind == :bedroom && isempty(space_windows(result, space)) ?
-      "$(space.name): bedroom has no window" :
-      nothing)
+bedroom_window = Constraint(
+  "Bedrooms must have a window", HARD, ENVIRONMENTAL,
+  result -> [
+    Violation("bedroom_window", HARD, ENVIRONMENTAL,
+              sp.name, "$(sp.name): bedroom has no window", 0.0, 1.0)
+    for sp in result.plan.spaces
+    if sp.kind == :bedroom && isempty(space_windows(result, sp))])
 
-add_rule(plan, bedroom_window_rule)
+add_rule(plan, bedroom_window)
 ```
 
 ```julia
-# Corridor width must not exceed 2m (approximated as area/length)
-corridor_width_rule = SpaceRule(
-  "Corridor max width 2m",
-  (space, result) ->
-    let a = space_area(space), p = space_perimeter(space),
-        # For a rectangular corridor, width ≈ a / (p/2 - width), but
-        # a simpler check: area must be ≤ longest_edge * 2
-        edges = polygon_edges(path_vertices(space.boundary)),
-        max_edge = maximum(distance(e[1], e[2]) for e in edges),
-        approx_width = a / max_edge
-      space.kind == :corridor && approx_width > 2.0 ?
-        "$(space.name): corridor width ≈ $(round(approx_width, digits=2))m > 2.0m" :
-        nothing
-    end)
+# Corridor width must not exceed 2m (approximated as area/longest-edge)
+corridor_width = Constraint(
+  "Corridor max width 2m", HARD, DIMENSIONAL,
+  result -> let vs = Violation[]
+    for sp in result.plan.spaces
+      sp.kind == :corridor || continue
+      edges = polygon_edges(path_vertices(sp.boundary))
+      max_edge = maximum(distance(e[1], e[2]) for e in edges)
+      w = space_area(sp) / max_edge
+      w > 2.0 && push!(vs, Violation(
+        "corridor_width", HARD, DIMENSIONAL, sp.name,
+        "$(sp.name): corridor width ≈ $(round(w, digits=2))m > 2.0m",
+        w, 2.0))
+    end
+    vs
+  end)
 ```
 
-```julia
-# Minimum number of windows per room area (1 window per 10m²)
-daylight_rule = SpaceRule(
-  "Daylight: 1 window per 10m²",
-  (space, result) ->
-    let a = space_area(space),
-        nw = length(space_windows(result, space)),
-        required = ceil(Int, a / 10)
-      space.kind in (:room, :bedroom, :kitchen) && nw < required ?
-        "$(space.name): has $nw windows but needs at least $required for $(round(a, digits=1))m²" :
-        nothing
-    end)
-```
+### Validating Against Specific Constraints
 
-### Validating Against Specific Rules
-
-You can also validate against a custom list of rules without registering them on
-the plan:
+You can also validate against a custom list of constraints without
+registering them on the plan:
 
 ```julia
-# Check only area rules
+# Check only area constraints
 area_rules = [
-  min_area_rule(:wc, 3.0),
-  min_area_rule(:bedroom, 9.0),
-  min_area_rule(:kitchen, 6.0),
+  min_area(:wc, 3.0),
+  min_area(:bedroom, 9.0),
+  min_area(:kitchen, 6.0),
 ]
 
 validate(result, area_rules)
 ```
+
+### Algebra
+
+Constraints compose: `combine(c1, c2, …)` (all must pass),
+`either(a, b)` (at least one must pass), `when(predicate, c)` (check
+only when predicate is true), `with_severity(c, SOFT)` (relax a
+HARD rule to SOFT).
 
 ## Arches: Open Connections
 
@@ -425,7 +441,7 @@ layout can be parameterized and generated algorithmically.
 function office_floor(nx, ny; office_w=4, office_d=4, corridor_w=2)
   plan = floor_plan(
     wall_family=wall_family(thickness=0.15),
-    rules=[has_door_rule(:office)])
+    rules=[KhepriBase.has_door(:office)])
 
   offices = [
     add_space(plan, "Office $(i)x$(j)",
@@ -503,12 +519,12 @@ plan = floor_plan(
   wall_family=wall_family(thickness=0.2),
   slab_family=slab_family(thickness=0.25),
   rules=[
-    # Portuguese RGEU-inspired rules (simplified)
-    min_area_rule(:bedroom, 9.0),     # Bedrooms >= 9m²
-    min_area_rule(:wc, 3.0),          # Bathrooms >= 3m²
-    min_area_rule(:kitchen, 6.0),     # Kitchens >= 6m²
-    min_area_rule(:room, 10.0),       # Living rooms >= 10m²
-    has_door_rule(),                    # Every space must have a door
+    # Portuguese RGEU-inspired constraints (simplified)
+    KhepriBase.min_area(:bedroom, 9.0),   # Bedrooms >= 9m²
+    KhepriBase.min_area(:wc, 3.0),        # Bathrooms >= 3m²
+    KhepriBase.min_area(:kitchen, 6.0),   # Kitchens >= 6m²
+    KhepriBase.min_area(:room, 10.0),     # Living rooms >= 10m²
+    KhepriBase.has_door(),                # Every space must have a door
   ])
 
 # --- Spaces ---
@@ -587,8 +603,8 @@ end
 Suppose regulations also require that every bedroom has at least one window:
 
 ```julia
-bedroom_window_rule = SpaceRule(
-  "Bedrooms must have a window",
+bedroom_window = Constraint(
+  "Bedrooms must have a window", HARD, ENVIRONMENTAL,
   (space, result) ->
     space.kind == :bedroom && isempty(space_windows(result, space)) ?
       "$(space.name): bedroom has no window" : nothing)
@@ -605,7 +621,7 @@ bathroom is too small?
 
 ```julia
 # Replace the bathroom with a tiny one
-plan2 = floor_plan(rules=[min_area_rule(:wc, 3.0), has_door_rule()])
+plan2 = floor_plan(rules=[KhepriBase.min_area(:wc, 3.0), KhepriBase.has_door()])
 
 add_space(plan2, "Room", rectangular_path(u0(), 5, 4), kind=:room)
 tiny_wc = add_space(plan2, "Tiny WC",
@@ -645,12 +661,12 @@ construction site.
 | `shared_boundary(a, b)` | Shared edges between two spaces |
 | `exterior_edges(plan, space)` | Exterior edges of a space |
 | `neighbors(plan, space)` | Spaces sharing a boundary |
-| `min_area_rule(kind, area)` | Minimum area for a space kind |
-| `max_area_rule(kind, area)` | Maximum area for a space kind |
-| `has_door_rule()` | Every space must have a door |
-| `has_door_rule(kind)` | Spaces of a kind must have a door |
-| `has_connection_rule()` | Every space must have a connection |
-| `SpaceRule(name, check)` | Custom validation rule |
+| `KhepriBase.min_area(kind, area)` | Minimum area for a space kind |
+| `KhepriBase.max_area(kind, area)` | Maximum area for a space kind |
+| `KhepriBase.has_door()` | Every space must have a door |
+| `KhepriBase.has_door(kind)` | Spaces of a kind must have a door |
+| `KhepriBase.has_connection()` | Every space must have a connection |
+| `Constraint(name, severity, category, check)` | Custom constraint (BuildResult → Vector{Violation}) |
 
 ## Going Further: Direct Wall Control
 

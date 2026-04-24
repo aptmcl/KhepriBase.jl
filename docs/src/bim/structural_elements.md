@@ -166,11 +166,11 @@ bars = truss_bars(
 
 ### Node and Bar Merging
 
-Coincident nodes (within `coincident_truss_nodes_distance()`, default 1e-6) are automatically merged. This can be controlled:
+Coincident nodes (within `truss_node_coincidence_tolerance()`, default `1e-6` m) are automatically merged. This can be controlled:
 
 ```julia
-merge_coincident_truss_nodes(false)  # disable merging (errors on coincidence)
-coincident_truss_nodes_distance(1e-4) # change tolerance
+merge_coincident_truss_nodes(false)         # disable merging (errors on coincidence)
+truss_node_coincidence_tolerance(1e-4)      # change tolerance
 ```
 
 ### Analysis Workflow

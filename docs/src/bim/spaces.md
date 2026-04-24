@@ -22,7 +22,7 @@ end
 
 The `kind` field classifies the space's function, analogous to IFC's `IfcSpaceTypeEnum`. It is used by validation rules to apply kind-specific constraints (e.g., minimum area for `:bedroom` spaces).
 
-Spaces are not constructed directly. Use `add_space` to create and register them on a `FloorPlan`.
+Spaces are not constructed directly. Use `add_space` to create and register them on a `Layout` (or on a specific `Storey` of a multi-storey Layout).
 
 ### SpaceConnection
 
@@ -65,25 +65,36 @@ end
 - `related_space` records the space on the other side of the boundary (the IFC "2nd level" boundary concept). It is `nothing` for exterior boundaries.
 - `element` is `nothing` for arch boundaries, where no physical element is generated.
 
-### SpaceRule
+### Constraint
 
-A validation rule that can be checked against spaces after building.
+Validation is handled by the typed `Constraint` system (defined in
+`Constraints.jl`), shared with downstream front-ends such as
+[AlgorithmicArchitecture](https://github.com/aml-architecture/AlgorithmicArchitecture.jl).
+A `Constraint` pairs a check function with a severity
+(`HARD`/`SOFT`/`PREFERENCE`) and a category; `validate(result)` runs
+every constraint attached to a plan and returns a `ValidationResult`
+grouping typed `Violation`s by severity.
 
 ```julia
-struct SpaceRule
+struct Constraint
   name::String
-  check       # (Space, BuildResult) -> Union{Nothing, String}
+  severity::ConstraintSeverity
+  category::ConstraintCategory
+  check::Function       # (BuildResult) -> Vector{Violation}
 end
 ```
 
-The `check` function receives a `Space` and a `BuildResult`. It returns `nothing` if the rule passes, or a message string describing the violation.
+See the Validation System section below and `Constraints.jl` for the
+full type and algebra surface.
 
-### FloorPlan
+### Storey
 
-A mutable container holding all the spaces, connections, and validation rules at a given level.
+One horizontal slice of a building at a single elevation. Carries
+the spaces, connections, the BIM `Level` where elements attach,
+storey height, and default wall/slab families.
 
 ```julia
-mutable struct FloorPlan
+mutable struct Storey
   spaces::Vector{Space}
   connections::Vector{SpaceConnection}
   level::Level
@@ -91,19 +102,39 @@ mutable struct FloorPlan
   wall_family::WallFamily
   slab_family::SlabFamily
   generate_slabs::Bool
-  rules::Vector{SpaceRule}
 end
 ```
 
-Create a `FloorPlan` with the `floor_plan` constructor. Spaces, connections, and rules are added incrementally with `add_space`, `add_door`, `add_window`, `add_arch`, and `add_rule`.
+### Layout
+
+The unifying container: a building as a stack of `Storey`s plus the
+validation `Constraint`s that span them. A single-storey `Layout`
+is what one-floor plans were previously; a multi-storey `Layout`
+carries vertical structure without forcing the user to juggle
+multiple plans.
+
+```julia
+mutable struct Layout
+  storeys::Vector{Storey}
+  rules::Vector{Constraint}
+end
+```
+
+Create a `Layout` with the `floor_plan` shortcut (one storey) or
+`layout(s1, s2, …)` (arbitrary storeys). Extend an existing `Layout`
+with `add_storey!`. Spaces, connections, and constraints are added
+incrementally with `add_space`, `add_door`, `add_window`, `add_arch`,
+and `add_rule`.
 
 ### BuildResult
 
-The result of `build()`: BIM element lists plus the descriptive boundary model.
+The per-storey result of `build()`: BIM element lists plus the
+descriptive boundary model for that storey. `build(layout)` returns
+a `Vector{BuildResult}`, one per storey.
 
 ```julia
 struct BuildResult
-  plan::FloorPlan
+  storey::Storey
   walls::Vector
   doors::Vector
   windows::Vector
@@ -138,7 +169,7 @@ floor_plan(; level=default_level(),
              wall_family=default_wall_family(),
              slab_family=default_slab_family(),
              generate_slabs=true,
-             rules=SpaceRule[])
+             rules=Constraint[])
 ```
 
 | Parameter | Default | Description |
@@ -148,14 +179,14 @@ floor_plan(; level=default_level(),
 | `wall_family` | `default_wall_family()` | Wall family for generated walls |
 | `slab_family` | `default_slab_family()` | Slab family for generated floor slabs |
 | `generate_slabs` | `true` | Whether to generate floor slabs for each space |
-| `rules` | `SpaceRule[]` | Validation rules to apply after building |
+| `rules` | `Constraint[]` | Constraints to check after building |
 
 ```julia
 plan = floor_plan(
   height=2.8,
   wall_family=wall_family(thickness=0.2),
   slab_family=slab_family(thickness=0.25),
-  rules=[min_area_rule(:bedroom, 9.0), has_door_rule()])
+  rules=[KhepriBase.min_area(:bedroom, 9.0), KhepriBase.has_door()])
 ```
 
 ### add_space
@@ -163,7 +194,7 @@ plan = floor_plan(
 Register a named space on a floor plan. Returns the new `Space`.
 
 ```julia
-add_space(plan::FloorPlan, name, boundary; kind=:space)
+add_space(plan::Layout, name, boundary; kind=:space)
 ```
 
 The `boundary` must be a `ClosedPath`. The `kind` keyword classifies the space for validation and semantic purposes.
@@ -183,7 +214,7 @@ corridor = add_space(plan, "Corridor",
 Declare a door between two spaces, or between a space and the exterior. Returns the new `SpaceConnection`.
 
 ```julia
-add_door(plan::FloorPlan, space_a::Space, space_b::Union{Space, Symbol};
+add_door(plan::Layout, space_a::Space, space_b::Union{Space, Symbol};
          family=default_door_family(), loc=nothing)
 ```
 
@@ -202,7 +233,7 @@ add_door(plan, living, :exterior, loc=xy(3, 0))
 Declare a window between two spaces, or between a space and the exterior. Returns the new `SpaceConnection`.
 
 ```julia
-add_window(plan::FloorPlan, space_a::Space, space_b::Union{Space, Symbol};
+add_window(plan::Layout, space_a::Space, space_b::Union{Space, Symbol};
            family=default_window_family(), loc=nothing)
 ```
 
@@ -224,7 +255,7 @@ add_window(plan, office_a, office_b,
 Declare an open passage (arch) between two spaces. No wall is generated on the shared boundary. Returns the new `SpaceConnection`.
 
 ```julia
-add_arch(plan::FloorPlan, space_a::Space, space_b::Space)
+add_arch(plan::Layout, space_a::Space, space_b::Space)
 ```
 
 Arches are always between two interior spaces (not with `:exterior`). They have no family or location parameters -- the entire shared edge becomes an open passage.
@@ -237,27 +268,39 @@ add_arch(plan, living, dining)
 
 ### add_rule
 
-Attach a validation rule to a floor plan. Returns the `SpaceRule`.
+Attach a validation constraint to a floor plan. Returns the `Constraint`.
 
 ```julia
-add_rule(plan::FloorPlan, rule::SpaceRule)
+add_rule(plan::Layout, rule::Constraint)
 ```
 
-Rules can be added at construction time via the `rules` keyword of `floor_plan`, or incrementally with `add_rule`.
+Constraints can be added at construction time via the `rules` keyword
+of `floor_plan`, or incrementally with `add_rule`.
 
 ```julia
-add_rule(plan, min_area_rule(:wc, 3.0))
-add_rule(plan, has_connection_rule())
+add_rule(plan, KhepriBase.min_area(:wc, 3.0))
+add_rule(plan, KhepriBase.has_connection())
 ```
+
+(KhepriBase's library constructors are not auto-exported, to avoid
+shadowing AlgorithmicArchitecture's `LayoutResult`-flavoured versions
+when both packages are in scope. Qualify with the `KhepriBase.` prefix
+as shown, or `import KhepriBase: min_area, has_connection, …` to pull
+them into the local namespace.)
 
 ## Building
 
 ### build
 
-Generate all BIM elements from a floor plan. Returns a `BuildResult` containing the generated walls, doors, windows, slabs, and the complete boundary model.
+Generate all BIM elements from a `Layout`. Returns a
+`Vector{BuildResult}` — one per storey — each containing the
+generated walls, doors, windows, slabs, and the complete boundary
+model for that storey. For programs that use only a single storey,
+`build(layout)[1]` is the `BuildResult` most examples refer to.
 
 ```julia
-build(plan::FloorPlan) -> BuildResult
+build(plan::Layout) -> Vector{BuildResult}
+build(storey::Storey) -> BuildResult          # single-storey shortcut
 ```
 
 The build process performs five steps:
@@ -338,7 +381,7 @@ shared_boundary(living, kitchen)
 Find all exterior edges of a space within a plan (edges not shared with any other space).
 
 ```julia
-exterior_edges(plan::FloorPlan, space::Space, tol=collinearity_tolerance())
+exterior_edges(plan::Layout, space::Space, tol=collinearity_tolerance())
   -> Vector{Tuple{Loc, Loc}}
 ```
 
@@ -352,7 +395,7 @@ exterior_edges(plan, bathroom)
 Find all spaces in the plan that share a boundary with the given space.
 
 ```julia
-neighbors(plan::FloorPlan, space::Space) -> Vector{Space}
+neighbors(plan::Layout, space::Space) -> Vector{Space}
 ```
 
 ```julia
@@ -435,112 +478,148 @@ adjacent_spaces(result, corridor)
 
 ## Validation System
 
-The validation system allows you to define constraints on spaces and check them against the built model. Each rule is a `SpaceRule` with a name and a check function.
+Constraints on spaces are typed `Constraint` values (defined in
+`Constraints.jl`), each carrying a severity (`HARD`/`SOFT`/`PREFERENCE`)
+and a category (`DIMENSIONAL`, `ADJACENCY`, `AREA_PROPORTION`,
+`CIRCULATION`, `ENVIRONMENTAL`). `validate` runs a vector of
+constraints against a `BuildResult` and returns a `ValidationResult`
+grouping typed `Violation`s by severity.
 
 ### Running Validation
 
 #### validate (all registered rules)
 
-Check all rules registered on the plan. Returns a list of violation message strings. An empty list means all rules pass.
+Check all constraints registered on the plan.
 
 ```julia
-validate(result::BuildResult) -> Vector{String}
+validate(result::BuildResult) -> ValidationResult
 ```
 
-#### validate (specific rules)
+#### validate (specific constraints)
 
-Check a specific list of rules without requiring them to be registered on the plan.
+Check a specific list of constraints without requiring them to be
+registered on the plan.
 
 ```julia
-validate(result::BuildResult, rules) -> Vector{String}
+validate(result::BuildResult, constraints::Vector{Constraint}) -> ValidationResult
 ```
 
 ```julia
 result = build(plan)
 
-# Validate all registered rules
-violations = validate(result)
+# Validate all registered constraints
+vr = validate(result)
+vr.passed                  # true if no HARD violations
+vr.hard_violations         # Vector{Violation}
+vr.score                   # 1000·hard + 10·soft + 1·pref
 
-# Validate specific rules only
-area_violations = validate(result, [min_area_rule(:wc, 3.0)])
+# Or a fresh list (not registered on the plan):
+vr2 = validate(result, [KhepriBase.min_area(:wc, 3.0)])
 ```
 
-Both forms iterate over every space in the plan and call each rule's `check` function. When the function returns a non-`nothing` string, it is collected as a violation.
+Use `report(vr)` to pretty-print the result grouped by severity.
 
-### Predefined Rules
+### Built-in Library
 
-#### min_area_rule
+The library below is defined at `KhepriBase.*` but not exported, so
+`using KhepriBase` does not shadow AA's `LayoutResult`-flavoured
+versions. Qualify or `import KhepriBase: min_area, …` when you want
+them.
 
-Minimum area constraint. Has two variants: one for all spaces, one filtered by kind.
+#### min_area
 
 ```julia
-min_area_rule(area::Real) -> SpaceRule
-min_area_rule(kind::Symbol, area::Real) -> SpaceRule
+KhepriBase.min_area(kind::Symbol, sqm::Real; severity=HARD) -> Constraint
 ```
+
+Every space with the given `kind` must have floor area ≥ `sqm` m².
+
+#### max_area
 
 ```julia
-# Every space must be at least 4 m^2
-min_area_rule(4.0)
-
-# Bedrooms must be at least 9 m^2
-min_area_rule(:bedroom, 9.0)
+KhepriBase.max_area(kind::Symbol, sqm::Real; severity=HARD) -> Constraint
 ```
 
-#### max_area_rule
+Every space with the given `kind` must have floor area ≤ `sqm` m².
 
-Maximum area constraint for spaces of a given kind.
+#### has_door
 
 ```julia
-max_area_rule(kind::Symbol, area::Real) -> SpaceRule
+KhepriBase.has_door(; severity=HARD) -> Constraint
+KhepriBase.has_door(kind::Symbol; severity=HARD) -> Constraint
 ```
+
+Every space (or every space of the given `kind`) must have at least
+one door.
+
+#### has_connection
 
 ```julia
-# Bathrooms must not exceed 12 m^2
-max_area_rule(:wc, 12.0)
+KhepriBase.has_connection(; severity=HARD) -> Constraint
 ```
 
-#### has_door_rule
+Every space must be connected to at least one neighbour (via door,
+window, or arch).
 
-Every space (or every space of a given kind) must have at least one door.
+#### must_adjoin / must_not_adjoin
 
 ```julia
-has_door_rule() -> SpaceRule
-has_door_rule(kind::Symbol) -> SpaceRule
+KhepriBase.must_adjoin(kind_a::Symbol, kind_b::Symbol; severity=HARD) -> Constraint
+KhepriBase.must_not_adjoin(kind_a::Symbol, kind_b::Symbol; severity=HARD) -> Constraint
 ```
+
+Require (or forbid) every space of `kind_a` to share a boundary with a
+space of `kind_b`.
+
+### Algebra
+
+Constraints compose algebraically via `combine`, `either`, `when`, and
+`with_severity`. `ConstraintSet` bundles them and `merge_constraints`
+concatenates sets.
 
 ```julia
-# Every space must have a door
-has_door_rule()
-
-# Only offices must have a door
-has_door_rule(:office)
+# Every bedroom must meet both area AND dimension minima:
+combine(KhepriBase.min_area(:bedroom, 9.0),
+        KhepriBase.min_dimension(:bedroom, 2.6))
 ```
 
-#### has_connection_rule
+### Custom Constraints
 
-Every space must have at least one connection (door, window, or arch).
+Build a `Constraint` directly with a check function that takes a
+`BuildResult` and returns `Vector{Violation}`.
 
 ```julia
-has_connection_rule() -> SpaceRule
+# Every bedroom must have at least one window.
+bedroom_window = Constraint(
+  "Bedrooms must have a window", HARD, ENVIRONMENTAL,
+  result -> [
+    Violation("bedroom_window", HARD, ENVIRONMENTAL,
+              sp.name, "$(sp.name): bedroom has no window", 0.0, 1.0)
+    for sp in result.plan.spaces
+    if sp.kind == :bedroom && isempty(space_windows(result, sp))])
+
+add_rule(plan, bedroom_window)
 ```
 
-### Custom Rules
+The check function has full access to the `BuildResult`, so it can
+query boundaries, elements, areas, and adjacency to express arbitrarily
+complex constraints.
 
-Create a `SpaceRule` with a name and a function `(Space, BuildResult) -> Union{Nothing, String}`:
+### Fixer Loop
+
+`ConstraintFixer` pairs a constraint-name substring with a rewrite
+function; `apply_fixers(desc, build, constraints, fixers; max_iters)`
+iterates build → validate → first matching fix until the design is
+hard-clean, no fixer matches, or `max_iters` is reached.
 
 ```julia
-# Every bedroom must have at least one window
-bedroom_window_rule = SpaceRule(
-  "Bedrooms must have a window",
-  (space, result) ->
-    space.kind == :bedroom && isempty(space_windows(result, space)) ?
-      "$(space.name): bedroom has no window" :
-      nothing)
+shrink = ConstraintFixer(
+  "shrink_overgrown", "max_area",
+  (plan, violation) -> # …rewrite plan, shrinking the named space…)
 
-add_rule(plan, bedroom_window_rule)
+fixed_plan, vr = apply_fixers(plan, build, [KhepriBase.max_area(:wc, 12.0)],
+                              [shrink]; max_iters=10)
 ```
-
-The check function has access to the full `BuildResult`, so it can query boundaries, elements, areas, and adjacency to express arbitrarily complex constraints.
 
 ## IFC Alignment
 
