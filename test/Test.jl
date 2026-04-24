@@ -26,11 +26,11 @@ end
 
 @testset "Paths" begin
   @test coincident_path_location(pol(1, π/2), xy(0,1))
-  with(path_tolerance, 1e-15) do
-    @test coincident_path_location(pol(1, π/2), xy(0,1))    
+  with(coincidence_tolerance, 1e-15) do
+    @test coincident_path_location(pol(1, π/2), xy(0,1))
   end
-  with(path_tolerance, 1e-20) do
-    @test ! coincident_path_location(pol(1, π/2), xy(0,1))    
+  with(coincidence_tolerance, 1e-20) do
+    @test ! coincident_path_location(pol(1, π/2), xy(0,1))
   end
 
   @test is_closed_path(circular_path())

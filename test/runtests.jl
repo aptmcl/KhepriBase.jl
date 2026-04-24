@@ -1,9 +1,22 @@
 using KhepriBase
+KhepriBase.@import_backend_api  # bring dev API (b_*, realize, NativeRef, ...) into Main for tests
 using Test
 
 @testset "KhepriBase.jl" begin
   # Include the mock backend first (used by several test files)
   include("TestMockBackend.jl")
+
+  @testset "API surface" begin
+    include("test_api_surface.jl")
+  end
+
+  @testset "Render view options" begin
+    include("test_render_view_options.jl")
+  end
+
+  @testset "Architectural materials" begin
+    include("test_arch_materials.jl")
+  end
 
   # Phase 1: Foundation tests
   @testset "Foundation" begin
@@ -15,6 +28,7 @@ using Test
   @testset "Core Geometry" begin
     include("test_paths.jl")
     include("test_geometry.jl")
+    include("test_tolerances.jl")
   end
 
   # Phase 3: Shape System tests

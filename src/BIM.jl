@@ -29,13 +29,27 @@ convert(::Type{Level}, h::Real) = level(h)
 
 default_level = OptionParameter{Level}(level())
 default_level_to_level_height = Parameter{Real}(3)
+
+#=
+Default vertical placement for a window's bottom edge, in metres
+above the floor of its hosting storey. 0.9 m is the conventional
+residential sill — high enough that furniture can sit under it and
+occupants standing next to the wall see out, low enough that a
+seated person does too. Override per-window via `sill=…` on
+`add_window`, or globally by `default_window_sill_height(0.8)` etc.
+
+See also: `add_window`, `add_door` (which uses `sill = 0`).
+=#
+"Default sill height (metres) for windows created without an explicit `sill=`."
+default_window_sill_height = Parameter{Real}(0.9)
 upper_level(lvl=default_level(), height=default_level_to_level_height()) = level(lvl.height + height)
 Base.:(==)(l1::Level, l2::Level) = l1.height == l2.height
 
 #default implementation
 b_level(b::Backend, h, elements) = h
 
-export all_levels, default_level, default_level_to_level_height, upper_level
+export all_levels, default_level, default_level_to_level_height, upper_level,
+       default_window_sill_height
 
 #=
 @defproxy(polygonal_mass, BIMShape, points::Locs, height::Real)
@@ -236,10 +250,12 @@ struct LayerFamily <: Family
   ref::IdDict{Backend, Any}
 end
 
-export LayerFamily, layer_family
+export layer_family
+public LayerFamily
 layer_family(name, color::RGB=rgb(1,1,1); visible::Bool=true) =
   LayerFamily(name, visible, color, IdDict{Backend, Any}())
 
+public backend_get_family_ref
 backend_get_family_ref(b::Backend, f::Family, af::LayerFamily) =
   b_layer(b, af.name, af.visible, af.color)
 
@@ -285,7 +301,8 @@ macro deffamily(name, parent, fields...)
                   join(field_lines, "\n"), "\n\n",
                   "Default parameter: `default_", name_str, "`\n")
   quote
-    export $(constructor_name), $(instance_name), $(default_name), $(predicate_name), $(struct_name), $(with_name)
+    export $(constructor_name), $(default_name), $(predicate_name), $(with_name), $(struct_name)
+    $(Expr(:public, instance_name))
     struct $struct_name <: $parent
       $(struct_fields...)
       based_on::Union{Family, Nothing}
@@ -372,7 +389,7 @@ realize(b::Backend, f::Family) =
   backend_get_family_ref(b, f, backend_family(b, f))
 
 backend_get_family_ref(b::Backend, f::Family, bf) = bf
-export backend_family, set_backend_family
+public backend_family, set_backend_family
 
 # Registry of default family parameters for invalidation on backend reconnection.
 # Each @deffamily generates a default_xxx_family Parameter; we register them here
@@ -391,7 +408,7 @@ _default_family_for(::Type{T}) where T <: Family =
     result
   end
 
-export invalidate_family_refs
+public invalidate_family_refs
 invalidate_family_refs(b::Backend) =
   for p in _family_defaults
     delete!(p().ref, b)
@@ -522,12 +539,33 @@ A wall contains doors and windows
 
 used_materials(f::WallFamily) = (f.right_material, f.left_material, f.side_material)
 
+#=
+A wall's `path` is always its centerline — openings are placed
+along it by arc-length, and that stays stable regardless of how
+the wall's endpoints meet their neighbours.
+
+`left_face_path` / `right_face_path` are *optional* pre-computed
+face polylines that override the derived `offset(path, ±t)` used
+by the default renderer. They exist for callers that know more
+about a wall's junctions than an isolated wall can — chiefly the
+WallGraph chain resolver, which pairwise intersects adjacent
+walls' offset faces and stores the resulting corner vertices on
+the chain's face polylines before emitting each `wall(…)`. When
+the faces are absent (the common path), the backend falls back
+to `offset(path, ±t)` exactly as before.
+
+See also: `KhepriBase.junction_face_corners`,
+`KhepriBase.wall_face_polylines`, and `b_wall` (the backend
+dispatcher that chooses faces-vs-offsets at render time).
+=#
 @defproxy(wall, BIMShape, path::Path=rectangular_path(),
           bottom_level::Level=default_level(),
           top_level::Level=upper_level(convert(Level, bottom_level)),
           family::WallFamily=default_wall_family(),
           offset::Real=is_closed_path(path) ? 1/2 : 0, # offset is relative to the thickness
-          doors::Shapes=Shape[], windows::Shapes=Shape[])
+          doors::Shapes=Shape[], windows::Shapes=Shape[],
+          left_face_path::Union{Nothing, Path}=nothing,
+          right_face_path::Union{Nothing, Path}=nothing)
 
 # To deal with incremental creation, it is necessary to use transactions.
 export with_wall
@@ -542,7 +580,7 @@ with_wall(f, args...) =
 # The protocol starts by identifying the approach to use. It can be either
 # based on Boolean operations or on the construction of polygonal elements.
 # Then, for each approach, the appropriate implementation is selected.
-export HasBooleanOps, has_boolean_ops
+public HasBooleanOps, has_boolean_ops
 
 struct HasBooleanOps{T} end
 # By default, we DON'T rely on boolean operations
@@ -590,10 +628,14 @@ realize_wall_opening(b::Backend, w_ref, w_path, l_thickness, r_thickness, op, fa
 realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
   let w_base_height = w.bottom_level.height,
       w_height = w.top_level.height - w_base_height,
-      w_path = translate(w.path, vz(w_base_height)),
+      lift = vz(w_base_height),
+      w_path = translate(w.path, lift),
+      l_face = isnothing(w.left_face_path)  ? nothing : translate(w.left_face_path,  lift),
+      r_face = isnothing(w.right_face_path) ? nothing : translate(w.right_face_path, lift),
       openings = [WallOpening(op.loc.x, op.loc.y, op.family.width, op.family.height)
                   for op in [w.doors..., w.windows...]]
-    b_wall(b, w_path, w_height, w.family, w.offset, openings)
+    b_wall(b, w_path, w_height, w.family, w.offset, openings;
+           l_face_path=l_face, r_face_path=r_face)
   end
 
 
@@ -704,11 +746,95 @@ realize(b::Backend, s::Union{Door, Window}) =
           l_thickness = l_thickness(s.wall),
           thickness = s.family.thickness
         vcat(b_wall_no_openings(b, subpath, height, (l_thickness - r_thickness + thickness)/2, (r_thickness - l_thickness + thickness)/2, s.family),
-             b_sweep(b, frame_path(s, subpath, height), s.family.frame.profile, 0, 1, material_ref(b, s.family.frame.material))
-        )
+             frame_refs(b, s, subpath, height))
       end
     end
   end
+
+#=
+Frame geometry has two code paths depending on the subpath's shape.
+
+For polygonal subpaths (straight walls and polygonal wall paths), the
+historical approach works well: merge the U-shape (door) or rectangle
+(window) into a single OpenPolygonalPath via `foldr(join_paths, …)` and
+sweep it in one call. `path_frames(OpenPolygonalPath)` gives per-vertex
+averaged-tangent frames at the corners, which `rotation_minimizing_frames`
+then smooths into the continuous profile orientation you'd expect.
+
+For an `ArcPath` subpath (curved walls), that approach breaks down:
+the composite path becomes an `OpenPathSequence` mixing poly jambs with
+an arc head, `path_frames` falls back to `path_interpolated_frames`,
+and — crucially — the RMF seed is the first frame of the right jamb,
+whose orientation is picked by `cs_from_o_vz((0, 0, -1))`. That seed
+is independent of the wall's tangent at the jamb's arc position, so
+each jamb ends up with the same profile rotation (correct only for
+one specific arc angle). The head also gets threaded through a single
+RMF chain that has no sensible way to re-orient across two discontinuous
+corners.
+
+The split path sweeps each piece independently, with a profile
+pre-rotated so the 0.1 × 0.4 dims land on the right physical directions
+at that piece — matching the convention the polygonal branch produces
+on a straight wall.
+
+See also: src/Paths.jl `Base.reverse(::ArcPath)`, which the head relies
+on for its reversed traversal.
+=#
+frame_refs(b::Backend, s::Union{Door, Window}, subpath::Path, height) =
+  b_sweep(b, frame_path(s, subpath, height),
+          s.family.frame.profile, 0, 1,
+          material_ref(b, s.family.frame.material))
+
+frame_refs(b::Backend, s::Union{Door, Window}, subpath::ArcPath, height) =
+  let profile = s.family.frame.profile,
+      mat = material_ref(b, s.family.frame.material)
+    vcat(arc_jamb_refs(b, subpath, :end,   height, profile, mat),
+         arc_head_refs(b, subpath, height, profile, mat),
+         arc_jamb_refs(b, subpath, :begin, height, profile, mat),
+         s isa Window ?
+           arc_sill_refs(b, subpath, profile, mat) :
+           [])
+  end
+
+#=
+Per-jamb profile rotation.
+
+The wall tangent at a jamb's arc position has world polar angle
+`θ + π/2` (for an arc centered at the world origin at angle θ). To make
+the post-sweep profile.X align with that tangent, we rotate the profile
+in its 2D plane by `α = atan2(t.x, t.y)` — which simplifies to `-θ` for
+the standard arc tangent `(-sin θ, cos θ, 0)`. The same formula works
+for any tangent direction, including the straight-wall cases (`+X` →
+`π/2`, `+Y` → `0`), which we can verify against the polygonal branch.
+
+See also: src/Paths.jl `location_at(::ArcPath, ϕ)` — the base Loc's
+CS Z-axis gives the wall tangent.
+=#
+arc_jamb_refs(b::Backend, subpath::ArcPath, side::Symbol, height, profile, mat) =
+  let base = side == :end ? path_end(subpath) : path_start(subpath),
+      t_w = in_world(vz(1, base.cs)),
+      α = atan(t_w.x, t_w.y),
+      oriented = rotate(profile, α),
+      jamb_path = open_polygonal_path([base, base + vz(height)])
+    b_sweep(b, jamb_path, oriented, 0, 1, mat)
+  end
+
+#=
+Head/sill profile rotation.
+
+The head follows the arc reversed and lifted by `vz(height)`; the sill
+follows the arc forward. In both, the default frames (from
+`path_interpolated_frames → location_at`) put the profile's X along
+the inward radial and Y along vertical — i.e. the 0.4 dim would land
+on vertical. A π/2 rotation swaps those: 0.1 ends on vertical and 0.4
+on wall normal, matching the polygonal branch's convention.
+=#
+arc_head_refs(b::Backend, subpath::ArcPath, height, profile, mat) =
+  b_sweep(b, translate(reverse(subpath), vz(height)),
+          rotate(profile, π/2), 0, 1, mat)
+
+arc_sill_refs(b::Backend, subpath::ArcPath, profile, mat) =
+  b_sweep(b, subpath, rotate(profile, π/2), 0, 1, mat)
 
 frame_path(s::Door, subpath, height) =
   foldr(join_paths, [open_polygonal_path([subpath[end], subpath[end] + vz(height)]), translate(reverse(subpath), vz(height)), open_polygonal_path([subpath[begin] + vz(height), subpath[begin]])])
@@ -1155,6 +1281,7 @@ const truss_node_support = TrussNodeSupport
 used_materials(f::TrussNodeFamily) = [f.material]
 used_materials(f::TrussBarFamily) = [f.material]
 
+public truss_bar_family_cross_section_area
 truss_bar_family_cross_section_area(f::TrussBarFamily) =
   error("This should be computed by the backend family") #truss_bar_family_cross_section_area(back)
 
@@ -1201,20 +1328,45 @@ truss_bar_volume(s::TrussBar) =
 
 # Should we merge coincident nodes?
 export merge_coincident_truss_nodes,
-       coincident_truss_nodes_distance,
-       merge_coincident_truss_bars,
-       maybe_merged_node,
+       merge_coincident_truss_bars
+public maybe_merged_node,
        maybe_merged_bar
 
 const merge_coincident_truss_nodes = Parameter(true)
-const coincident_truss_nodes_distance = Parameter(1e-6)
+
+#=
+Truss-node coincidence tolerance.
+
+Truss-analysis input often arrives from a modelling pipeline that
+introduces millimetre-scale drift: two nodes that the designer treats
+as the same joint may have positions that differ by 1e-4 m or more
+after coordinate transports and family substitutions. Using
+`coincidence_tolerance()` here (1e-10 m) would fail to merge them,
+leaving the solver with an over-constrained or singular stiffness
+matrix. We therefore maintain a separate, looser coincidence
+threshold specifically for structural nodes.
+
+Compared against `distance(n_a.p, n_b.p)` between the positions of
+two truss nodes, in metres. The default 1e-6 m (one micrometre)
+is still tight from an engineering standpoint — no real structure
+has micrometre-scale node spacing — while being six orders of
+magnitude more permissive than `coincidence_tolerance`, enough to
+absorb authoring drift without silently merging distinct joints.
+
+See also: coincidence_tolerance (the general-purpose path-point
+coincidence threshold at 1e-10 m).
+=#
+
+"Distance below which two truss nodes are merged into one. `distance(a, b) < truss_node_coincidence_tolerance()`. [metres]"
+const truss_node_coincidence_tolerance = Parameter(1e-6)
+export truss_node_coincidence_tolerance
 
 maybe_merged_node(b::Backend, s::TrussNode) =
   # We are allowed to replace a node that we just created with one that already exists
-  let epsilon = coincident_truss_nodes_distance(),
+  let tol = truss_node_coincidence_tolerance(),
       p = s.p
     for n in b.truss_nodes
-      if distance(n.p, p) < epsilon
+      if distance(n.p, p) < tol
         merge_coincident_truss_nodes() || error("Coincident nodes $(s) and $(n) at $(p)")
         return n
       end
@@ -1229,12 +1381,12 @@ const merge_coincident_truss_bars = Parameter(true)
 
 maybe_merged_bar(b::Backend, s::TrussBar) =
   # We are allowed to replace a bar that we just created with one that already exists
-  let epsilon = coincident_truss_nodes_distance(),
+  let tol = truss_node_coincidence_tolerance(),
       p0 = s.p0,
       p1 = s.p1
     for b in b.truss_bars
-      if (distance(b.p0, p0) < epsilon && distance(b.p1, p1) < epsilon) ||
-         (distance(b.p0, p1) < epsilon && distance(b.p1, p0) < epsilon)
+      if (distance(b.p0, p0) < tol && distance(b.p1, p1) < tol) ||
+         (distance(b.p0, p1) < tol && distance(b.p1, p0) < tol)
         merge_coincident_truss_bars() || error("Coincident bars $(s) and $(n) at $(p0) and $(p1)")
         return b
       end
@@ -1247,7 +1399,8 @@ maybe_merged_bar(b::Backend, s::TrussBar) =
 # Many analysis tools prefer a simplified node-and-bar representation.
 # To merge nodes and bars we need a different structure. Maybe we should merge
 # this with the BIM information
-export TrussNodeData, truss_node_data, TrussBarData, truss_bar_data
+export truss_node_data, truss_bar_data
+public TrussNodeData, TrussBarData
 
 struct TrussNodeData
     id::Int
@@ -1271,7 +1424,7 @@ end
 truss_bar_data(id::Int, node0::TrussNodeData, node1::TrussNodeData, rotation::Real, family::Any) =
   TrussBarData(id, node0, node1, rotation, family)
 
-export process_nodes, process_bars
+public process_nodes, process_bars
 process_nodes(nodes, load=vz(0), loads_points=Dict()) =
   let point_loads = Dict()
     for k in keys(loads_points)
@@ -1283,11 +1436,11 @@ process_nodes(nodes, load=vz(0), loads_points=Dict()) =
      for (i, node) in enumerate(nodes)]
   end
 process_bars(bars, processed_nodes) =
-  let epsilon = coincident_truss_nodes_distance(),
+  let tol = truss_node_coincidence_tolerance(),
       node_data_near(loc) =
         begin
           for nd in processed_nodes
-            distance(loc, nd.loc) < epsilon && return nd
+            distance(loc, nd.loc) < tol && return nd
           end
           error("Bar without corresponding node at location $(loc)!")
         end
@@ -1330,7 +1483,7 @@ view_truss_deformation(
     end
   end
 
-export show_truss_deformation
+public show_truss_deformation
 show_truss_deformation(
     results::Any=nothing,
     visualizer::Backend=autocad;
@@ -1437,6 +1590,6 @@ end
 =#
 
 
-export family_profile
+public family_profile
 family_profile(b::Backend, family) =
   family.profile

@@ -83,9 +83,24 @@ include("Geometry.jl")
 include("Backend.jl")
 include("Frontend.jl")
 include("Shapes.jl")
+include("ArchMaterials.jl")
 include("BIM.jl")
 include("WallGraph.jl")
+include("Constraints.jl")
+# Designs.jl defines the abstract `Annotation` type that Layout
+# (in Spaces.jl) stores; must come first.
+include("Designs.jl")
 include("Spaces.jl")
+# Adjacencies.jl defines `AdjacencyRelation` + `adjacencies` /
+# `detect_adjacencies` on top of `classify_all_edges` from Spaces.jl;
+# DesignLayout.jl (the declarative engine) reuses those for
+# `layout(desc::SpaceDesc)`, so the adjacency layer loads first.
+include("Adjacencies.jl")
+include("DesignLayout.jl")
+# The constraint library's constructors (min_area, must_adjoin, …)
+# dispatch on both `Layout` and `BuildResult`, so they must load after
+# `Spaces.jl` (which defines both types).
+include("ConstraintLibrary.jl")
 include("Backends.jl")
 include("Primitives.jl")
 include("Camera.jl")
@@ -98,23 +113,19 @@ khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
 # From ColorTypes
 export RGB, RGBA, rgb, rgba, red, green, blue, alpha
 
+# User-facing
+export and_mark_deleted, @remote, @get_remote
 
-export and_mark_deleted,
-       @remote_api,
+# Developer-facing (accessible via KhepriBase.sym; pulled into backend modules by @import_backend_api)
+public @remote_api,
        parse_signature,
        encode,
        decode,
        @encode_decode_as,
        SocketBackend, WebSocketBackend, WebSocketConnection,
        current_backends,
-       @remote,
-       @get_remote,
        connection,
-       reset_backend,
-       IOBackend, LocalBackend,
-       dimension,
-       ref,
-       show_truss_deformation
+       IOBackend, LocalBackend
 
 # Ports for socket-based backends are defined here to avoid conflicts
 export autocad_port, revit_port, rhino_port, unity_port, unreal_port, blender_port, freecad_port, a3dsmax_port, threejs_port
@@ -127,6 +138,9 @@ const a3dsmax_port = 11005
 const unreal_port = 11010
 const rhino_port = 12000
 const threejs_port = 8900
+
+# Must be last so the introspection below sees all prior `public`/`export` declarations.
+include("BackendAPI.jl")
 
 function __init__()
 end

@@ -1,4 +1,4 @@
-export copy_plugin_files!, make_plugin_checker
+public copy_plugin_files!, make_plugin_checker
 
 copy_plugin_files!(dlls, src_folder, dst_folder) =
   for dll in dlls

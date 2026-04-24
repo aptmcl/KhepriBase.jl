@@ -260,12 +260,12 @@ using KhepriBase
     @test rect.dy ≈ 2 atol=1e-10
   end
 
-  @testset "epsilon parameter" begin
-    @test epsilon() == 1e-8
-    with(epsilon, 1e-6) do
-      @test epsilon() == 1e-6
+  @testset "parallelism_tolerance parameter" begin
+    @test parallelism_tolerance() == 1e-8
+    with(parallelism_tolerance, 1e-6) do
+      @test parallelism_tolerance() == 1e-6
     end
-    @test epsilon() == 1e-8  # Restored
+    @test parallelism_tolerance() == 1e-8  # Restored
   end
 
   @testset "collinearity_tolerance parameter" begin

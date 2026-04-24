@@ -118,7 +118,7 @@ const Shapes1D = Vector{<:Shape1D}
 const Shapes2D = Vector{<:Shape2D}
 
 # Materials
-export Material, Materials
+public Material, Materials
 
 abstract type Material <: UniqueProxy end
 const Materials = Vector{<:Material}
@@ -141,7 +141,8 @@ const BIMElements = Vector{<:BIMElement}
 abstract type BIMShape <: Shape3D end
 const BIMShapes = Vector{<:BIMShape}
 
-export Family, FamilyInstance, family, family_ref
+export family
+public Family, FamilyInstance, family_ref
 
 abstract type Family <: UniqueProxy end
 abstract type FamilyInstance <: Family end

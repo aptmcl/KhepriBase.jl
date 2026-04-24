@@ -405,7 +405,7 @@ fixed_svg(svgpath) =
     s
   end
 
-export to_from
+public to_from
 to_from(f, suffix, path, program) =
   ! isfile(path) ?
     error("Inexisting file $path") :
@@ -447,7 +447,7 @@ Base.show(io::IO, ::MIME"image/svg+xml", f::DVIFile) =
   end
 
 # Conditional evaluation of expressions, useful for backends that don't support all features
-export @ifbackend
+public @ifbackend
 macro ifbackend(mod, consequent, alternative=nothing)
   let mod_sym = QuoteNode(mod),
       m = __module__

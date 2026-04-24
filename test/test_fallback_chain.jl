@@ -14,7 +14,8 @@ import KhepriBase: Backend, void_ref, new_refs, backend_name,
   b_delete_ref, b_delete_refs, b_delete_all_shape_refs,
   b_layer, b_current_layer_ref, b_delete_all_shapes_in_layer,
   b_create_layer_from_ref_value,
-  b_get_material, b_material
+  b_get_material, b_material,
+  BackendDefault
 
 # Minimal backend key
 struct MinTriKey end

@@ -36,10 +36,16 @@ showerror(io::IO, e::UnimplementedBackendOperationException) =
 missing_specialization(b::Backend, oper=:unknown_operation, args...) =
   error(UnimplementedBackendOperationException(b, oper, args))
 
+public @bdef
 macro bdef(call)
   name, escname, params = call.args[1], esc(call.args[1]), esc.(call.args[2:end])
+  # Emit `public` only for the conventional `b_*` backend-dispatch names.
+  # Other names may collide with user-facing `export` declarations elsewhere
+  # (e.g., `ground` is exported from Shapes.jl); callers add `public` explicitly
+  # for those.
+  decls = startswith(string(name), "b_") ? [Expr(:public, escname)] : Expr[]
   quote
-    export $(escname)
+    $(decls...)
     $(escname)(b::Backend, $(params...)) =
       missing_specialization(b, $(QuoteNode(name)), $(params...))
   end
@@ -47,7 +53,7 @@ end
 
 @bdef(void_ref())
 
-export new_refs
+public new_refs
 new_refs(b::Backend{K,T}) where {K,T} = T[]
 
 #=
@@ -218,14 +224,19 @@ macro defbackend(name, alias, body)
       $(extra_struct_fields...)
     end
     const $(ealias) = $(ebackend)
-    export $(ealias), $(ebackend), $(ekey), $(eid), $(eref), $(enref)
+    export $(ealias)
+    # Backend struct and ref-type aliases are left without a declaration so
+    # that a backend author can choose: `export XxxBackend` (user-visible) or
+    # `public XxxBackend` (dev-only, accessible via qualified name). Default
+    # behavior — no declaration — keeps them accessible as `MyBackend.XxxBackend`
+    # but out of user namespaces.
     KhepriBase.void_ref(b::$(ealias)) = $(evoid)
     KhepriBase.backend_name(b::$(ealias)) = $(name_str)
     $(view_expr)
     $(forwarding_expr)
   end
 end
-export @defbackend
+public @defbackend
 
 # Safely extend refs from a b_* operation that may return a vector or a scalar.
 collect_ref!(refs, r::AbstractVector) = append!(refs, r)
@@ -234,7 +245,7 @@ collect_ref!(refs, r) = push!(refs, r)
 ############################################################
 # Zeroth tier: curves. Not all backends support these.
 
-export b_point, b_line, b_closed_line, b_polygon, b_regular_polygon,
+public b_point, b_line, b_closed_line, b_polygon, b_regular_polygon,
        b_nurbs_curve,
        b_spline, b_closed_spline, b_circle, b_arc, b_ellipse, b_rectangle
 
@@ -347,7 +358,7 @@ b_rectangle(b::Backend, c, dx, dy, mat) =
 
 #############################################################
 # First tier: everything is a triangle or a set of triangles
-export b_trig, b_quad, b_ngon, b_quad_strip, b_quad_strip_closed, b_strip
+public b_trig, b_quad, b_ngon, b_quad_strip, b_quad_strip_closed, b_strip
 
 @bdef(b_trig(p1, p2, p3))
 
@@ -389,7 +400,7 @@ b_strip(b::Backend, path1::Region, path2::Region, mat) =
 
 ############################################################
 # Second tier: surfaces
-export b_surface_polygon, b_surface_polygon_with_holes,
+public b_surface_polygon, b_surface_polygon_with_holes,
        b_surface_regular_polygon, b_surface_rectangle,
        b_surface_circle, b_surface_ring, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
        b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
@@ -397,7 +408,7 @@ export b_surface_polygon, b_surface_polygon_with_holes,
 # Ear clipping triangulation for simple (possibly concave) polygons.
 # Takes a vector of 3D coordinates (anything indexable with [1],[2],[3])
 # and returns a vector of (i,j,k) index triples.
-export triangulate_polygon
+public triangulate_polygon
 function triangulate_polygon(coords)
   n = length(coords)
   n < 3 && return Tuple{Int,Int,Int}[]
@@ -533,7 +544,7 @@ b_surface_grid(b::Backend, ptss, closed_u, closed_v, smooth_u, smooth_v, mat) =
            (closed_u ? [b_quad_strip(b, ptss[end,:], ptss[1,:], smooth_v, mat)] : new_refs(b))...)
   end
 
-export maybe_interpolate_grid
+public maybe_interpolate_grid
 maybe_interpolate_grid(ptss, smooth_u, smooth_v) =
   smooth_u || smooth_v ? 
     let interpolator = grid_interpolator(ptss),
@@ -585,7 +596,7 @@ the solidify operation should convert those primitive shapes into a
 proper solid.
 =#
 
-export b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
+public b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
        b_generic_pyramid_frustum_with_holes, b_generic_prism_with_holes,
        b_pyramid_frustum, b_pyramid, b_prism,
        b_regular_pyramid_frustum, b_regular_pyramid, b_regular_prism,
@@ -665,7 +676,7 @@ b_regular_prism(b::Backend, edges, cb, rb, angle, h, inscribed, bmat, tmat, smat
 
 # Tessellation resolution for smooth solids (spheres, cylinders, cones, tori).
 # Backends that produce vector output (TikZ, SVG) should override with a lower value.
-export tessellation_divisions
+public tessellation_divisions
 tessellation_divisions(b::Backend) = 32
 
 b_cylinder(b::Backend, cb, r, h, mat) =
@@ -746,9 +757,9 @@ b_torus(b::Backend, c, ra, rb, mat) =
         mat)
   end
 
-export b_mesh_obj_fmt
+public b_mesh_obj_fmt
 @bdef(b_mesh_obj_fmt(obj_name, transform))
-export b_set_environment
+public b_set_environment
 @bdef(b_set_environment(env_name, set_background))
 
 ##################################################################
@@ -785,7 +796,7 @@ b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
   end
 
 # Extrusions, lofts, sweeps, etc
-export b_extruded_point, b_extruded_curve, b_extruded_surface, b_sweep, b_loft
+public b_extruded_point, b_extruded_curve, b_extruded_surface, b_sweep, b_loft
 
 # Extruding a profile
 b_extruded_point(b::Backend, path, v, cb, mat) =
@@ -929,8 +940,8 @@ b_revolved_surface(b::Backend, profile, p, n, start_angle, amplitude, mat) =
 
 # Booleans
 
-export b_subtracted, b_intersected, b_united,
-       b_subtracted_surfaces, b_intersected_surfaces, b_united_surfaces, 
+public b_subtracted, b_intersected, b_united,
+       b_subtracted_surfaces, b_intersected_surfaces, b_united_surfaces,
        b_subtracted_solids, b_intersected_solids, b_united_solids,
        b_slice, b_unite_refs, b_slice_ref
 
@@ -1039,7 +1050,7 @@ b_fill(b::Backend, path::Region, mat) =
 b_fill(b::Backend, path::Mesh, mat) =
   b_surface_mesh(b, path.vertices, path.faces, mat)
 
-export b_realize_path
+public b_realize_path
 b_realize_path(b::Backend, path::Region, mat) =
   b_fill(b, path, mat)
 b_realize_path(b::Backend, path, mat) =
@@ -1057,7 +1068,7 @@ on the scale we are using so I'll include a size parameter and I'll
 consider the inicial spacing as 5% of the size and the extension to
 be extra 10% in excess of the size.
 =#
-export b_dimension, b_ext_line, b_dim_line, b_text, b_text_size, b_arc_dimension
+public b_dimension, b_ext_line, b_dim_line, b_text, b_text_size, b_arc_dimension
 
 b_dimension(b::Backend, p, q, str, size, offset, mat) =
   let qp = in_world(q - p),
@@ -1239,13 +1250,13 @@ indicate that we don't want to specify the material.
 In general, backends need to specialize this function to address additional cases.
 =#
 
-export b_get_material
+public b_get_material
 
 b_get_material(b::Backend, spec::Nothing) = void_ref(b)
 #Is this really needed? Yes, e.g., POVRay.
 b_get_material(b::Backend, spec::Any) = spec
 
-export BackendDefault, backend_default
+public BackendDefault, backend_default
 struct BackendDefault end
 const backend_default = BackendDefault()
 b_get_material(b::Backend, ::BackendDefault) = void_ref(b)
@@ -1269,7 +1280,7 @@ convert the generic material parameters into specific model parameters.
 # Material cascade: each tier strips parameters and calls the next tier down.
 # Backends override at the tier matching their capabilities.
 
-export b_material
+public b_material
 
 # Tier 1 — Color only
 b_material(b::Backend, name, base_color) =
@@ -1302,7 +1313,7 @@ b_material(b::Backend, name, base_color, metallic, roughness, specular,
              emission_color, emission_strength)
 
 # Specialized material constructors — default to b_material with appropriate PBR values
-export b_plastic_material, b_metal_material, b_glass_material, b_mirror_material
+public b_plastic_material, b_metal_material, b_glass_material, b_mirror_material
 
 b_plastic_material(b::Backend, name, color, roughness) =
   b_material(b, name, color, 0.0, roughness, 0.5)
@@ -1323,7 +1334,7 @@ Backends might store shapes locally (in b.refs.shapes) or remotely
 (in the CAD application). Some backends support querying all shapes
 from the remote app (e.g., for processing existing DWG files).
 =#
-export ShapeStorageType, LocalShapeStorage, RemoteShapeStorage, shape_storage_type
+public ShapeStorageType, LocalShapeStorage, RemoteShapeStorage, shape_storage_type
 abstract type ShapeStorageType end
 struct LocalShapeStorage <: ShapeStorageType end
 struct RemoteShapeStorage <: ShapeStorageType end
@@ -1332,7 +1343,7 @@ shape_storage_type(::Type{<:Backend}) = LocalShapeStorage()
 
 # === Created shapes: always local, always from b.refs.shapes ===
 
-export b_all_shape_refs, b_created_shape_refs, b_created_shapes,
+public b_all_shape_refs, b_created_shape_refs, b_created_shapes,
        b_existing_shape_refs, b_existing_shapes
 
 b_created_shape_refs(b::Backend) =
@@ -1409,7 +1420,7 @@ b_unhighlight_all_refs(b::Backend) =
   b_unhighlight_refs(b, b_created_shape_refs(b))
 
 # BIM
-export b_slab, b_roof, b_ceiling, b_beam, b_column, b_free_column, b_wall, b_curtain_wall,
+public b_slab, b_roof, b_ceiling, b_beam, b_column, b_free_column, b_wall, b_curtain_wall,
        b_railing, b_ramp, b_stair, b_spiral_stair, b_stair_landing,
        b_wall_no_openings, b_wall_with_openings, WallOpening
 
@@ -1435,7 +1446,7 @@ retrieve its thickness.
 #=
 Horizontal BIM elements rely on the level
 =#
-export material_ref, material_refs
+public material_ref, material_refs
 material_refs(b::Backend, materials) =
   [material_ref(b, mat) for mat in materials]
 
@@ -1637,13 +1648,34 @@ struct WallOpening
   height::Real
 end
 
-# Whole-path wall geometry: 4 quad strips + 2 end caps (open paths) = 4-6 calls total
+#=
+Whole-path wall geometry. Two code paths share a single core:
+
+  * "thickness" signature (legacy): the caller provides the
+    centerline and per-side thicknesses. We derive the two face
+    paths via `offset(w_path, ±thickness)`.
+  * "faces" signature (junction-aware): the caller provides the
+    two face polylines directly. The chain resolver uses this
+    entry point when it has computed clean corners at every
+    junction (see `wall_face_polylines` in `WallGraph.jl`).
+
+The geometry is identical downstream: 4 quad strips (right face,
+left face, top, bottom) + 2 end caps for open paths.
+=#
 b_wall_no_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lmat, rmat, smat) =
-  path_length(w_path) < path_tolerance() ?
+  _b_wall_no_openings_impl(b, w_path,
+                           offset(w_path, -r_thickness),
+                           offset(w_path, l_thickness),
+                           w_height, lmat, rmat, smat)
+
+# Faces-aware variant: callers supply the two face polylines.
+b_wall_no_openings_faces(b::Backend, w_path, l_face, r_face, w_height, lmat, rmat, smat) =
+  _b_wall_no_openings_impl(b, w_path, r_face, l_face, w_height, lmat, rmat, smat)
+
+_b_wall_no_openings_impl(b::Backend, w_path, r_path, l_path, w_height, lmat, rmat, smat) =
+  path_length(w_path) < coincidence_tolerance() ?
     void_ref(b) :
-    let r_path = offset(w_path, -r_thickness),
-        l_path = offset(w_path, l_thickness),
-        w_height = w_height * wall_z_fighting_factor,
+    let w_height = w_height * wall_z_fighting_factor,
         r_vs = path_vertices(r_path),
         l_vs = path_vertices(l_path),
         r_top = map(p -> p + vz(w_height), r_vs),
@@ -1678,91 +1710,332 @@ b_wall_no_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, famil
 subtract_wall_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
   region(c_r_w_path, c_r_op_path), region(c_l_w_path, c_l_op_path)
 
+#=
+Wall with openings.
+
+Two entry points, one body:
+
+  * `b_wall_with_openings`    — thickness signature. Derives the
+    wall's face subpaths from the centerline via `offset`.
+  * `b_wall_with_openings_faces` — faces signature. Consumes
+    caller-supplied face polylines (e.g. from
+    `wall_face_polylines`) for the wall's own surfaces. Opening
+    jambs still use the centerline's local perpendicular offsets
+    — each opening's jamb depends only on the wall's thickness
+    at that point, not on how the chain terminates elsewhere.
+=#
 b_wall_with_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, lmat, rmat, smat, openings) =
-  path_length(w_path) < path_tolerance() ?
+  _b_wall_with_openings_impl(b, w_path, w_height, l_thickness, r_thickness,
+                             subpaths(offset(w_path, -r_thickness)),
+                             subpaths(offset(w_path,  l_thickness)),
+                             lmat, rmat, smat, openings)
+
+b_wall_with_openings_faces(b::Backend, w_path, l_face, r_face, w_height,
+                           l_thickness, r_thickness, lmat, rmat, smat, openings) =
+  _b_wall_with_openings_impl(b, w_path, w_height, l_thickness, r_thickness,
+                             subpaths(r_face),
+                             subpaths(l_face),
+                             lmat, rmat, smat, openings)
+
+_b_wall_with_openings_impl(b::Backend, w_path, w_height, l_thickness, r_thickness,
+                           r_w_paths, l_w_paths,
+                           lmat, rmat, smat, openings) =
+  path_length(w_path) < coincidence_tolerance() ?
     void_ref(b) :
     let w_paths = subpaths(w_path),
-        r_w_paths = subpaths(offset(w_path, -r_thickness)),
-        l_w_paths = subpaths(offset(w_path, l_thickness)),
         w_height = w_height * wall_z_fighting_factor,
         prevlength = 0,
-        refs = new_refs(b)
-      for (w_seg_path, r_w_path, l_w_path) in zip(w_paths, r_w_paths, l_w_paths)
+        refs = new_refs(b),
+        segs = collect(zip(w_paths, r_w_paths, l_w_paths)),
+        n_segs = length(segs)
+      for (seg_i, (w_seg_path, r_w_path, l_w_path)) in enumerate(segs)
         let currlength = prevlength + path_length(w_seg_path),
-            c_r_w_path = closed_path_for_height(r_w_path, w_height),
-            c_l_w_path = closed_path_for_height(l_w_path, w_height)
-          # Render top edge and end caps only (omit bottom face to avoid
-          # sliver across door openings at floor level)
+            r_vs = path_vertices(r_w_path),
+            l_vs = path_vertices(l_w_path)
+          #=
+          Top edge strip (always) + end caps only at the wall's actual
+          extremities. The caps close the wall's cross-section (r-face
+          → l-face, full height) at the wall's two ends; on a
+          polygonalized arc wall they would otherwise be emitted at
+          every segment boundary — including across openings — giving
+          the vertical slicing artefact visible in the rendered scene.
+
+          The `!is_closed_path(w_path)` guard covers the rectangular/
+          polygonal-loop wall case (no caps anywhere). For an open
+          wall, we emit the start cap only on the first segment and
+          the end cap only on the last. Segment-internal boundaries
+          (and opening edges) are closed by the jackets or by nothing
+          at all.
+          =#
           with_material_as_layer(b, smat) do
             let smat_ref = material_ref(b, smat),
-                r_vs = path_vertices(r_w_path),
-                l_vs = path_vertices(l_w_path),
                 r_top = map(p -> p + vz(w_height), r_vs),
                 l_top = map(p -> p + vz(w_height), l_vs)
               collect_ref!(refs, b_quad_strip(b, r_top, l_top, false, smat_ref))
               if !is_closed_path(w_path)
-                collect_ref!(refs, b_surface_polygon(b, [r_vs[1], r_top[1], l_top[1], l_vs[1]], smat_ref))
-                collect_ref!(refs, b_surface_polygon(b, [l_vs[end], l_top[end], r_top[end], r_vs[end]], smat_ref))
+                if seg_i == 1
+                  collect_ref!(refs, b_surface_polygon(b, [r_vs[1], r_top[1], l_top[1], l_vs[1]], smat_ref))
+                end
+                if seg_i == n_segs
+                  collect_ref!(refs, b_surface_polygon(b, [l_vs[end], l_top[end], r_top[end], r_vs[end]], smat_ref))
+                end
               end
             end
           end
+          #=
+          Collect per-segment opening parameters and emit per-opening
+          cavity jackets as we go. The jacket for each opening is only
+          the *portion* of the cavity falling in this segment; on a
+          polygonalized arc wall, a single opening typically spans 2–N
+          segments, so we suppress the jamb faces at segment-boundary
+          continuations (`op_at_start` / `op_at_end`) — otherwise those
+          phantom walls show up inside the opening.
+
+          `t_op_start` / `t_op_end` are the opening's chord parameters
+          on `r_w_path` / `l_w_path`, i.e. the opening's endpoints
+          expressed as a fraction of the segment's own length (in
+          centerline arc-length, which equals the angular parameter for
+          a circular arc). Using the chord keeps subsequent geometry
+          coplanar with the segment's face rectangle — `path_start` on
+          the offset arc would land *off* the chord and break AutoCAD's
+          region constructor (`eNonCoplanarGeometry`).
+          =#
+          #=
+          Overlap check must catch the case where the *segment* lies
+          entirely inside the opening (a middle segment of a door/window
+          that spans the polygonalized arc across several segments).
+
+          The previous form — `op.path_position in [prev, curr) OR op
+          ends in [prev, curr]` — only covered "opening starts here" or
+          "opening ends here". For any intermediate segment of a
+          long-spanning opening, neither hit, so the opening was not
+          processed and the wall face was emitted uncut, producing the
+          wall-covering-the-opening artefact visible on arc walls.
+
+          The correct test is the standard interval overlap:
+          `op_start < currlength && op_end > prevlength`.
+          Keep the opening for later segments only if it actually
+          extends past this one.
+          =#
+          openings_in_segment = NamedTuple{(:t_start, :t_end, :base_h, :op_h), Tuple{Float64,Float64,Float64,Float64}}[]
           openings = filter(openings) do op
-            if prevlength <= op.path_position < currlength ||
-               prevlength <= op.path_position + op.width <= currlength
+            if op.path_position < currlength && op.path_position + op.width > prevlength
               let op_height = op.height,
                   op_at_start = op.path_position <= prevlength,
                   op_at_end = op.path_position + op.width >= currlength,
-                  op_path = subpath(w_path,
-                                    max(prevlength, op.path_position),
-                                    min(currlength, op.path_position + op.width)),
-                  r_op_path = offset(op_path, -r_thickness),
-                  l_op_path = offset(op_path,  l_thickness),
-                  fixed_r_op_path =
-                    open_polygonal_path([path_start(op_at_start ? r_w_path : r_op_path),
-                                         path_end(op_at_end ? r_w_path : r_op_path)]),
-                  fixed_l_op_path =
-                    open_polygonal_path([path_start(op_at_start ? l_w_path : l_op_path),
-                                         path_end(op_at_end ? l_w_path : l_op_path)]),
-                  r_op_translated = translate(fixed_r_op_path, vz(op.base_height)),
-                  l_op_translated = translate(fixed_l_op_path, vz(op.base_height)),
-                  c_r_op_path = closed_path_for_height(r_op_translated, op_height),
-                  c_l_op_path = closed_path_for_height(l_op_translated, op_height),
-                  # Jacket: open U-shape (no sill) for floor-level openings, full closed for elevated
-                  r_jacket = op.base_height < path_tolerance() ?
-                    let ps = path_vertices(r_op_translated)
-                      open_polygonal_path([ps[1], ps[1]+vz(op_height), ps[end]+vz(op_height), ps[end]])
-                    end : c_r_op_path,
-                  l_jacket = op.base_height < path_tolerance() ?
-                    let ps = path_vertices(l_op_translated)
-                      open_polygonal_path([ps[1], ps[1]+vz(op_height), ps[end]+vz(op_height), ps[end]])
-                    end : c_l_op_path
-                collect_ref!(refs, materialize_path(b, reverse(r_jacket), reverse(l_jacket), smat))
-                c_r_w_path, c_l_w_path = subtract_wall_paths(b, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path)
-                !(op.path_position >= prevlength && op.path_position + op.width <= currlength)
+                  t_op_start = op_at_start ? 0.0 :
+                                             (op.path_position - prevlength) / (currlength - prevlength),
+                  t_op_end   = op_at_end   ? 1.0 :
+                                             (op.path_position + op.width - prevlength) / (currlength - prevlength),
+                  r_p1 = r_vs[1] + t_op_start * (r_vs[end] - r_vs[1]),
+                  r_p2 = r_vs[1] + t_op_end   * (r_vs[end] - r_vs[1]),
+                  l_p1 = l_vs[1] + t_op_start * (l_vs[end] - l_vs[1]),
+                  l_p2 = l_vs[1] + t_op_end   * (l_vs[end] - l_vs[1])
+                _emit_opening_jacket!(refs, b, smat, r_p1, r_p2, l_p1, l_p2,
+                                      op.base_height, op_height,
+                                      op_at_start, op_at_end)
+                push!(openings_in_segment,
+                      (t_start=t_op_start, t_end=t_op_end,
+                       base_h=op.base_height, op_h=op_height))
+                op.path_position + op.width > currlength
               end
             else
-              true
+              op.path_position >= currlength
             end
           end
           prevlength = currlength
-          # Render wall faces (with openings subtracted as holes in the surfaces)
-          collect_ref!(refs, materialize_path(b, reverse(c_l_w_path), lmat))
-          collect_ref!(refs, materialize_path(b, c_r_w_path, rmat))
+          # Wall faces: emit as explicit rectangles (left-of-opening,
+          # above/below each opening, right-of-opening). Using Region-
+          # with-hole here breaks in AutoCAD when the hole touches the
+          # segment boundary — which is the norm on polygonalized arcs,
+          # since a single opening almost always spans multiple segments
+          # and at least one of its endpoints coincides with a segment's
+          # edge.
+          _emit_wall_face_rects!(refs, b, r_vs, w_height, openings_in_segment, rmat, false)
+          _emit_wall_face_rects!(refs, b, l_vs, w_height, openings_in_segment, lmat, true)
         end
       end
       refs
     end
 
-# Main b_wall dispatcher: family + offset → decompose and dispatch
-b_wall(b::Backend, w_path, w_height, family, offset, openings) =
+#=
+Build the cavity's interior surfaces for one opening's portion in one
+polygonalized segment. The existing "always emit a closed loop or
+floor-level U-shape" code drew spurious jambs at the segment boundaries
+when an opening spanned multiple segments (arc walls). We drop those
+boundary faces via `op_at_start` / `op_at_end`; the adjacent segment
+already contributes the real jamb at the opening's actual end.
+
+Eight cases, one per combination of `has_sill` / `has_start_jamb` /
+`has_end_jamb`. For elevated openings where both jambs fall at segment
+boundaries (a middle segment of a wide window), the sill and top are
+topologically disconnected and have to be emitted as two separate
+strips.
+=#
+_emit_opening_jacket!(refs, b, smat, r_p1, r_p2, l_p1, l_p2,
+                      base_h, op_h, op_at_start, op_at_end) =
+  let r_sb = r_p1 + vz(base_h),
+      r_st = r_p1 + vz(base_h + op_h),
+      r_et = r_p2 + vz(base_h + op_h),
+      r_eb = r_p2 + vz(base_h),
+      l_sb = l_p1 + vz(base_h),
+      l_st = l_p1 + vz(base_h + op_h),
+      l_et = l_p2 + vz(base_h + op_h),
+      l_eb = l_p2 + vz(base_h),
+      has_sill = base_h >= coincidence_tolerance(),
+      has_start = !op_at_start,
+      has_end = !op_at_end,
+      # Emit a strip between an r-side polyline and an l-side polyline.
+      # materialize_path(b, r, l, smat) calls b_strip(b, l, r, ref);
+      # the `reverse` on each keeps the quad winding consistent with the
+      # old code (end-to-start traversal).
+      emit_open(r_verts, l_verts) =
+        collect_ref!(refs, materialize_path(b,
+          open_polygonal_path(reverse(r_verts)),
+          open_polygonal_path(reverse(l_verts)),
+          smat))
+    if has_start && has_end && has_sill
+      # Full closed cavity (sill + end-jamb + top + start-jamb).
+      collect_ref!(refs, materialize_path(b,
+        reverse(closed_polygonal_path([r_sb, r_eb, r_et, r_st])),
+        reverse(closed_polygonal_path([l_sb, l_eb, l_et, l_st])),
+        smat))
+    elseif has_start && has_end                     # floor-level, both jambs
+      emit_open([r_sb, r_st, r_et, r_eb], [l_sb, l_st, l_et, l_eb])
+    elseif !has_start && has_end && !has_sill       # floor-level, continues from prev
+      emit_open([r_st, r_et, r_eb], [l_st, l_et, l_eb])
+    elseif has_start && !has_end && !has_sill       # floor-level, continues into next
+      emit_open([r_sb, r_st, r_et], [l_sb, l_st, l_et])
+    elseif !has_start && !has_end && !has_sill      # floor-level, full pass-through
+      emit_open([r_st, r_et], [l_st, l_et])
+    elseif !has_start && has_end && has_sill        # elevated, continues from prev
+      emit_open([r_st, r_et, r_eb, r_sb], [l_st, l_et, l_eb, l_sb])
+    elseif has_start && !has_end && has_sill        # elevated, continues into next
+      emit_open([r_eb, r_sb, r_st, r_et], [l_eb, l_sb, l_st, l_et])
+    else                                             # elevated, full pass-through
+      emit_open([r_st, r_et], [l_st, l_et])         #   top only
+      emit_open([r_eb, r_sb], [l_eb, l_sb])         #   sill only (disconnected piece)
+    end
+  end
+
+#=
+Materialize one side of a segment's wall face as a list of axis-aligned
+rectangles — one for each strip of remaining wall material after the
+openings are cut out. This replaces a `Region(c_w_path, c_op_path)`
+construction which, on polygonalized arcs, almost always has the inner
+path's edges coincident with the outer (because `op_at_start` /
+`op_at_end` is true somewhere on every opening that spans segments).
+AutoCAD's `RegionWithHoles` / `BooleanOperation` rejects that
+configuration (either `eNonCoplanarGeometry` before the chord-snap fix,
+or a silently-wrong result after it — the user sees the wall covering
+the door). Simple polygons sidestep both failure modes.
+
+`flip_normals=true` reverses the vertex order so the left face points
+outward on its side of the wall (mirrors the original code's
+`reverse(c_l_w_path)` on the l-side materialization).
+=#
+_emit_wall_face_rects!(refs, b::Backend, vs, w_height, openings_in_segment, mat, flip_normals) =
+  let v1 = vs[1], v2 = vs[end], delta = v2 - v1,
+      at(t) = v1 + t * delta,
+      emit_rect(a, b_, c, d) = begin
+        poly = closed_polygonal_path([a, b_, c, d])
+        collect_ref!(refs, materialize_path(b, flip_normals ? reverse(poly) : poly, mat))
+      end
+    if isempty(openings_in_segment)
+      emit_rect(v1, v2, v2 + vz(w_height), v1 + vz(w_height))
+    else
+      sorted = sort(openings_in_segment, by = op -> op.t_start)
+      prev_t = 0.0
+      for op in sorted
+        if op.t_start > prev_t + coincidence_tolerance()
+          p_prev = at(prev_t); p_left = at(op.t_start)
+          emit_rect(p_prev, p_left, p_left + vz(w_height), p_prev + vz(w_height))
+        end
+        p1 = at(op.t_start); p2 = at(op.t_end)
+        top = op.base_h + op.op_h
+        if top < w_height - coincidence_tolerance()
+          emit_rect(p1 + vz(top), p2 + vz(top),
+                    p2 + vz(w_height), p1 + vz(w_height))
+        end
+        if op.base_h > coincidence_tolerance()
+          emit_rect(p1, p2, p2 + vz(op.base_h), p1 + vz(op.base_h))
+        end
+        prev_t = op.t_end
+      end
+      if prev_t < 1 - coincidence_tolerance()
+        p_prev = at(prev_t)
+        emit_rect(p_prev, v2, v2 + vz(w_height), p_prev + vz(w_height))
+      end
+    end
+  end
+
+#=
+Main `b_wall` dispatcher.
+
+Decomposes the wall-family parameters into per-side thicknesses
+and materials, then picks the renderer for this wall's junction
+situation:
+
+  * `l_face_path` / `r_face_path` absent (the default) → derive
+    the face polylines via `offset(w_path, ±thickness)`. Correct
+    for isolated walls; produces the familiar misalignment at
+    non-T 3-way junctions where simple offsets can't close the
+    corners.
+
+  * `l_face_path` / `r_face_path` present → trust them. They
+    come from `wall_face_polylines` in the WallGraph resolver,
+    which pairwise-intersects each junction's incident walls'
+    offset curves and writes the resulting corners onto each
+    chain's face polylines. Using them here is what closes the
+    gap at the Room A / Room B (0,5) corner and every similar
+    non-T junction.
+=#
+b_wall(b::Backend, w_path, w_height, family, offset, openings;
+       l_face_path=nothing, r_face_path=nothing) =
   let l_th = (1/2 + offset) * (family.thickness + family.left_coating_thickness),
       r_th = (1/2 - offset) * (family.thickness + family.right_coating_thickness),
       lmat = family.left_material,
       rmat = family.right_material,
-      smat = family.side_material
-    isempty(openings) ?
-      b_wall_no_openings(b, w_path, w_height, l_th, r_th, lmat, rmat, smat) :
-      b_wall_with_openings(b, w_path, w_height, l_th, r_th, lmat, rmat, smat, openings)
+      smat = family.side_material,
+      have_faces = _face_paths_usable(w_path, l_face_path, r_face_path)
+    if isempty(openings)
+      have_faces ?
+        b_wall_no_openings_faces(b, w_path, l_face_path, r_face_path, w_height, lmat, rmat, smat) :
+        b_wall_no_openings(b, w_path, w_height, l_th, r_th, lmat, rmat, smat)
+    else
+      have_faces ?
+        b_wall_with_openings_faces(b, w_path, l_face_path, r_face_path, w_height, l_th, r_th, lmat, rmat, smat, openings) :
+        b_wall_with_openings(b, w_path, w_height, l_th, r_th, lmat, rmat, smat, openings)
+    end
+  end
+
+#=
+Decide whether caller-supplied face polylines are consumable by the
+faces-aware renderer. The renderer interleaves their vertices 1:1
+with the centerline's, so vertex-count mismatch is a render-time
+bug (SubDMesh indices go out of range → `eInvalidIndex` from the
+backend). A mismatch happens, for instance, when a chain passes
+through a valence-3 T-junction: on the abutment side the face
+polyline picks up an extra vertex representing the abutting wall's
+thickness, while the opposite side's parallel-line fallback yields
+only one. Rather than crashing, we fall back to the legacy
+`offset(path, ±t)` path here — a less precise join at that
+junction, but a valid render. An `@debug` line names the chain
+type so the upstream bug remains traceable.
+=#
+_face_paths_usable(w_path, l_face, r_face) =
+  !isnothing(l_face) && !isnothing(r_face) &&
+  let nw = length(path_vertices(w_path)),
+      nl = length(path_vertices(l_face)),
+      nr = length(path_vertices(r_face))
+    if nl == nr == nw
+      true
+    else
+      @debug("face-paths vertex count mismatch; falling back to offset(path, ±t)",
+             centerline=nw, left=nl, right=nr,
+             path_types=(typeof(w_path), typeof(l_face), typeof(r_face)))
+      false
+    end
   end
 
 b_curtain_wall(b::Backend, path, bottom_level, top_level, family, offset) =
@@ -1827,7 +2100,8 @@ struct OBJFileFamily <: OBJFamily
   y_is_up::Bool       # true if OBJ uses Y-up convention (default false = Z-up)
 end
 
-export OBJFamily, OBJFileFamily, obj_family
+export obj_family
+public OBJFamily, OBJFileFamily
 
 # obj_name is a relative subpath under resources/models/obj/:
 #   obj_family("name/name")  → subfolder layout (name/name.obj)
@@ -1840,7 +2114,7 @@ obj_family(obj_name; scale=1.0, rotation=0.0, offset=vxyz(0, 0, 0), y_is_up=fals
 # happens in b_mesh_obj_fmt at element placement time.
 backend_get_family_ref(b::Backend, f::Family, bf::OBJFileFamily) = bf
 
-export standalone_obj_transform, wall_obj_transform
+public standalone_obj_transform, wall_obj_transform
 
 #=
   standalone_obj_transform(position, bf::OBJFileFamily)
@@ -1966,7 +2240,7 @@ end
 ##  box placeholder is used.
 ## ─────────────────────────────────────────────────────────────────────
 
-export b_toilet, b_sink, b_closet
+public b_toilet, b_sink, b_closet
 b_toilet(b::Backend, c, host, family) =
   let bf = get(family.implemented_as, typeof(b), nothing)
     bf isa OBJFamily ?
@@ -1996,7 +2270,7 @@ b_closet(b::Backend, c, host, family) =
 ##  has no native OBJ import).
 ## ─────────────────────────────────────────────────────────────────────
 
-export obj_file_path, read_obj_mesh, transform_obj_vertices
+public obj_file_path, read_obj_mesh, transform_obj_vertices
 
 #=
   obj_file_path(obj_name)
@@ -2051,7 +2325,7 @@ end
 transform_obj_vertices(verts, transform) =
   [in_world(transform + vxyz(v[1], v[2], v[3])) for v in verts]
 
-export b_family_element
+public b_family_element
 b_family_element(b::Backend, loc, angle, level, family) =
   b_box(b, loc - vxy(0.5, 0.5, loc.cs), 1.0, 1.0, 1.0, nothing)
 
@@ -2061,16 +2335,16 @@ b_family_element(b::Backend, loc, angle, level, family) =
 @bdef b_spotlight(loc, dir, hotspot, falloff)
 
 # Default fallbacks: approximate unsupported light types with simpler ones
-export b_ieslight
+public b_ieslight
 b_ieslight(b::Backend, file, loc, dir, alpha, beta, gamma) =
   b_spotlight(b, loc, dir, pi/4, pi/3)
 
-export b_arealight
+public b_arealight
 b_arealight(b::Backend, loc, dir, size, energy, color) =
   b_pointlight(b, loc, energy, color)
 
 # Trusses
-export b_truss_node, b_truss_node_support, b_truss_bar
+public b_truss_node, b_truss_node_support, b_truss_bar
 
 b_truss_node(b::Backend, p, family) =
   with_material_as_layer(b, family.material) do
@@ -2099,7 +2373,7 @@ b_truss_bar(b::Backend, p, q, family) =
 @bdef b_truss_analysis(load::Vec, self_weight::Bool, point_loads::Dict)
 @bdef b_node_displacement_function(res::Any)
 
-export b_truss_bars_volume
+public b_truss_bars_volume
 b_truss_bars_volume(b::Backend) =
   sum(truss_bar_volume, b.truss_bars)
 
@@ -2140,7 +2414,7 @@ delete_current_backend(b::Backend) =
 # a task-local override (e.g. the user's main REPL task) can see
 # backends that connected via the socket/websocket server.
 const global_backends_lock = ReentrantLock()
-export add_global_backend, delete_global_backend
+public add_global_backend, delete_global_backend
 add_global_backend(b::Backend) =
   lock(global_backends_lock) do
     current_backends.value = tuple(b, current_backends.value...)
@@ -2176,8 +2450,8 @@ backend(backend::Backend) =
 switch_to_backend(from::Backend, to::Backend) =
   current_backend(to)
 
-export top_backend
-export purge_backends
+public top_backend
+public purge_backends
 purge_backends() =
   let bs = current_backends(),
       ok_bs = []
@@ -2198,7 +2472,7 @@ purge_backends() =
 # Basically, they are dictionaries.
 # but they also support a default value for the case
 # where there is no backend-specific value available
-export BackendParameter
+public BackendParameter
 struct BackendParameter
   value::IdDict{Type{<:Backend}, Any}
   default::Any
@@ -2262,7 +2536,7 @@ also be used without materials or classification.
 #@bdef bounding_box(shapes::Shapes)
 
 #@bdef chair(c, angle, family)
-export b_table
+public b_table
 b_table(b::Backend, p, length, width, height, top_thickness, leg_thickness, mat) =
   let dx = length/2,
     dy = width/2,
@@ -2275,7 +2549,7 @@ b_table(b::Backend, p, length, width, height, top_thickness, leg_thickness, mat)
   [table_top, legs]
   end
 
-export b_chair
+public b_chair
 b_chair(b::Backend, p, length, width, height, seat_height, thickness, mat) =
   [b_table(b, p, length, width, seat_height, thickness, thickness, mat),
    b_box(b, add_xyz(p, -length/2, -width/2, seat_height), thickness, width, height - seat_height, mat)]
@@ -2360,7 +2634,7 @@ end
 Backends might not provide camera information. In that case
 we need to provide it in the frontend.
 =#
-export ViewType, FrontendView, BackendView, view_type
+public ViewType, FrontendView, BackendView, view_type
 abstract type ViewType end
 struct FrontendView <: ViewType end
 struct BackendView <: ViewType end
@@ -2368,7 +2642,7 @@ struct BackendView <: ViewType end
 # By default, we use the backend view
 view_type(::Type{<:Backend}) = BackendView()
 
-export b_zoom_extents
+public b_zoom_extents
 b_zoom_extents(b::Backend) = b_zoom_extents(view_type(typeof(b)), b)
 b_zoom_extents(::BackendView, b) = missing_specialization(b, :b_zoom_extents)
 b_zoom_extents(::FrontendView, b) =
@@ -2384,7 +2658,7 @@ b_zoom_extents(::FrontendView, b) =
     end
   end
 
-export b_set_ground
+public b_set_ground
 b_set_ground(b::Backend, level, mat) =
   b_surface_regular_polygon(b, 16, z(level), 10000, 0, true, material_ref(b, mat))
 
@@ -2393,14 +2667,100 @@ b_realistic_sky(b::Backend, date, latitude, longitude, elevation, meridian, turb
 
 # Rendering
 
-export b_render_pathname, b_render_initial_setup, b_render_final_setup, b_setup_render, b_render_view
+public b_render_pathname, b_render_initial_setup, b_render_final_setup, b_setup_render, b_render_view
+
+#=
+Canonical visual styles for cross-backend abstract rendering.
+
+Why this vocabulary exists. Every backend has its own native display-mode names
+(Rhino: :wireframe/:shaded/:rendered/:ghosted/:xray/:technical/:artistic/:pen;
+AutoCAD: :wireframe/:conceptual/:sketchy/...; Blender: renderer choice). A
+Khepri script that wants to say "render this as an Arctic-style documentation
+figure" cannot do so portably without a shared vocabulary. These symbols are
+that shared vocabulary.
+
+How backends map them.
+  :realistic — full PBR + global illumination; the highest-quality photoreal
+               render the backend can produce.
+  :shaded    — the backend's fastest solid-shaded mode; default and fallback.
+  :wireframe — edges only, no fill.
+  :arctic    — matte white diffuse + multi-directional soft light + Fresnel
+               edge darkening, after Rhino 7's Arctic display mode. Clean,
+               documentation-friendly figures where material colour distracts.
+  :technical — clean edge/silhouette lines over a light background. For
+               construction drawings and technical documentation.
+  :pen       — monochrome line/hidden-line rendering, pen-on-paper look.
+  :sketchy   — jittered, hand-drawn style lines.
+  :xray      — semi-transparent surfaces with silhouette emphasis.
+  :ghosted   — faded surfaces for context against a foreground.
+
+A backend that does not natively support a given style should fall back to
+:shaded and emit a one-line @warn.
+
+See also: `RenderViewOptions`, `b_view_settings`.
+=#
+"""Canonical visual-style symbols accepted by `RenderViewOptions.visual_style`."""
+const canonical_visual_styles = (:wireframe, :shaded, :realistic, :arctic,
+                                 :technical, :pen, :sketchy, :xray, :ghosted)
+export canonical_visual_styles
+
+public validate_visual_style
+validate_visual_style(style::Symbol) =
+  style in canonical_visual_styles ||
+    error("Unknown visual_style $(style). Valid values: $(join(canonical_visual_styles, ", "))")
+
+#=
+Options bundle for a single render call.
+
+Why this struct exists. Before it, render parameters lived as eight separate
+task-local Parameters (render_width, render_height, render_quality,
+render_exposure, render_kind, ...). Each backend read some subset from globals
+and ignored the rest, leading to silent inconsistency: render_quality had a
+different interpretation per backend, render_exposure was ignored in several.
+Bundling the options into a single struct and passing it to
+`b_render_and_save_view` as an explicit argument makes the render contract
+testable and uniform across backends.
+
+Why the defaults read from Parameters. Backwards compatibility — existing code
+that sets `render_width(1920)` and then calls `render_view("x")` keeps working
+because `RenderViewOptions()` picks up the current Parameter values at
+construction time.
+
+Field meanings:
+  width, height — output image size in pixels.
+  quality       — backend-interpreted dial in [-1, 1]. A backend converts this
+                  to samples-per-pixel / anti-alias level / its native control.
+                  0 is "sensible default"; -1 is fast; +1 is best.
+  exposure      — backend-interpreted bias in [-3, +3]. 0 is neutral. Backends
+                  without HDR pipelines may ignore this.
+  visual_style  — one of `canonical_visual_styles`.
+  kind          — :realistic | :white | :black, orthogonal to visual_style.
+                  Controls background treatment (clay/white/black) for
+                  presentation renders.
+  extra         — escape hatch for backend-specific parameters not yet
+                  promoted to the canonical API.
+
+See also: `canonical_visual_styles`, `b_render_and_save_view`, `rendering_with`.
+=#
+"""Options struct passed to `b_render_and_save_view` and `b_render_view`."""
+Base.@kwdef struct RenderViewOptions
+  width::Int                 = render_width()
+  height::Int                = render_height()
+  quality::Float64           = render_quality()
+  exposure::Float64          = render_exposure()
+  visual_style::Symbol       = :shaded
+  kind::Symbol               = render_kind()
+  extra::Dict{Symbol,Any}    = Dict{Symbol,Any}()
+end
+export RenderViewOptions
 
 b_setup_render(b::Backend, kind) = kind
 
-b_render_view(b::Backend, name) =
+b_render_view(b::Backend, name, opts::RenderViewOptions=RenderViewOptions()) =
   let path = prepare_for_saving_file(b_render_pathname(b, name))
-    b_render_final_setup(b, render_kind())
-    b_render_and_save_view(b, path)
+    validate_visual_style(opts.visual_style)
+    b_render_final_setup(b, opts.kind)
+    b_render_and_save_view(b, path, opts)
   end
 
 prepare_for_saving_file(path::String) =
@@ -2424,20 +2784,53 @@ prepare_for_saving_file(path::String) =
     end
   end
 
-b_render_pathname(::Backend, name) = render_default_pathname(name)  
+b_render_pathname(::Backend, name) = render_default_pathname(name)
 b_render_initial_setup(::Backend, kind) = kind
 b_render_final_setup(::Backend, kind) = kind
 
+#=
+Two-method dispatch for backend rendering.
+
+The 3-arg method `b_render_and_save_view(b, path, opts::RenderViewOptions)` is
+the canonical contract. Backends that want the full options bundle override
+this method directly.
+
+The 2-arg method `b_render_and_save_view(b, path)` is the legacy contract.
+Existing backends continue to implement it and read render_width/height/...
+from Parameters; a default 3-arg method below sets those Parameters from
+`opts` and delegates, so legacy backends keep working without modification.
+
+A backend MUST implement at least one of the two. If neither is implemented,
+the 2-arg @bdef fallback raises `UnimplementedBackendOperationException`.
+=#
+
+# Default 3-arg method: thread opts through Parameters, call legacy 2-arg method.
+b_render_and_save_view(b::Backend, path::String, opts::RenderViewOptions) =
+  with(render_width, opts.width) do
+    with(render_height, opts.height) do
+      with(render_quality, opts.quality) do
+        with(render_exposure, opts.exposure) do
+          with(render_kind, opts.kind) do
+            b_render_and_save_view(b, path)
+          end
+        end
+      end
+    end
+  end
+
+# Legacy 2-arg method: @bdef fallback raises if no backend method overrides it.
 @bdef b_render_and_save_view(path)
 
 # -- shot_view: fast viewport capture to raster image (PNG) --
-export b_shot_view, b_shot_pathname, b_raw_view, b_raw_pathname
+public b_shot_view, b_shot_pathname, b_raw_view, b_raw_pathname
 
 b_shot_view(b::Backend, path) = b_render_and_save_view(b, path)
+b_shot_view(b::Backend, path, opts::RenderViewOptions) = b_render_and_save_view(b, path, opts)
 b_shot_pathname(b::Backend, name) = b_render_pathname(b, name)
 
 # -- raw_view: capture native intermediate format for precise comparison --
 b_raw_view(b::Backend, path) = b_shot_view(b, path)
+b_raw_view(b::Backend, path, opts::RenderViewOptions) = b_shot_view(b, path, opts)
 b_raw_pathname(b::Backend, name) = b_shot_pathname(b, name)
 
 # Viewport: Only some backends support this, but it can be useful for the frontend to be able to set it in a backend-agnostic way.
@@ -2497,7 +2890,7 @@ backend_stroke_op(b::Backend, op::ArcOp, start::Loc, curr::Loc, refs) =
 #@bdef wall(path, height, l_thickness, r_thickness, family)
 
 # A poor's man approach to deal with Z-fighting
-export support_z_fighting_factor, wall_z_fighting_factor
+public support_z_fighting_factor, wall_z_fighting_factor
 const support_z_fighting_factor = 0.999
 const wall_z_fighting_factor = 0.998
 
@@ -2527,7 +2920,7 @@ const wall_z_fighting_factor = 0.998
 The backend might be in the same process as the frontend, or
 it might be in a different process.
 =#
-export TargetType, LocalTarget, RemoteTarget
+public TargetType, LocalTarget, RemoteTarget
 abstract type TargetType end
 struct LocalTarget <: TargetType end
 struct RemoteTarget <: TargetType end
@@ -2561,7 +2954,7 @@ end
 default_view() = View(xyz(10,10,10), xyz(0,0,0), 35, 22, false)
 top_view() = View(xyz(0,0,10), xyz(0,0,0), 0, 0, true)
 
-export View, default_view, top_view, b_get_view, b_set_view, b_set_view_top
+public View, default_view, top_view, b_get_view, b_set_view, b_set_view_top
 
 
 b_set_view(::FrontendView, b, camera, target, lens, aperture) =
@@ -2570,7 +2963,8 @@ b_set_view(::FrontendView, b, camera, target, lens, aperture) =
     b.view.target = target
     b.view.lens = lens
     b.view.aperture = aperture
-    b.view.is_top_view = norm(cross(target - camera, vz(1, world_cs))) < 1e-9  # aligned with Z?
+    # Top view when the camera-to-target vector is parallel to world Z.
+    b.view.is_top_view = norm(cross(target - camera, vz(1, world_cs))) < parallelism_tolerance()
   end
 
 b_set_view_top(::FrontendView, b) =
@@ -2593,7 +2987,8 @@ b_set_view_top(v::BackendView, b) =
 
 ###############################################################
 # It might be useful to stop view update during batch processing
-export with_batch_processing, b_start_batch_processing, b_stop_batch_processing
+export with_batch_processing
+public b_start_batch_processing, b_stop_batch_processing
 
 b_start_batch_processing(b::Backend) = nothing
 

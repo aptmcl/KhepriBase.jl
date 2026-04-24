@@ -45,7 +45,8 @@ macro defcb(expr)
   docstr = _frontend_docstr(name, params_data, false)
   esc(
     quote
-      export $(name), $(backend_name)
+      export $(name)
+      $(Expr(:public, backend_name))
       # We don't include types in the parameters to avoid multiple dispatch ambiguities.
       # However, it might be interesting to include them in the body as assertions.
       @named_params $(name)($(params...), backend::Backend=top_backend()) =
@@ -74,7 +75,8 @@ macro defcbs(expr)
   docstr = _frontend_docstr(name, params_data, true)
   esc(
     quote
-      export $(name), $(backend_name)
+      export $(name)
+      $(Expr(:public, backend_name))
       # We don't include types in the parameters to avoid multiple dispatch ambiguities.
       # However, it might be interesting to include them in the body as assertions.
       @named_params $(name)($(params...), backends::Backends=current_backends()) =
@@ -174,18 +176,21 @@ current_layer(layer, backends::Backends=current_backends()) =
 @defcbs zoom_extents()
 
 # View settings — each backend specializes with its own keyword arguments.
-# The standardized `visual_style` keyword accepts:
-#   :wireframe — wire edges only
-#   :shaded    — basic solid shading (each backend's default shaded mode)
-#   :realistic — full material/lighting rendering
-# Backend-specific styles (e.g., :ghosted, :xray, :sketchy) remain available per-backend.
-export view_settings, b_view_settings
+# The standardized `visual_style` keyword accepts the values in
+# `canonical_visual_styles` (see Backend.jl): :wireframe, :shaded, :realistic,
+# :arctic, :technical, :pen, :sketchy, :xray, :ghosted. Backends map each to
+# their closest native equivalent and fall back to :shaded for unsupported
+# values. Backend-specific keywords (e.g. display_mode in Rhino, renderer in
+# Blender) remain available as aliases during migration.
+export view_settings
+public b_view_settings
 view_settings(b::Backend=top_backend(); kwargs...) = b_view_settings(b; kwargs...)
 b_view_settings(b::Backend; kwargs...) = nothing
 
 # Setup for raw view capture — sets window size and view mode for repeatable screenshots.
 # Each backend specializes b_setup_raw_view with its preferred display settings.
-export setup_raw_view, b_setup_raw_view
+export setup_raw_view
+public b_setup_raw_view
 setup_raw_view(b::Backend=top_backend()) = b_setup_raw_view(b)
 b_setup_raw_view(b::Backend) =
   b_set_view_size(b, render_width(), render_height())
@@ -218,7 +223,7 @@ const render_kind = Parameter(:realistic) # or :white or :black
 
 render_kind_dir_from_render_kind(kind) =
   kind == :realistic ? "Render" :
-  kind == :black ? "RenderBlack" : 
+  kind == :black ? "RenderBlack" :
   kind == :white ? "RenderWhite" :
   error("Unknown kind $kind")
 
@@ -228,5 +233,19 @@ render_setup(kind::Symbol=:realistic, backend::Backend=top_backend()) = begin
   b_render_initial_setup(backend, kind)
 end
 
-render_view(name::String="View", backend::Backend=top_backend()) =
-  b_render_view(backend, name)
+# render_view — user-facing entry point.
+#
+# Accepts any RenderViewOptions field as a keyword argument, so a script can
+# request a specific visual style or override resolution/quality without
+# touching the global Parameters:
+#
+#   render_view("figure_01")                                  # current defaults
+#   render_view("figure_01"; visual_style=:arctic)            # Arctic style
+#   render_view("figure_01"; visual_style=:realistic,
+#                            width=1920, height=1080)         # HD photoreal
+#
+# The positional (name, backend) form is retained for backwards compatibility.
+render_view(name::String="View",
+            backend::Backend=top_backend();
+            kwargs...) =
+  b_render_view(backend, name, RenderViewOptions(; kwargs...))

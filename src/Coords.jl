@@ -391,6 +391,8 @@ gen_addition(C, c, Vc, vc) =
     p.cs === v.cs ? xyz(getfield(p, :raw) + getfield(v, :raw), p.cs) : p + in_cs(v, p.cs)
 (+)(p::Pol, v::Union{VX,VXY,VPol,VPold}) =
     pol(xy(p) + v)
+(+)(p::Pol, v::Union{VXYZ,VCyl,VSph}) =
+    cyl(xyz(p) + v)
 (+)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
     cyl(xyz(p) + v)
 (+)(p::Sph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
@@ -550,11 +552,36 @@ scaled_cs(p::XYZ, x::Real, y::Real, z::Real) = xyz(p.x, p.y, p.z, scaled_cs(p.cs
 center_scaled_cs(p::XYZ, x::Real, y::Real, z::Real) = xyz(p.x/x, p.y/y, p.z/z, center_scaled_cs(p.cs, x, y, z))
 
 
-const min_norm = 1e-20
+#=
+Zero-vector tolerance.
+
+Unitization (v / ‖v‖) is undefined when the vector is mathematically zero,
+but floating-point arithmetic rarely produces an exact zero: a vector
+computed as the difference of nearly-equal points, or as the cross product
+of nearly-parallel vectors, may have a norm around 1e-15 or smaller yet
+still be meaningless as a direction. We therefore need a threshold below
+which a vector is treated as the zero vector.
+
+The comparison is `norm(v)`, in whatever unit v has (dimensionless for
+direction vectors, metres for position differences). The default 1e-20
+is far below any plausible numerical signal at Khepri's working scale:
+Float64 resolution near 1 m is ~2.2e-16, so a vector whose norm falls
+below 1e-20 is floating-point noise by any reasonable interpretation.
+This tolerance is therefore essentially a mathematical-zero guard, not
+a scale-sensitive threshold; it rarely benefits from being overridden.
+
+See also: parallelism_tolerance (for cross-product magnitudes used to
+classify vectors as parallel rather than as zero).
+=#
+
+"Norm below which a vector is treated as the zero vector. `norm(v) < zero_vector_tolerance()`."
+const zero_vector_tolerance = Parameter(1e-20)
+export zero_vector_tolerance
 
 unitized(v::Vec) =
   let r = sqrt(sum(abs2, v.raw))
-    @assert r > min_norm "The vector $(v) is too small (norm: $(r)) to be unitized."
+    r > zero_vector_tolerance() || throw(DomainError(v,
+      "Vector is too small (norm: $(r)) to be unitized; below zero_vector_tolerance() = $(zero_vector_tolerance())."))
     vxyz(v.raw./r, v.cs)
   end
 

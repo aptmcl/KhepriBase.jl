@@ -14,6 +14,7 @@ module BackendConformanceTests
 
 using Test
 using KhepriBase
+KhepriBase.@import_backend_api
 
 export run_conformance_tests
 

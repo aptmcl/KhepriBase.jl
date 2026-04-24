@@ -355,10 +355,10 @@ using KhepriBase
     @test !coincident_path_location(xy(0, 0), xy(1, 1))
 
     # Test with different tolerances
-    with(path_tolerance, 1e-5) do
+    with(coincidence_tolerance, 1e-5) do
       @test coincident_path_location(xy(0, 0), xy(1e-6, 1e-6))
     end
-    with(path_tolerance, 1e-10) do
+    with(coincidence_tolerance, 1e-10) do
       @test !coincident_path_location(xy(0, 0), xy(1e-6, 1e-6))
     end
   end
@@ -492,6 +492,129 @@ using KhepriBase
       pr = reverse(p)
       @test pr.vertices[1].y ≈ 1 atol=1e-10
     end
+
+    # The ArcPath reverse invariant: the reversed arc must trace the same
+    # world points as the original, in opposite order. A door/window frame
+    # on a curved wall depends on this — the frame head is built as
+    # `translate(reverse(subpath), vz(height))` and must meet both jambs.
+    # See src/BIM.jl frame_path and src/Paths.jl Base.reverse(::ArcPath).
+    @testset "reverse ArcPath" begin
+      # Compares world-space positions only (CS of the reversed Loc differs).
+      same_point(a, b; atol=1e-10) = begin
+        aw = in_world(a); bw = in_world(b)
+        isapprox(aw.x, bw.x; atol) && isapprox(aw.y, bw.y; atol) && isapprox(aw.z, bw.z; atol)
+      end
+
+      arcs = [
+        arc_path(u0(), 5, 0, π),              # user's example
+        arc_path(u0(), 5, 0.4, 0.2),          # sub-arc from the user's example
+        arc_path(xyz(2, -3, 1), 2.5, 0.7, 1.3),  # off-origin, non-trivial start_angle
+        arc_path(u0(), 1, -π/3, π/4),         # negative start_angle
+      ]
+
+      for p in arcs
+        pr = reverse(p)
+        L = path_length(p)
+        @test path_length(pr) ≈ L atol=1e-10
+        @test same_point(path_start(pr), path_end(p))
+        @test same_point(path_end(pr),   path_start(p))
+        # Endpoints alone could be satisfied by a different arc of equal
+        # length — sample interior points too.
+        for d in (L/4, L/2, 3L/4)
+          @test same_point(location_at_length(pr, d),
+                           location_at_length(p,  L - d))
+        end
+        # Reverse of reverse retraces the original.
+        prr = reverse(pr)
+        for d in (0.0, L/3, 2L/3, L)
+          @test same_point(location_at_length(prr, d),
+                           location_at_length(p,   d))
+        end
+      end
+    end
+
+    # CircularPath is closed, so start position is free; what matters
+    # is that the traversal direction is reversed in world.
+    @testset "reverse CircularPath" begin
+      r = 5.0
+      p = circular_path(u0(), r)
+      pr = reverse(p)
+      @test path_length(pr) ≈ path_length(p) atol=1e-10
+      # Forward at (r,0,0) at t=0 steps toward +y (CCW).
+      ε = 1e-4
+      tangent_fwd = in_world(location_at_length(p, ε)) - in_world(location_at_length(p, 0))
+      @test tangent_fwd.y > 0
+      # Reversed circle starts at (0,r,0) (the +X' of the flipped CS)
+      # and sweeps CW in world, so it reaches (r,0,0) after a quarter
+      # turn — arc-length π·r/2. Tangent there points to −y (CW).
+      quarter = π * r / 2
+      at_r0 = location_at_length(pr, quarter)
+      @test isapprox(in_world(at_r0).x, r; atol=1e-8)
+      @test isapprox(in_world(at_r0).y, 0; atol=1e-8)
+      tangent_rev = in_world(location_at_length(pr, quarter + ε)) -
+                    in_world(location_at_length(pr, quarter))
+      @test tangent_rev.y < 0
+    end
+
+    @testset "translate ∘ reverse ArcPath (frame_path invariant)" begin
+      # This mirrors the construction in BIM.jl frame_path for a door on
+      # a curved wall: translate(reverse(subpath), vz(h)) must meet the
+      # translated subpath endpoints lifted by vz(h).
+      same_point(a, b; atol=1e-10) = begin
+        aw = in_world(a); bw = in_world(b)
+        isapprox(aw.x, bw.x; atol) && isapprox(aw.y, bw.y; atol) && isapprox(aw.z, bw.z; atol)
+      end
+      wall = arc_path(u0(), 5, 0, π)
+      sub = subpath(wall, 2, 3)   # door opening from 2m to 3m
+      h = 2.0
+      head = translate(reverse(sub), vz(h))
+      # Right-jamb top = sub[end] + vz(h); head must start there.
+      @test same_point(path_start(head), path_end(sub) + vz(h))
+      # Left-jamb top = sub[begin] + vz(h); head must end there.
+      @test same_point(path_end(head),   path_start(sub) + vz(h))
+    end
+  end
+
+  @testset "join_paths arc combinations" begin
+    # Regression: windows on arc walls foldr-join into this pattern.
+    # Without a join_paths(ArcPath, OpenPathSequence) method this would
+    # raise MethodError.
+    arc = arc_path(u0(), 5, 0, π/2)
+    seq = path_sequence(
+      open_polygonal_path([path_end(arc), path_end(arc) + vz(1)]),
+      open_polygonal_path([path_end(arc) + vz(1), path_start(arc) + vz(1)]))
+    joined = join_paths(arc, seq)
+    @test joined isa KhepriBase.OpenPathSequence
+    @test length(joined.paths) == 3
+  end
+
+  # The arc-wall door/window frame split in src/BIM.jl reads the wall
+  # tangent from the Z axis of `path_end(subpath).cs` and
+  # `path_start(subpath).cs`. If those CS axes don't point along the
+  # arc tangent, the computed per-jamb profile rotation (`atan2(t.x, t.y)`)
+  # will be wrong.
+  @testset "ArcPath endpoint CS exposes tangent" begin
+    # Unit-radius arc at origin spanning 0→π/2.
+    p = arc_path(u0(), 1.0, 0.0, π/2)
+    # At the start (θ=0), world tangent for CCW sweep is (0, 1, 0).
+    t_start = in_world(vz(1, path_start(p).cs))
+    @test isapprox(t_start.x, 0;  atol=1e-10)
+    @test isapprox(t_start.y, 1;  atol=1e-10)
+    @test isapprox(t_start.z, 0;  atol=1e-10)
+    # At the end (θ=π/2), tangent is (-1, 0, 0).
+    t_end = in_world(vz(1, path_end(p).cs))
+    @test isapprox(t_end.x, -1; atol=1e-10)
+    @test isapprox(t_end.y,  0; atol=1e-10)
+    @test isapprox(t_end.z,  0; atol=1e-10)
+    # Non-trivial start_angle: arc from θ=0.4 to 0.6 on radius 5.
+    # These are the door's subpath bounds in the user's example.
+    sub = arc_path(xyz(0, 0, 0.001), 5, 0.4, 0.2)
+    # Wall tangent at θ = (-sin θ, cos θ, 0). The jamb rotation
+    # `atan2(t.x, t.y)` should equal −θ, matching our derivation.
+    t_begin = in_world(vz(1, path_start(sub).cs))
+    @test isapprox(atan(t_begin.x, t_begin.y), -0.4; atol=1e-10)
+    t_last = in_world(vz(1, path_end(sub).cs))
+    @test isapprox(atan(t_last.x, t_last.y), -0.6; atol=1e-10)
   end
 
   @testset "mirrored_on_* operations" begin

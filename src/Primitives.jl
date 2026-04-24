@@ -159,7 +159,7 @@ const cs_source_to_clr = Dict{String,String}(
   "short" => "Int16", "long" => "Int64", "void" => "Void",
 )
 
-export clr_name
+public clr_name
 clr_name(name::AbstractString) = get(cs_source_to_clr, name, name)
 clr_name(::Val, name::AbstractString) = clr_name(name)
 
@@ -265,7 +265,7 @@ reset_opcode(f::RemoteFunction) =
   f.opcode = -1
 
 # RPC instrumentation: count calls and optionally record per-call times.
-export rpc_count, reset_rpc_count!, rpc_timing, rpc_times
+public rpc_count, reset_rpc_count!, rpc_timing, rpc_times
 const rpc_count = Ref(0)
 reset_rpc_count!() = (rpc_count[] = 0)
 const rpc_timing = Parameter(false)
@@ -383,7 +383,7 @@ in a struct, as follows:
 """
 =#
 
-export @remote_api
+public @remote_api
 macro remote_api(lang, str)
   let remotes = lang_rpc(lang, str)
     Expr(:tuple, [Expr(:(=), remote...) for remote in remotes]...)
@@ -393,7 +393,7 @@ end
 #=
 Before instantiating the backend, we need to map from the static function info to the corresponding dynamic function.
 =#
-export remote_functions
+public remote_functions
 remote_functions(infos) = map(RemoteFunction, infos)
 
 #=
@@ -434,7 +434,7 @@ backend_error(ns::Val{NS}, c::IO) where {NS} =
 exception_backtrace(e) = backtrace()
 exception_backtrace(e::BackendError) = e.backtrace
 
-export errormsg
+public errormsg
 errormsg(e) =
   sprint((io, e) -> showerror(io, e, exception_backtrace(e), backtrace=true), e)
 
@@ -587,7 +587,7 @@ decode(ns::VoidIsByte, t::Union{Val{:void},Val{:None}}, c::IO) =
   decode(ns, Val(:byte), c) == 0x00
 
 # Useful CS types
-export Guid, Guids
+public Guid, Guids
 const Guid = UInt128
 const Guids = Vector{Guid}
 

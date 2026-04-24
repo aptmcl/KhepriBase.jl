@@ -12,7 +12,8 @@ import KhepriBase: Backend, realize, void_ref, new_refs, b_trig, b_point, b_line
   b_existing_shape_refs, b_existing_shapes,
   shape_storage_type, ShapeStorageType, LocalShapeStorage, RemoteShapeStorage,
   current_transaction, Transaction, AutoCommitTransaction,
-  GenericRef, NativeRef, NativeRefs, References, backend_name
+  GenericRef, NativeRef, NativeRefs, References, backend_name,
+  BackendDefault
 
 export MockBackend, mock_backend, reset_mock_backend!, mock_geometry_stats
 

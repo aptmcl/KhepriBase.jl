@@ -146,8 +146,31 @@ lines_intersection(p0, p1, p2, p3) =
     end
   end
 
-export epsilon, nearest_point_from_lines, circle_from_three_points
-const epsilon = Parameter(1e-8)
+#=
+Parallelism tolerance.
+
+Deciding whether two vectors (or two lines) are parallel cannot be a
+bit-exact test, because numerical construction regularly produces
+vectors that should be parallel but differ by a tiny rotation. The
+canonical signal for non-parallelism is the magnitude of a cross
+product (|u × v|), or equivalently the line determinant (a·c − b²)
+used when solving the closest-points-on-two-lines system below; both
+go to zero exactly when the vectors are parallel.
+
+Compared against |cross(u, v)| (or an analogous determinant), whose
+unit is the product of the input vector units — typically metre² for
+position differences. The default 1e-8 classifies as parallel any
+pair whose cross-product magnitude is smaller than 10 nm² at metre
+scale, i.e. about eight orders of magnitude above Float64 resolution.
+Tighten for precision work, loosen when ingesting noisier input.
+
+See also: zero_vector_tolerance (for checking that a single vector is
+mathematically zero, as distinct from two vectors being parallel).
+=#
+
+"Cross-product (or line-determinant) magnitude below which two vectors/lines are classified as parallel. `|cross(u, v)| < parallelism_tolerance()`."
+const parallelism_tolerance = Parameter(1e-8)
+export parallelism_tolerance, nearest_point_from_lines, circle_from_three_points
 
 nearest_point_from_lines(l0p0::Loc, l0p1::Loc, l1p0::Loc, l1p1::Loc) =
   let u = l0p1-l0p0,
@@ -159,7 +182,7 @@ nearest_point_from_lines(l0p0::Loc, l0p1::Loc, l1p0::Loc, l1p1::Loc) =
       d = dot(u, w),
       e = dot(v, w),
       D = a*c-b*b,
-      (sc, tc) = D < epsilon() ?
+      (sc, tc) = D < parallelism_tolerance() ?
                 #almost parallel
                 (0.0, b > c ? d/b : e/c) :
                 ((b*e-c*d)/D, (a*e-b*d)/D),
@@ -180,7 +203,7 @@ circle_from_three_points_2d(v0::Loc, v1::Loc, v2::Loc) =
       e = a*v1pv0.x+b*v1pv0.y,
       f = c*v2pv0.x+d*v2pv0.y,
       g = 2.0*(a*v2sv1.y-b*v2sv1.x),
-      iscolinear = abs(g) < 1e-8,
+      iscolinear = abs(g) < parallelism_tolerance(),
       (cx, cy, dx, dy) = iscolinear ?
                          let minx = min(v0.x, v1.x, v2.x),
                              miny = min(v0.y, v1.y, v2.y),
@@ -210,14 +233,44 @@ circle_from_three_points(p0::Loc, p1::Loc, p2::Loc) =
   end
 
 
-export collinearity_tolerance
+#=
+Collinearity tolerance.
+
+Classifying three points as collinear cannot rely on an exact test:
+points authored on a line may drift off it by fractions of a micrometre
+through the usual transform-and-rounding churn, and subdivision
+algorithms (path sampling, adaptive tessellation) depend on a stable
+collinearity predicate to decide when to stop recursing.
+
+We use the area of the triangle with the three points as vertices,
+computed via Heron's formula from the three pairwise distances. This
+has the convenient property of being scale-coherent: doubling all
+three points' coordinates multiplies the area by four, matching user
+intuition that "collinear" is a geometric, not numeric, judgement.
+
+Compared against `triangle_area(|p0 pm|, |pm p1|, |p1 p0|)`, in metres²
+(Khepri's canonical unit, squared). The default 1e-2 is deliberately
+loose: 1 cm² is below the precision at which architectural designers
+reason about alignment, and subdivision algorithms that halve the
+triangle area at each step converge much faster with a tolerance at
+this scale. Precision work may tighten it via
+`with(collinearity_tolerance, 1e-6) do ... end`.
+
+See also: parallelism_tolerance (for a stricter, vector-based
+classification used when the three points come from line intersection
+rather than path sampling).
+=#
+
+"Triangle area below which three points are classified as collinear. `triangle_area(a, b, c) < collinearity_tolerance()`. [metres²]"
 const collinearity_tolerance = Parameter(1e-2)
-# are the three points sufficiently collinear?
-collinear_points(p0, pm, p1, epsilon=collinearity_tolerance()) =
+export collinearity_tolerance
+
+# Are the three points sufficiently collinear?
+collinear_points(p0, pm, p1, tol=collinearity_tolerance()) =
   let a = distance(p0, pm),
       b = distance(pm, p1),
       c = distance(p1, p0)
-    triangle_area(a, b, c) < epsilon
+    triangle_area(a, b, c) < tol
   end
 
 #=

@@ -34,8 +34,8 @@ Base.empty!(r::References) =
   end
 
 # Constraint: all backends must have a References field named refs
-export References
-export shape_refs_storage, material_refs_storage, layer_refs_storage, annotation_refs_storage, family_refs_storage, level_refs_storage, refs_storage
+public References
+public shape_refs_storage, material_refs_storage, layer_refs_storage, annotation_refs_storage, family_refs_storage, level_refs_storage, refs_storage
 shape_refs_storage(b::Backend) = b.refs.shapes
 material_refs_storage(b::Backend) = b.refs.materials
 layer_refs_storage(b::Backend) = b.refs.layers
@@ -52,7 +52,7 @@ refs_storage(b::Backend, p::Family) = family_refs_storage(b)
 refs_storage(b::Backend, p::Level) = level_refs_storage(b)
 
 # Get the shape from the reference
-export get_or_create_shape_from_ref_value
+public get_or_create_shape_from_ref_value
 
 get_or_create_from_ref_value(b::Backend, r, storage, create) =
   let dict = storage(b)
@@ -140,7 +140,7 @@ handle_backend_error(e, b::Backend) = rethrow()
 handle_backend_error(e::Union{Base.IOError, ArgumentError, EOFError}, b::RemoteBackend) =
   retire_dead_backend(b)
 
-export RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting,
+public RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting,
        retire_dead_backend, handle_backend_error
 before_connecting(::RemoteBackend) = nothing
 after_connecting(::RemoteBackend) = nothing
@@ -170,11 +170,18 @@ SocketBackend{K,T}(name, port, connection, remote) where {K,T} =
   SocketBackend{K,T}(name, port, connection, remote, remote_functions(remote), Parameter{Transaction}(AutoCommitTransaction()), References{K,T}())
 
 # AML: replace with the Base.retry function?
+#=
+Use `Sockets.connect` explicitly rather than the unqualified name: KhepriBase
+also exports a `connect` annotation combinator from Designs/combinators.jl,
+which shadows `Sockets.connect` inside this module and silently turns every
+socket-backend connection attempt into a MethodError — the backend then logs
+"Couldn't connect" despite the backend process listening normally.
+=#
 start_connection(b::SocketBackend) =
   let attempts = 10
     for i in 1:attempts
       try
-        let conn = connect(b.port)
+        let conn = Sockets.connect(b.port)
           Sockets.nagle(conn, false)
           return conn
         end
@@ -224,16 +231,16 @@ get_socket_backend_init_function(name) =
       error("Requested socket backend '$name' is not available!")
     end
   end
-export add_socket_backend_init_function
+public add_socket_backend_init_function
 
 # The server code
 
 const default_khepri_socket_server_host = GlobalParameter(ip"127.0.0.1")
 const default_khepri_socket_server_port = GlobalParameter(12345)
-export default_khepri_socket_server_host, default_khepri_socket_server_port
+public default_khepri_socket_server_host, default_khepri_socket_server_port
 const khepri_socket_server_task = GlobalParameter{Union{Nothing,Task}}(nothing)
 
-export ensure_khepri_socket_server_running
+public ensure_khepri_socket_server_running
 const _server_launch_lock = ReentrantLock()
 ensure_khepri_socket_server_running() =
   lock(_server_launch_lock) do
@@ -252,7 +259,7 @@ To that end, we will use the main generic function,
 as a metaphor for the startup function that is the
 entry program of C, Java, etc, programs.
 =#
-export main, main_callback
+public main, main_callback
 main_callback = GlobalParameter{Function}((b)->nothing)
 
 #=
@@ -269,7 +276,7 @@ main(b::Backend) =
     main_callback()(b)
   end
 
-export run_khepri_socket_server
+public run_khepri_socket_server
 run_khepri_socket_server(host=default_khepri_socket_server_host(), port=default_khepri_socket_server_port()) =
   let server = listen(host, port)
     while true
@@ -343,7 +350,7 @@ mutable struct WebSocketServer
     new(server, router, Function[])
 end
 
-export register_http_handler
+public register_http_handler
 register_http_handler(c::WebSocketServer, target, handler) =
   let request_str = "/api/"*randstring()
     HTTP.register!(c.router, "GET", target, req -> (handler(request_parameters(req)...); HTTP.Response(200, "0")))
@@ -370,11 +377,11 @@ get_websocket_backend_init_function(name) =
       error("Requested websocket backend '$name' is not available!")
     end
   end
-export add_websocket_backend_init_function
+public add_websocket_backend_init_function
 
 const default_khepri_websocket_server_host = GlobalParameter(ip"127.0.0.1")
 const default_khepri_websocket_server_port = GlobalParameter(12346)
-export default_khepri_websocket_server_host, default_khepri_websocket_server_port
+public default_khepri_websocket_server_host, default_khepri_websocket_server_port
 
 run_khepri_websocket_server(host=default_khepri_websocket_server_host(), port=default_khepri_websocket_server_port()) =
   let router = HTTP.Router(),
@@ -402,7 +409,7 @@ run_khepri_websocket_server(host=default_khepri_websocket_server_host(), port=de
     khepri_websocket_server(WebSocketServer(server, router))
   end
 
-export khepri_websocket_server
+public khepri_websocket_server
 const khepri_websocket_server = LazyParameter(run_khepri_websocket_server)
 
 #=
@@ -429,14 +436,14 @@ get_file_content_type(path) =
     ["Content-Type" => get(content_type_header, ext, "application/octet-stream")]
   end
 
-export http_response_with_file, http_response_with_resource_file
+public http_response_with_file, http_response_with_resource_file
 http_response_with_file(path) =
   HTTP.Response(200, get_file_content_type(path), read(path))
 
 #=
 We need to support a PATH-based approach to resources.
 =#
-export resources_folder, add_resource_folder!
+public resources_folder, add_resource_folder!
 const resources_folder = [joinpath(@__DIR__, "..", "resources")]
 const resources_folder_lock = ReentrantLock()
 
@@ -462,7 +469,7 @@ http_response_with_resource_file(filename) =
 #=
 Each backend can register handlers for client requests.
 =#
-export register_handler
+public register_handler
 register_handler(c::WebSocketBackend{K,T}, target, handler) where {K,T} =
   (push!(c.handlers, handler); length(c.handlers))
 
@@ -476,7 +483,7 @@ Note that we cannot process client requests while server requests are being proc
 This means that the handler being called must do its job and return as soon as possible, 
 so that other requests can be processed.
 =#
-export process_requests
+public process_requests
 process_requests(c::WebSocketBackend{K,T}) where {K,T} =
   let namespace = c.static_remote[1].namespace # An awful way of retrieving the namespace
     while true
@@ -519,7 +526,7 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
     end
   end
 
-export start_processing_requests
+public start_processing_requests
 start_processing_requests(c::WebSocketBackend{K,T}) where {K,T} = begin
   parent_tls = copy(task_local_storage())
   Threads.@spawn begin
@@ -532,7 +539,7 @@ end
 #=
 It is going to be useful to have an algebra of handlers.
 =#
-export action_handler, sequence_handler, wrapper_handler, update_parameter_handler
+public action_handler, sequence_handler, wrapper_handler, update_parameter_handler
 
 action_handler(f) =
   (args...) -> f()
@@ -560,7 +567,7 @@ update_parameter_handler(parameter::Parameter{T}) where {T} =
 # by ourselves. Layers are one example.
 
 # Layers
-export AbstractLayer, BasicLayer
+public AbstractLayer, BasicLayer
 abstract type AbstractLayer end
 struct BasicLayer <: AbstractLayer
   name::String
@@ -568,7 +575,7 @@ struct BasicLayer <: AbstractLayer
   color::RGBA
 end
 
-export b_layer, b_current_layer_ref,
+public b_layer, b_current_layer_ref,
        b_all_shapes_in_layer, b_delete_all_shapes_in_layer,
        b_set_layer_material, b_set_layer_visible, b_set_layer_opacity
 
@@ -610,7 +617,7 @@ end
 # These are reusable building blocks — backends compose them instead of
 # duplicating fields. Property forwarding is generated by @defbackend.
 
-export LocalShapes, RenderState, IOState
+public LocalShapes, RenderState, IOState
 
 @kwdef mutable struct LocalShapes
   shapes::Shapes = Shape[]
@@ -634,7 +641,7 @@ end
 # These are used by @defbackend-generated default operations, and can also
 # be called directly by backends that override only part of an operation.
 
-export save_shape_local!, delete_all_local!, delete_shape_local!,
+public save_shape_local!, delete_all_local!, delete_shape_local!,
        set_realistic_sky_local!, set_ground_local!,
        realize_shapes_local!, used_materials_local!
 
@@ -743,6 +750,7 @@ view_type(::Type{<:LocalBackend}) = FrontendView()
 
 connection(b::LocalBackend) = b.io
 
+public save_shape!
 save_shape!(b::LocalBackend, s::Shape) =
   begin
     push!(b.shapes, s)
@@ -752,14 +760,14 @@ save_shape!(b::LocalBackend, s::Shape) =
     s
   end
 
-export realize_shapes
+public realize_shapes
 realize_shapes(b::LocalBackend) =
   for s in b.shapes
     reset_ref(b, s)
     force_realize(b, s)
   end
 
-export used_materials
+public used_materials
 used_materials(b::LocalBackend) =
   let materials = Set{Material}()
     for s in b.shapes
@@ -820,7 +828,7 @@ maybe_realize(b::LocalBackend, s::Shape) = save_shape!(b, s)
 # Unlike RemoteBackend which sends shapes to external applications, LazyBackend
 # collects shapes in memory and processes them later.
 
-export LazyBackend
+public LazyBackend
 abstract type LazyBackend{K,T} <: Backend{K,T} end
 
 # LazyBackend stores Shape proxies using save_shape! instead of immediately realizing them.

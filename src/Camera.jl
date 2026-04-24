@@ -221,15 +221,27 @@ to_film(f, name) =
     f()
   end
 
-shot_view(name::String, backend::Backend=top_backend()) =
+shot_view(name::String,
+          backend::Backend=top_backend();
+          kwargs...) =
   let path = prepare_for_saving_file(b_shot_pathname(backend, name))
-    b_shot_view(backend, path)
+    if isempty(kwargs)
+      b_shot_view(backend, path)
+    else
+      b_shot_view(backend, path, RenderViewOptions(; kwargs...))
+    end
     path
   end
 
-raw_view(name::String, backend::Backend=top_backend()) =
+raw_view(name::String,
+         backend::Backend=top_backend();
+         kwargs...) =
   let path = prepare_for_saving_file(b_raw_pathname(backend, name))
-    b_raw_view(backend, path)
+    if isempty(kwargs)
+      b_raw_view(backend, path)
+    else
+      b_raw_view(backend, path, RenderViewOptions(; kwargs...))
+    end
     path
   end
 

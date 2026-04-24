@@ -64,15 +64,45 @@ export empty_path,
        region,
        outer_path,
        inner_paths,
-       path_tolerance,
        is_closed_path,
        is_smooth_path,
        coincident_path_location,
        closed_offsetted_path,
        closed_path_for_height
 
-path_tolerance = Parameter(1e-10)
-coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < path_tolerance()
+#=
+Coincidence tolerance.
+
+Geometric construction frequently produces two locations that are
+mathematically the same point but differ by floating-point noise.
+Evaluating a spline at its endpoint and reading its last control
+point should give the same Loc; in practice the basis-function
+evaluation introduces drift of order 1e-14 to 1e-12 metres. Exact
+`p1 == p2` comparison therefore fails on values the rest of the
+system treats as equal, and we need a threshold below which two
+locations count as the same point.
+
+Compared against `distance(p1, p2)`, in metres (Khepri's canonical
+unit). The default 1e-10 m (100 fm) sits well below any architectural
+scale but well above the rounding of typical path operations. Users
+working from measured input, or at a sub-millimetre scale where
+Float64 precision becomes a noticeable fraction of the smallest
+meaningful feature, may want to loosen this:
+
+    with(coincidence_tolerance, 1e-6) do
+      ...
+    end
+
+See also: truss_node_coincidence_tolerance (structural-analysis
+variant at 1e-6 m, reflecting the coarser provenance of truss input
+geometry).
+=#
+
+"Distance below which two locations are treated as the same point. `distance(a, b) < coincidence_tolerance()`. [metres]"
+const coincidence_tolerance = Parameter(1e-10)
+export coincidence_tolerance
+
+coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < coincidence_tolerance()
 
 
 
@@ -113,20 +143,20 @@ map_division(f::Function, path::Path, n::Integer) =
 map_division(f::Function, path::Path) =
   f.(path_interpolated_frames(path))
 
-path_interpolated_frames(path::Path, (t0, t1)=path_domain(path), epsilon=collinearity_tolerance(), min_recursion=1) =
+path_interpolated_frames(path::Path, (t0, t1)=path_domain(path), tol=collinearity_tolerance(), min_recursion=1) =
   let p0 = location_at(path, t0),
       p1 = location_at(path, t1),
       tm = (t0 + t1)/2.0,
       pm = location_at(path, tm)
     min_recursion < 0 &&
-    collinear_points(p0, pm, p1, epsilon) &&
+    collinear_points(p0, pm, p1, tol) &&
     let tr = t0 + (t1 - t0)/(1.99+rand()*0.02),
         pr = location_at(path, tr) # To avoid coincidences
-      collinear_points(p0, pr, p1, epsilon)
+      collinear_points(p0, pr, p1, tol)
     end ?
       [p0, pm, p1] :
-      [path_interpolated_frames(path, (t0, tm), epsilon, min_recursion - 1)...,
-       path_interpolated_frames(path, (tm, t1), epsilon, min_recursion - 1)[2:end]...]
+      [path_interpolated_frames(path, (t0, tm), tol, min_recursion - 1)...,
+       path_interpolated_frames(path, (tm, t1), tol, min_recursion - 1)[2:end]...]
   end
 
 ## Arc path
@@ -275,7 +305,9 @@ location_at(interpolator::ParametricSpline, ϕ) =
       p = xyz(f[1], f[2], f[3], world_cs),
       t = vxyz(d1[1], d1[2], d1[3], world_cs),
       n = vxyz(d2[1], d2[2], d2[3], world_cs)#,
-    norm(n) <= 1e-9 ? loc_from_o_vz(p, t) : loc_from_o_vx_vy(p, n, cross(t, n))
+    # n is the spline's second derivative (curvature). When it's too small
+    # to define a reliable normal, fall back to a tangent-only frame.
+    norm(n) <= parallelism_tolerance() ? loc_from_o_vz(p, t) : loc_from_o_vx_vy(p, n, cross(t, n))
   end
 
 map_division(func::Function, path::OpenSplinePath, n::Integer) =
@@ -289,7 +321,8 @@ map_division(func::Function, path::OpenSplinePath, n::Integer) =
       t = vxyz(d1[1], d1[2], d1[3], world_cs),
       n = vxyz(d2[1], d2[2], d2[3], world_cs)
     func.(rotation_minimizing_frames(
-            norm(n) <= 1e-9 ? loc_from_o_vz(p, t) : loc_from_o_vx_vy(p, n, cross(t, n)),
+            # Same curvature-too-small guard as above.
+            norm(n) <= parallelism_tolerance() ? loc_from_o_vz(p, t) : loc_from_o_vx_vy(p, n, cross(t, n)),
             map(p->xyz(p[1], p[2], p[3], world_cs), fs),
             map(t->vxyz(t[1], t[2], t[3], world_cs), d1s)))
   end
@@ -407,7 +440,7 @@ location_at_length(path::CircularPath, d::Real) =
 location_at_length(path::ArcPath, d::Real) =
   let Δα = d/path.radius,
       s = sign(path.amplitude)
-    Δα <= abs(path.amplitude) + path_tolerance() ?
+    Δα <= abs(path.amplitude) + coincidence_tolerance() ?
       location_at(path, Δα*s) :
       error("Exceeded path length by ", Δα - path.amplitude)
   end
@@ -415,7 +448,7 @@ location_at_length(path::RectangularPath, d::Real) =
     let d = d % (2*(path.dx + path.dy)) # remove multiple periods
         p = path.corner
         for (delta, phi) in zip([path.dx, path.dy, path.dx, path.dy], [0, pi/2, pi, 3pi/2])
-            if d - delta < path_tolerance()
+            if d - delta < coincidence_tolerance()
                 return loc_from_o_phi(add_pol(p, d, phi), phi)
             else
                 p = add_pol(p, delta, phi)
@@ -428,7 +461,7 @@ location_at_length(path::OpenPolygonalPath, d::Real) =
     for i in 2:length(path.vertices)
       pp = path.vertices[i]
       delta = distance(p, pp)
-      if d - delta < path_tolerance()
+      if d - delta < coincidence_tolerance()
         v = unitized(pp - p)
         return loc_from_o_vz(p+v*d, v)
       else
@@ -443,7 +476,7 @@ location_at_length(path::ClosedPolygonalPath, d::Real) =
     for i in countfrom(1)
       pp = path.vertices[i%length(path.vertices)+1]
       delta = distance(p, pp)
-      if d - delta < path_tolerance()
+      if d - delta < coincidence_tolerance()
         v = unitized(pp - p)
         return loc_from_o_vz(p+v*d, v)
       else
@@ -459,7 +492,7 @@ subpath_ending_at(path::Path, d::Real) = subpath(path, 0, d)
 subpath(path::CircularPath, a::Real, b::Real) =
   arc_path(path.center, path.radius, a/path.radius, (b-a)/path.radius)
 subpath(path::ArcPath, a::Real, b::Real) =
-  b <= path_length(path) + path_tolerance() ?
+  b <= path_length(path) + coincidence_tolerance() ?
       arc_path(path.center,
                path.radius,
                path.start_angle + a/path.radius*sign(path.amplitude),
@@ -482,14 +515,14 @@ subpath_starting_at(path::OpenPolygonalPath, d::Real) =
             if diff < 0
                 mp = p1 + (p2 - p1)*d/delta
                 return open_polygonal_path([mp, pts[i:end]...])
-            elseif abs(diff) < 1e-9
+            elseif abs(diff) < coincidence_tolerance()
                 return open_polygonal_path(i == length(pts) ? [pts[i], pts[i]] : pts[i:end])
             else
                 p1 = p2
                 d -= delta
             end
         end
-        abs(d) < path_tolerance() ?
+        abs(d) < coincidence_tolerance() ?
           path :
           error("Exceeded path length by ", d)
     end
@@ -504,14 +537,14 @@ subpath_ending_at(path::OpenPolygonalPath, d::Real) =
             if diff < 0
                 mp = p1 + (p2 - p1)*d/delta
                 return open_polygonal_path([pts[1:i-1]..., mp])
-            elseif abs(diff) < path_tolerance()
+            elseif abs(diff) < coincidence_tolerance()
                 return open_polygonal_path(pts[1:i])
             else
               p1 = p2
               d -= delta
             end
         end
-        abs(d) < path_tolerance() ?
+        abs(d) < coincidence_tolerance() ?
           path :
           error("Exceeded path length by ", d)
     end
@@ -539,6 +572,9 @@ closed_path_sequence(paths...) =
 PathSequence = Union{OpenPathSequence, ClosedPathSequence}
 
 join_paths(p1::OpenPolygonalPath, p2::OpenPathSequence) =
+  path_sequence(p1, p2.paths...)
+
+join_paths(p1::ArcPath, p2::OpenPathSequence) =
   path_sequence(p1, p2.paths...)
 
 # HACK : Include treatment of empty paths.
@@ -627,7 +663,7 @@ location_at_length(path::PathOps, d::Real) =
       start = path.start
     for op in ops
       delta = path_length(op)
-      if d < delta + path_tolerance()
+      if d < delta + coincidence_tolerance()
         return location_at_length(op, start, d)
       else
         start = location_at_length(op, start, delta)
@@ -653,7 +689,7 @@ subpath_starting_at(path::PathOps, d::Real) =
       delta = path_length(op)
       if d == delta
         return PathOps(start, ops[i+1:end], false)
-      elseif d < delta + path_tolerance()
+      elseif d < delta + coincidence_tolerance()
         op = subpath_starting_at(op, d)
         return PathOps(start, [op, ops[i+1:end]...], false)
       else
@@ -669,7 +705,7 @@ subpath_ending_at(path::PathOps, d::Real) =
       delta = path_length(op)
       if d == delta
         return PathOps(path.start, ops[1:i], false)
-      elseif d < delta + path_tolerance()
+      elseif d < delta + coincidence_tolerance()
         return PathOps(path.start, [ops[1:i-1]..., subpath_ending_at(op, d)], false)
       else
         d -= delta
@@ -708,7 +744,7 @@ location_at_length(path::PathSequence, d::Real) =
   let paths = path.paths
     for path in paths
       delta = path_length(path)
-      if d <= delta + path_tolerance()
+      if d <= delta + coincidence_tolerance()
           return location_at_length(path, d)
       else
           d -= delta
@@ -723,7 +759,7 @@ subpath_starting_at(path::PathSequence, d::Real) =
       delta = path_length(subpath)
       if d == delta
         return OpenPathSequence(subpaths[i+1:end])
-      elseif d < delta + path_tolerance()
+      elseif d < delta + coincidence_tolerance()
         subpath = subpath_starting_at(subpath, d)
         return OpenPathSequence([subpath, subpaths[i+1:end]...])
       else
@@ -739,7 +775,7 @@ subpath_ending_at(path::PathSequence, d::Real) =
       delta = path_length(subpath)
       if d == delta
         return OpenPathSequence(subpaths[1:i])
-      elseif d < delta + path_tolerance()
+      elseif d < delta + coincidence_tolerance()
         return OpenPathSequence([subpaths[1:i-1]..., subpath_ending_at(subpath, d)])
       else
         d -= delta
@@ -786,9 +822,64 @@ inner_paths(region::Region) = region.paths[2:end]
 region(r::Region, inners...) =
   region(outer_path(r), inner_paths(r)..., inners...)
 
-# Convertions from/to paths
+# Conversions from/to paths
+
+#=
+Planarity tolerance.
+
+A panel (planar region) is defined by a sequence of vertices that should
+all lie on a common plane. Even when the authoring geometry is exactly
+planar, numerical operations (coordinate transforms, transports between
+frames) introduce small deviations; we accept a panel as planar if every
+vertex's signed distance from the reference plane is below this threshold.
+
+Compared against `|dot(p - p0, n̂)|`, the signed distance from each vertex
+p to the plane through p0 with unit normal n̂. Units are metres. The
+default 1e-6 m (one micrometre) is tight enough to reject human-authored
+mistakes (where deviations are typically mm or larger) while tolerating
+the accumulated rounding of several transform compositions. Loosen it
+when ingesting measured or imported geometry whose provenance is less
+precise.
+
+See also: zero_vector_tolerance (used to reject a panel whose first three
+vertices are collinear, leaving the plane normal undefined).
+=#
+
+"Maximum signed distance a vertex may lie off the plane before a region is rejected as non-planar. `|dot(p - p0, n̂)| < planarity_tolerance()`. [metres]"
+const planarity_tolerance = Parameter(1e-6)
+export planarity_tolerance
+
+function planar_region(vs::Locs)
+  length(vs) < 3 && error("A panel requires at least 3 vertices.")
+  let p0 = in_world(vs[1]),
+      p1 = in_world(vs[2]),
+      p2 = in_world(vs[3]),
+      v1 = p1 - p0,
+      v2 = p2 - p0,
+      n = cross(v1, v2)
+    # A stricter guard than zero_vector_tolerance(): we need the normal to
+    # be well above float noise so that `unitized(n)` below is numerically
+    # safe. 1e-10 m² is ~10 orders of magnitude above Float64 resolution
+    # at metre scale.
+    norm(n) < 1e-10 && error("First 3 panel vertices are collinear.")
+    let n = unitized(n),
+        frame = loc_from_o_vx_vy(p0, v1, v2),
+        wpts = map(in_world, vs),
+        max_dev = maximum(abs(dot(wp - p0, n)) for wp in wpts)
+      max_dev > planarity_tolerance &&
+        error("Panel vertices are not coplanar (max deviation: $(max_dev) > $(planarity_tolerance)).")
+      let ux = unitized(v1),
+          uz = n,
+          uy = cross(uz, ux),
+          pts_2d = [xy(dot(wp - p0, ux), dot(wp - p0, uy), frame.cs) for wp in wpts]
+        region(closed_polygonal_path(pts_2d))
+      end
+    end
+  end
+end
+
 convert(::Type{Region}, vs::Locs) =
-  region(closed_polygonal_path(vs))
+  planar_region(vs)
 convert(::Type{Region}, path::ClosedPath) =
   region(path)
 
@@ -826,15 +917,15 @@ convert(::Type{ClosedPolygonalPath}, path::RectangularPath) =
     closed_polygonal_path([p, add_x(p, dx), add_xy(p, dx, dy), add_y(p, dy)])
   end
 
-path_interpolated_lengths(path, t0=0, t1=path_length(path), epsilon=collinearity_tolerance(), min_recursion=1) =
+path_interpolated_lengths(path, t0=0, t1=path_length(path), tol=collinearity_tolerance(), min_recursion=1) =
   let p0 = location_at_length(path, t0),
       p1 = location_at_length(path, t1),
       tm = (t0 + t1)/2.0,
       pm = location_at_length(path, tm)
-    min_recursion < 0 && collinear_points(p0, pm, p1, epsilon) ?
+    min_recursion < 0 && collinear_points(p0, pm, p1, tol) ?
       [t0, tm, t1] :
-      [path_interpolated_lengths(path, t0, tm, epsilon, min_recursion - 1)...,
-       path_interpolated_lengths(path, tm, t1, epsilon, min_recursion - 1)[2:end]...]
+      [path_interpolated_lengths(path, t0, tm, tol, min_recursion - 1)...,
+       path_interpolated_lengths(path, tm, t1, tol, min_recursion - 1)[2:end]...]
   end
 
 convert(::Type{ClosedPolygonalPath}, path::CircularPath) =
@@ -912,7 +1003,7 @@ iterate(path::PolygonalPath, i=1) =
     (path.vertices[i], i+1)
 
 loc_from_o_vx_vz(o, vx, vz) =
-  norm(vx) < min_norm ?
+  norm(vx) < zero_vector_tolerance() ?
     loc_from_o_vz(o, vz) :
     let vy = -cross(vx, vz)
       loc_from_o_vx_vy(o, cross(vy, vz), vy)
@@ -1060,8 +1151,32 @@ path_on(path::ClosedPathSequence, p) =
 ## Utility operations
 Base.reverse(path::CircularPath) =
   circular_path(loc_from_o_vz(path.center, vz(-1, path.center.cs)), path.radius)
+#=
+Reversing an arc must trace the same points in the opposite order. The
+analogous trick used for `CircularPath` above — flip the center CS's Z
+so that positive sweep maps to the original negative sweep — relies on
+`cs_from_o_vz` happening to pick an X axis compatible with the fixed
+angle shift. That compatibility holds for a full circle (no start
+matters) but not for an arc: `cs_from_o_vz((0,0,-1))` introduces a 90°
+rotation of X' that misaligns `start_angle + amplitude` with the true
+endpoint direction. So we build the reversed center explicitly: X' at
+the endpoint direction, Y' 90° clockwise of X' (which makes Z'
+automatically −Z, right-handed). Then the reversed arc sweeps from 0
+to |amplitude| in that CS and traces `angle = θ − ϕ` in the original.
+
+Note: `abs(amplitude)` is used because `location_at` applies
+`sign(amplitude)` twice (in `location_at_length` and again inside
+`location_at`), so the sign cancels and the magnitude is what governs
+the traced sweep.
+=#
+"""Reverse of an arc, tracing the same points in opposite order."""
 Base.reverse(path::ArcPath) =
-  arc_path(loc_from_o_vz(path.center, vz(-1, path.center.cs)), path.radius, path.start_angle + path.amplitude, -path.amplitude)
+  let θ = path.start_angle + path.amplitude
+    arc_path(loc_from_o_vx_vy(path.center,
+                              vpol(1, θ,       path.center.cs),
+                              vpol(1, θ - π/2, path.center.cs)),
+             path.radius, 0, abs(path.amplitude))
+  end
 Base.reverse(path::RectangularPath) =
   rectangular_path(loc_from_o_vz(path.corner, vz(-1, path.corner.cs)), -path.dx, path.dy)
 Base.reverse(path::OpenPolygonalPath) =
@@ -1105,7 +1220,7 @@ union(m::Mesh, ms...) =
 # The inverse of location_at_length
 export length_at_location
 length_at_location(path::Path, p::Loc, t0=0, t1=path_length(path)) =
-  t1 - t0 < epsilon() ?
+  t1 - t0 < coincidence_tolerance() ?
     (t0+t1)/2 :
     let ts = division(t0, t1, 10),
         pts = map(t->location_at_length(path, t), ts),

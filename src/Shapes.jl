@@ -1,4 +1,4 @@
-export GenericRef,
+public GenericRef,
        NativeRef,
        NativeRefs,
        void_ref,
@@ -8,33 +8,34 @@ export GenericRef,
        ref_values
 export Shape,
        Shapes,
-       Backend,
-       Path,
        backend,
        backend_name,
        current_backend,
        has_current_backend,
        switch_to_backend,
-       delete_shape, delete_shapes,
-       delete_all_shapes, mark_deleted,
-       ref, ref!,
-       force_realize,
-       set_length_unit,
        is_collecting_shapes,
-       collecting_shapes,
-       collected_shapes,
        with_transaction,
        with_introspection,
+       merge_materials
+public Backend,
+       mark_deleted,
+       ref, ref!,
+       force_realize,
+       connection,
+       @deffamily,
+       @defproxy
+export Path,
+       delete_shape, delete_shapes,
+       delete_all_shapes,
+       set_length_unit,
+       collecting_shapes,
+       collected_shapes,
        surface_boundary,
        curve_domain,
        surface_domain,
        create_layer,
        current_layer,
        delete_all_shapes_in_layer,
-       merge_materials,
-       connection,
-       @deffamily,
-       @defproxy,
        subpath,
        subpath_starting_at,
        subpath_ending_at,
@@ -62,7 +63,7 @@ ref_value(b::Backend, s::Proxy) = ref_value(b, ref(b, s))
 
 
 # currying
-export ref_values, marked_deleted
+public marked_deleted
 ref_values(b::Backend{K,T}) where {K,T} = (r::GenericRef{K,T}) -> ref_values(b, r)
 # This is type-stable
 ref_values(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = T[r.value]
@@ -370,10 +371,10 @@ excluded_modules = Parameter([Base, Base.CoreLogging, KhepriBase])
 shape_to_file_locations = IdDict()
 file_location_to_shapes = Dict()
 
-export traceability, trace_depth, 
-       excluded_modules, clear_trace!, 
-       shape_source, source_shapes, 
-       shape_to_file_locations, file_location_to_shapes, 
+public traceability, trace_depth,
+       excluded_modules, clear_trace!,
+       shape_source, source_shapes,
+       shape_to_file_locations, file_location_to_shapes,
        highlight_source_shapes
 
 shape_source(s) = get(shape_to_file_locations, s, [])
@@ -562,6 +563,7 @@ macro defproxy(name_typename, parent, fields...)
                   "Backend operation: `b_", name_str, "`\n")
   quote
     export $(constructor_name), $(struct_name), $(predicate_name), $(selector_names...)
+    $(Expr(:public, abstract_name))
     abstract type $(abstract_name) <: $(parent) end
     mutable struct $struct_name <: $(abstract_name)
       $(struct_fields...)
@@ -690,7 +692,7 @@ Material references are stored on each backend. They might be erased when needed
 
 #delete_all_materials()
 
-export merge_materials, merge_backend_materials
+public merge_backend_materials
 merge_materials(materials...) =
   let name = join([material_name(material) for material in materials], "_"),
       newdata = IdDict{Backend,Any}()
@@ -827,44 +829,75 @@ const material_surface = material(
   base_color=rgba(0.8, 0.8, 0.8, 1.0),
   roughness=0.5,
   data=BackendParameter(default=backend_default))
+#=
+Canonical architectural materials.
+
+Why these specific PBR values. Each material's parameters are tuned so that
+the default realization path (`realize(backend, PbrMaterial)` →
+`b_material(backend, name, base_color, metallic, roughness, ...)`) produces
+visually-comparable output across every production backend — the same
+script should look like the same building regardless of whether Mitsuba,
+Blender Cycles, Rhino, AutoCAD, or POVJay is rendering it.
+
+  - Metals: `roughness=0.15` is tight enough to show clear reflections of the
+    sky/environment while avoiding a mirror-finish look; `metallic=1.0`
+    directs Principled-BSDF-family backends to use the base colour as F0.
+  - Glass: `roughness=0.0` keeps the surface optically clear; `transmission=
+    0.95` leaves a hint of Fresnel reflection. The base-colour alpha stays
+    opaque (1.0) so non-transmission backends (TikZ, SVG) still draw a
+    visible surface.
+  - Diffuse materials (wood, concrete, plaster, grass, clay): `reflectance`
+    values are chosen to give a plausible Fresnel F0 under daylight; concrete
+    has a slightly lower reflectance than plaster, which in turn is lower
+    than clay, matching real-world observations.
+
+See also: `architectural_pbr_table` in ArchMaterials.jl (the iterable
+version used by cross-backend tests and by the default-material closures in
+KhepriBlender / KhepriMitsuba / …).
+=#
 const material_basic = material(
   name="Basic",
-  base_color=rgba(0.5, 0.5, 0.5, 1.0),
+  base_color=rgba(0.70, 0.70, 0.70, 1.0),
   roughness=0.5,
+  reflectance=0.5,
   data=BackendParameter(default=backend_default))
 const material_glass = material(
   name="Glass",
-  base_color=rgba(0.95, 0.95, 1.0, 0.3),
-  roughness=0.05,
+  base_color=rgba(0.95, 0.97, 1.0, 1.0),
+  roughness=0.0,
   reflectance=0.5,
   ior=1.5,
-  transmission=0.8)
+  transmission=0.95)
 const material_metal = material(
   name="Metal",
-  base_color=rgba(0.8, 0.8, 0.85, 1.0),
+  base_color=rgba(0.80, 0.80, 0.82, 1.0),
   metallic=1.0,
-  roughness=0.3,
-  reflectance=0.9)
+  roughness=0.15,
+  reflectance=0.5)
 const material_wood = material(
   name="Wood",
-  base_color=rgba(0.55, 0.35, 0.17, 1.0),
-  roughness=0.7)
+  base_color=rgba(0.50, 0.32, 0.18, 1.0),
+  roughness=0.7,
+  reflectance=0.5)
 const material_concrete = material(
   name="Concrete",
-  base_color=rgba(0.7, 0.7, 0.7, 1.0),
-  roughness=0.9)
+  base_color=rgba(0.65, 0.63, 0.60, 1.0),
+  roughness=0.9,
+  reflectance=0.4)
 const material_plaster = material(
   name="Plaster",
-  base_color=rgba(0.93, 0.92, 0.88, 1.0),
-  roughness=0.6)
+  base_color=rgba(0.92, 0.91, 0.88, 1.0),
+  roughness=0.8,
+  reflectance=0.3)
 const material_grass = material(
   name="Grass",
-  base_color=rgba(0.2, 0.5, 0.1, 1.0),
-  roughness=0.95)
+  base_color=rgba(0.30, 0.50, 0.20, 1.0),
+  roughness=0.95,
+  reflectance=0.2)
 const material_clay = material(
   name="Clay",
-  base_color=rgba(0.76, 0.55, 0.38, 1.0),
-  roughness=0.8,
+  base_color=rgba(0.85, 0.78, 0.70, 1.0),
+  roughness=0.9,
   reflectance=0.4)
 
 # Polymorphic material accessors — uniform interface for all Material subtypes
@@ -898,7 +931,7 @@ b_stroke(b::Backend, path::Shape, mat) =
 
 
 # This might be usable, so
-export @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
+public @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
 
 #=
 A shape is just a proxy with a set of configurable defaults (e.g., material, layer, etc) and a 
@@ -1377,7 +1410,7 @@ loft(profiles::Shapes=Shape[], args...; kargs...) =
 
 loft_ruled(profiles::Shapes=Shape[]) = loft(profiles, Shape[], true, false)
 export loft, loft_ruled
-export b_loft_points, b_loft_curve_point, b_loft_curves, b_loft_surfaces
+public b_loft_points, b_loft_curve_point, b_loft_curves, b_loft_surfaces
 
 # Lofts
 b_loft_points(b::Backend, profiles, rails, ruled, closed, mat) =
@@ -1516,7 +1549,7 @@ surface_domain(s::SurfaceRectangle) = (0, s.dx, 0, s.dy)
 surface_domain(s::SurfaceCircle) = (0, s.radius, 0, 2pi)
 surface_domain(s::SurfaceArc) = (0, s.radius, s.start_angle, s.amplitude)
 
-export backend_frame_at
+public backend_frame_at
 backend_frame_at(b::Backend, s::Shape2D, u::Real, v::Real) =
   missing_specialization(b, :backend_frame_at, s, u, v)
 
@@ -1671,6 +1704,7 @@ bounding_box(shapes::Shapes=Shape[]) =
     backend_bounding_box(backend(shapes[1]), shapes)
   end
 
+public backend_bounding_box
 backend_bounding_box(backend::Backend, shape::Shape) =
   throw(UndefinedBackendException())
 
@@ -1903,7 +1937,8 @@ nonzero_offset(l::Line, d::Real) =
   line(offset(l.vertices, d, false))
 
 #
-export stroke, b_stroke
+export stroke
+public b_stroke
 stroke(path;
     material::Material=default_curve_material(),
 	  backend::Backend=top_backend(),
@@ -1913,7 +1948,8 @@ stroke(path;
       b_stroke(backend, path, mat)
     end
   end
-export fill, b_fill
+export fill
+public b_fill
 fill(path::Path;
     material::Material=default_surface_material(),
     backend::Backend=top_backend(),

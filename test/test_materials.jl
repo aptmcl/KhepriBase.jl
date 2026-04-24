@@ -76,8 +76,12 @@ include("TestMockBackend.jl")
   @testset "Material accessor functions" begin
     @testset "material_color" begin
       @testset "PbrMaterial" begin
-        @test material_color(material_glass) == rgba(0.95, 0.95, 1.0, 0.3)
-        @test material_color(material_metal) == rgba(0.8, 0.8, 0.85, 1.0)
+        # The canonical architectural materials were retuned for cross-backend
+        # consistency (see ArchMaterials.jl / Docs/Materials.md); update
+        # expectations to match the current library rather than the legacy
+        # per-backend values.
+        @test material_color(material_glass) == rgba(0.95, 0.97, 1.0, 1.0)
+        @test material_color(material_metal) == rgba(0.80, 0.80, 0.82, 1.0)
       end
 
       @testset "MaterialInLayer" begin
