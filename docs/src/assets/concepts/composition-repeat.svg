@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -4.5 21 5">
+<defs>
+<marker id="arrowhead-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="rgb(211,211,211)"/></marker>
+<marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
+</defs>
+<g stroke-width="0.026">
+<polygon points="0,0 5,0 5,-4 0,-4" style="fill:rgb(235,238,244);stroke:none;stroke:none"/>
+<polygon points="0,0 5,0 5,-4 0,-4 0,0" style="fill:none;fill:none;stroke:rgb(55,70,95);stroke-width:0.04"/>
+<text x="2.23" y="-1.85" style="font-family:sans-serif;font-size:0.3;fill:rgb(30,30,30);stroke:none">u_1</text>
+<polygon points="5,0 10,0 10,-4 5,-4" style="fill:rgb(235,238,244);stroke:none;stroke:none"/>
+<polygon points="5,0 10,0 10,-4 5,-4 5,0" style="fill:none;fill:none;stroke:rgb(55,70,95);stroke-width:0.04"/>
+<text x="7.23" y="-1.85" style="font-family:sans-serif;font-size:0.3;fill:rgb(30,30,30);stroke:none">u_2</text>
+<polygon points="10,0 15,0 15,-4 10,-4" style="fill:rgb(235,238,244);stroke:none;stroke:none"/>
+<polygon points="10,0 15,0 15,-4 10,-4 10,0" style="fill:none;fill:none;stroke:rgb(55,70,95);stroke-width:0.04"/>
+<text x="12.23" y="-1.85" style="font-family:sans-serif;font-size:0.3;fill:rgb(30,30,30);stroke:none">u_3</text>
+<polygon points="15,0 20,0 20,-4 15,-4" style="fill:rgb(235,238,244);stroke:none;stroke:none"/>
+<polygon points="15,0 20,0 20,-4 15,-4 15,0" style="fill:none;fill:none;stroke:rgb(55,70,95);stroke-width:0.04"/>
+<text x="17.23" y="-1.85" style="font-family:sans-serif;font-size:0.3;fill:rgb(30,30,30);stroke:none">u_4</text>
+<text x="0" y="1" style="font-family:sans-serif;font-size:0.35;fill:rgb(30,30,30);stroke:none">repeat_unit(u, 4; axis=:x)</text>
+</g>
+</svg>

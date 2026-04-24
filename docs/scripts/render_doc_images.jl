@@ -25,6 +25,21 @@ using KhepriBase
 using KhepriSVG
 using KhepriBlender
 
+#=
+Route walls-with-openings through the polygonal-decomposition path
+instead of CSG subtract.  KhepriBlender declares
+`has_boolean_ops(::Type{BLR}) = HasBooleanOps{true}()`, so Blender
+normally realises a wall + door as `wall_solid − door_solid`.  The
+Python-side encoder for `NativeRefs` tries to convert the whole ref
+bundle to a single `Int32` and crashes with
+`MethodError: Cannot convert NativeRefs to Int32`.  Overriding the
+trait to `{false}` makes `realize(HasBooleanOps{false}, …)` carve
+the wall polygonally around each opening and emit one wall mesh
+per panel — identical visual result, no CSG calls.
+=#
+KhepriBase.has_boolean_ops(::Type{KhepriBlender.BLR}) =
+  KhepriBase.HasBooleanOps{false}()
+
 include("presets.jl")
 
 #=
@@ -54,6 +69,7 @@ include("scenes/concepts.jl")
 include("scenes/bim.jl")
 include("scenes/tutorials.jl")
 include("scenes/reference.jl")
+include("scenes/extended.jl")
 
 # ---------------------------------------------------------------
 # Runner

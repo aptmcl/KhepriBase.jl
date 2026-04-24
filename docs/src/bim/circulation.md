@@ -33,7 +33,13 @@ The number of risers is `ceil(Int, height / riser_height)` where `height = top_l
 
 ### Examples
 
-![straight stair](../assets/bim/circulation-straight_stair.png)
+| Up +y (default) | Up +x |
+|:---:|:---:|
+| ![](../assets/bim/circulation-straight_stair.png) | ![](../assets/bim/circulation-stair_x_direction.png) |
+
+| Wider treads | Open-riser |
+|:---:|:---:|
+| ![](../assets/bim/circulation-stair_wide.png) | ![](../assets/bim/circulation-stair_open_riser.png) |
 
 ```julia
 ground = level(0)

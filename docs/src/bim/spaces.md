@@ -6,6 +6,14 @@ A four-room house built from a single declarative layout:
 
 ![4-room house plan](../assets/bim/spaces-4room_plan.png)
 
+A simpler two-room plan, living room + kitchen:
+
+![2-room plan](../assets/bim/spaces-two_rooms_simple.png)
+
+A six-office plan organised around a central corridor:
+
+![six-room corridor](../assets/bim/spaces-six_rooms_corridor.png)
+
 Stacking two storeys with the `^` operator:
 
 ![two-storey](../assets/bim/spaces-two_storey.png)

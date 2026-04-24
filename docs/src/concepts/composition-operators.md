@@ -75,6 +75,8 @@ namespaces:
 repeat_unit(apartment, 4; axis=:x, mirror_alternate=true)
 ```
 
+![repeat_unit](../assets/concepts/composition-repeat.svg)
+
 Each copy gets a namespace prefix (`unit_1/`, `unit_2/`, ...) to
 prevent id collisions. With `mirror_alternate=true`, even-numbered
 copies are mirrored.
@@ -87,6 +89,8 @@ copies are mirrored.
 offices = grid((r, c) -> room(Symbol("off_r\$(r)c\$(c)"), :office, 4.0, 5.0), 3, 5)
 ```
 
+![grid](../assets/concepts/composition-grid.svg)
+
 Cells can have different sizes — the layout uses each column's
 widest cell and each row's deepest cell, so a heterogeneous grid
 still places every cell at a consistent grid offset.
@@ -95,6 +99,11 @@ still places every cell at a consistent grid offset.
 
 - [`scale(s, sx, sy)`](@ref) — scale dimensions
 - [`mirror_x(s)`](@ref) / [`mirror_y(s)`](@ref) — reflect
+
+| scale | mirror_x |
+|:---:|:---:|
+| ![](../assets/concepts/transforms-scale.svg) | ![](../assets/concepts/transforms-mirror.svg) |
+
 - [`with_height(s, h)`](@ref) — override height for a subtree
 - [`with_props(s, nt)`](@ref) — merge a `NamedTuple` of props onto
   every placed space under `s` (existing per-room props win)

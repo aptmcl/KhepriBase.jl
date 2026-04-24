@@ -21,6 +21,14 @@ Nested `Annotated` wrappers compose transparently: layout walks
 through them and `collect_annotations` gathers them for downstream
 use.
 
+`connect` marks an interior boundary as needing a door / arch:
+
+![connect annotation](../assets/reference/designs-annotation_connect.svg)
+
+`connect_exterior` marks an exterior face as needing a window or door:
+
+![connect_exterior annotation](../assets/reference/designs-annotation_exterior.svg)
+
 ## Types
 
 ```@docs

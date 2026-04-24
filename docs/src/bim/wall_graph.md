@@ -21,6 +21,12 @@ A **junction** is a point where wall segments meet. Each junction has a **valenc
 |:---:|:---:|:---:|:---:|:---:|
 | ![](../assets/bim/wallgraph-single_wall.png) | ![](../assets/bim/wallgraph-l_junction.png) | ![](../assets/bim/wallgraph-t_junction.png) | ![](../assets/bim/wallgraph-cross_junction.png) | ![](../assets/bim/wallgraph-full_house.png) |
 
+Arc segments preserve curvature end-to-end on BIM backends:
+
+| Single arc | Lens-shaped curved room |
+|:---:|:---:|
+| ![](../assets/bim/wallgraph-arc_wall.png) | ![](../assets/bim/wallgraph-curved_room.png) |
+
 A **chain** is a maximal sequence of segments connected at valence-2 junctions (elbows) with the same wall family and offset. Chains are the units that get merged into single wall paths. At T-junctions, chains continue through the collinear ("through") pair, so a wall that passes through several T-junctions becomes a single chain.
 
 ### Resolution Pipeline

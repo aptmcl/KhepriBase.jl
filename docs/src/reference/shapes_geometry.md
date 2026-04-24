@@ -11,6 +11,35 @@ A row of 3D primitives — sphere, box, cylinder, cone, regular pyramid, torus:
 
 ![shape primitives](../assets/reference/shapes-primitives.png)
 
+A denser row of the same solid primitives:
+
+![3D solids](../assets/reference/shapes-solids.png)
+
+2D surface primitives viewed top-down — rectangle, circle, polygons,
+regular hexagon:
+
+![2D shapes](../assets/reference/shapes-2d.png)
+
+1D paths viewed top-down — polyline, circle, polygon:
+
+![paths](../assets/reference/shapes-paths.png)
+
+CSG operations applied to a box and a sphere:
+
+| Union | Intersection | Subtraction |
+|:---:|:---:|:---:|
+| ![](../assets/reference/shapes-csg_union.png) | ![](../assets/reference/shapes-csg_intersection.png) | ![](../assets/reference/shapes-csg_subtraction.png) |
+
+Extrusion of a 2D profile along a vector:
+
+![extrusion](../assets/reference/shapes-extrusion.png)
+
+The canonical architectural materials on identical spheres — from
+left: `material_basic`, `_metal`, `_glass`, `_wood`, `_concrete`,
+`_plaster`, `_grass`, `_clay`:
+
+![materials showcase](../assets/reference/materials-showcase.png)
+
 ## Shape0D -- Points and Text
 
 | Shape | Constructor Signature | Description |

@@ -53,6 +53,18 @@ A subtree and its `mirror_x`-transformed twin:
 
 ![mirror_x](../assets/reference/designs-mirror.svg)
 
+`scale` stretches an entire subtree:
+
+![scale](../assets/reference/designs-scale.svg)
+
+`with_height` raises every placed space's ceiling:
+
+![with_height](../assets/reference/designs-with_height.svg)
+
+`repeat_unit` with `mirror_alternate=true` pinwheels every other copy:
+
+![repeat + mirror](../assets/reference/designs-repeat_mirror.svg)
+
 ## Repetition and Grid
 
 ```@docs

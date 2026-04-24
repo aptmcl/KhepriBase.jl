@@ -44,6 +44,8 @@ desk = table_family(length=1.8, width=0.8, height=0.72)
 table(xy(5, 2), 0, ground, desk)
 ```
 
+![table](../assets/bim/furniture-table.png)
+
 ## Chair
 
 A chair is a simple seated furniture element with back support.
@@ -81,6 +83,8 @@ chair(xy(3, 2), ground)
 # Chair rotated to face a table
 chair(xy(3, 1.5), pi, ground)
 ```
+
+![chair](../assets/bim/furniture-chair.png)
 
 ## Table and Chairs
 
@@ -130,6 +134,8 @@ table_and_chairs(xy(10, 5), 0, ground, conference)
 # Rotated dining set
 table_and_chairs(xy(3, 3), pi/6, ground)
 ```
+
+![table and chairs](../assets/bim/furniture-table_and_chairs.png)
 
 ## Fixtures
 
@@ -249,6 +255,11 @@ for x in 2:4:14, y in 2:4:10
   pointlight(xyz(x, y, 2.8), rgb(1, 1, 1), 600.0, level(0))
 end
 ```
+
+A ceiling pointlight inside a small room — light bleeds out through
+the open top:
+
+![pointlight](../assets/bim/lights-pointlight.png)
 
 ### Spotlight
 

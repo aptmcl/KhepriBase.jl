@@ -70,6 +70,19 @@ column(cb::Loc=u0(), angle::Real=0,
 |:---:|:---:|
 | ![column](../assets/bim/structural-column.png) | ![grid columns](../assets/bim/structural-grid_columns.png) |
 
+A `free_column` floats independent of levels — useful for pilotis or
+lecture-hall pillars:
+
+![free column](../assets/bim/structural-free_column.png)
+
+Column family profile (rectangular / square / circular) side by side:
+
+![column families](../assets/bim/structural-column_families.png)
+
+Columns and beams together form a portal frame:
+
+![beam + column grid](../assets/bim/structural-beam_column_grid.png)
+
 ```julia
 ground = level(0)
 first_floor = level(3.5)
@@ -184,6 +197,11 @@ truss_node_coincidence_tolerance(1e-4)      # change tolerance
 A Warren truss with bottom chord nodes and diagonals / verticals:
 
 ![truss](../assets/bim/structural-truss.png)
+
+The end nodes in this truss use `fixed_truss_node_family`, visible
+as small cones at the supports:
+
+![truss with supports](../assets/bim/structural-truss_with_supports.png)
 
 ```julia
 # 1. Build the truss

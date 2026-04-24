@@ -20,6 +20,10 @@ and `above`, so it can be dropped into a composition without
 affecting the result. A non-zero `void(w, d)` reserves space as a
 spacer.
 
+Rooms of different sizes share the same constructor:
+
+![room sizes](../assets/reference/designs-room_sizes.svg)
+
 ```@docs
 room
 void

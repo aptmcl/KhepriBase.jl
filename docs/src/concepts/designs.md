@@ -159,6 +159,11 @@ transformation: scaling a wing scales both the walls and the
 "connect these rooms with an arch" instruction. See
 [Annotations](../reference/design-annotations.md) for the reference.
 
+A `no_windows(:kitchen)` annotation suppresses the automatic windows
+that would otherwise appear on the kitchen's exterior face:
+
+![no_windows annotation](../assets/concepts/annotations-no_windows.svg)
+
 ## Tree queries: introspect without compiling
 
 Before calling `layout(desc)` you can already ask the tree about

@@ -48,6 +48,14 @@ slab(rectangular_path(xy(0, 0), 10, 8), ground, thick_floor)
 |:---:|:---:|
 | ![](../assets/bim/horizontal-slab.png) | ![](../assets/bim/horizontal-l_slab.png) |
 
+Slab thickness is a family parameter. Thin / default / thick side-by-side:
+
+![slab thicknesses](../assets/bim/horizontal-slab_thicknesses.png)
+
+Three stacked slabs + a roof form a three-storey frame:
+
+![multi-level slabs](../assets/bim/horizontal-multi_level.png)
+
 ## Roof
 
 A roof is structurally similar to a slab but sits on top of its level — the bottom surface is at the level height, and the roof extrudes upward.
@@ -82,6 +90,10 @@ roof(rectangular_path(xy(-0.5, -0.5), 13, 11), roof_level)
 ```
 
 ![slab with roof](../assets/bim/horizontal-roof.png)
+
+A roof with a generous overhang beyond the wall line:
+
+![roof with overhang](../assets/bim/horizontal-roof_overhang.png)
 
 ## Ceiling
 

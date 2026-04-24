@@ -5,6 +5,19 @@ a line, a surface -- is represented as a lightweight Julia struct called a **sha
 Proxies store parameters but do not create geometry until they are **realized** in a
 backend.
 
+The 3D solid primitives — sphere, box, cylinder, cone, regular pyramid, torus:
+
+![3D solids](../assets/reference/shapes-solids.png)
+
+The 2D surface primitives — rectangle, circle, polygons, regular polygon:
+
+![2D shapes](../assets/reference/shapes-2d.png)
+
+Each primitive carries a `material`; the canonical architectural
+materials give consistent cross-backend appearance:
+
+![materials](../assets/reference/materials-showcase.png)
+
 ## Shape Proxies
 
 When you write:

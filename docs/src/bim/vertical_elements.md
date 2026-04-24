@@ -63,6 +63,15 @@ wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
 |:---:|:---:|
 | ![straight wall](../assets/bim/vertical-wall.png) | ![L walls](../assets/bim/vertical-L_walls.png) |
 
+A polygonal path produces a kinked wall in a single call:
+
+![polygonal wall](../assets/bim/vertical-polygonal_wall.png)
+
+Wall families set thickness and materials. Here three parallel walls
+with thin / default / thick families:
+
+![wall families](../assets/bim/vertical-wall_families.png)
+
 ### Joining Walls
 
 Two walls with the same levels, family, and offset can be joined into a single continuous wall:
@@ -135,6 +144,8 @@ add_door(w, xy(2, 0))                                    # default family
 add_door(w, xy(6, 0), door_family(width=0.9, height=2.1)) # custom size
 ```
 
+![wall with door](../assets/bim/vertical-wall_with_door.png)
+
 ## Window
 
 A window follows the same pattern as a door but with different default dimensions and materials.
@@ -168,6 +179,15 @@ add_window(w, xy(4, 1.0))
 large_window = window_family(width=2.0, height=1.5)
 add_window(w, xy(4, 0.8), large_window)
 ```
+
+| Wall + window | Wall + door + two windows |
+|:---:|:---:|
+| ![](../assets/bim/vertical-wall_with_window.png) | ![](../assets/bim/vertical-wall_with_openings.png) |
+
+Closing the perimeter with a single `closed_polygonal_path` call
+gives one room-shaped wall — doors and windows are placed as usual:
+
+![closed-wall room](../assets/bim/vertical-closed_wall_room.png)
 
 ### Backend-Specific Door and Window Models
 
@@ -241,6 +261,8 @@ fine_grid = curtain_wall_family(max_panel_dx=0.8, max_panel_dy=1.5)
 curtain_wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
              ground, first_floor, fine_grid)
 ```
+
+![curtain wall](../assets/bim/vertical-curtain_wall.png)
 
 ## Integration Example
 

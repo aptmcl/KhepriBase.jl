@@ -77,11 +77,108 @@ register_scene(
   end,
 )
 
-# Skipping wall-with-openings renders: the KhepriBlender
-# `b_subtract_ref(NativeRefs, NativeRefs)` path (used for door/window
-# carve-outs) hits a NativeRefs → Int32 conversion bug inside the
-# Python-side encoder.  Leaving the scene shelved until that is
-# fixed; the wall-only variants above already illustrate the geometry.
+register_scene(
+  id = "bim_vertical_wall_with_door",
+  section = "bim",
+  filename = "vertical-wall_with_door.png",
+  backend = :blender,
+  view = iso_view(4, 0, 1.5, 7),
+  build = () -> begin
+    w = wall(open_polygonal_path([xy(0, 0), xy(8, 0)]),
+             level(0), level(3.0))
+    add_door(w, xy(2, 0))
+  end,
+)
+
+register_scene(
+  id = "bim_vertical_wall_with_window",
+  section = "bim",
+  filename = "vertical-wall_with_window.png",
+  backend = :blender,
+  view = iso_view(4, 0, 1.5, 7),
+  build = () -> begin
+    w = wall(open_polygonal_path([xy(0, 0), xy(8, 0)]),
+             level(0), level(3.0))
+    add_window(w, xy(4, 1.0))
+  end,
+)
+
+register_scene(
+  id = "bim_vertical_wall_with_openings",
+  section = "bim",
+  filename = "vertical-wall_with_openings.png",
+  backend = :blender,
+  view = iso_view(5, 0, 1.5, 8),
+  build = () -> begin
+    w = wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
+             level(0), level(3.0))
+    add_door(w, xy(2, 0))
+    add_window(w, xy(5, 1.0))
+    add_window(w, xy(7.5, 1.0))
+  end,
+)
+
+register_scene(
+  id = "bim_vertical_closed_wall_room",
+  section = "bim",
+  filename = "vertical-closed_wall_room.png",
+  backend = :blender,
+  view = iso_view(4, 3, 1.5, 9),
+  build = () -> begin
+    slab(rectangular_path(xy(0, 0), 8, 6), level(0))
+    w = wall(closed_polygonal_path([
+        xy(0, 0), xy(8, 0), xy(8, 6), xy(0, 6)]),
+      level(0), level(3.0))
+    add_door(w, xy(1, 0))
+    add_window(w, xy(4, 1.0))
+    add_window(w, xy(6.5, 1.0))
+  end,
+)
+
+register_scene(
+  id = "bim_vertical_wall_families",
+  section = "bim",
+  filename = "vertical-wall_families.png",
+  backend = :blender,
+  view = iso_view(4, 2, 1.5, 8),
+  build = () -> begin
+    # Three walls side-by-side: thin partition / default / thick exterior
+    thin = wall_family(thickness=0.08)
+    thick = wall_family(thickness=0.35)
+    wall(open_polygonal_path([xy(0, 0), xy(6, 0)]),
+         level(0), level(3.0), thin)
+    wall(open_polygonal_path([xy(0, 2), xy(6, 2)]),
+         level(0), level(3.0))
+    wall(open_polygonal_path([xy(0, 4), xy(6, 4)]),
+         level(0), level(3.0), thick)
+  end,
+)
+
+register_scene(
+  id = "bim_vertical_polygonal_wall",
+  section = "bim",
+  filename = "vertical-polygonal_wall.png",
+  backend = :blender,
+  view = iso_view(4, 3, 1.5, 9),
+  build = () -> begin
+    wall(open_polygonal_path([
+        xy(0, 0), xy(3, 0), xy(3, 3), xy(6, 3),
+        xy(6, 6), xy(9, 6)]),
+      level(0), level(3.0))
+  end,
+)
+
+register_scene(
+  id = "bim_vertical_curtain_wall",
+  section = "bim",
+  filename = "vertical-curtain_wall.png",
+  backend = :blender,
+  view = iso_view(4, 0, 1.75, 7),
+  build = () -> begin
+    curtain_wall(open_polygonal_path([xy(0, 0), xy(8, 0)]),
+                 level(0), level(3.5))
+  end,
+)
 
 # ==================================================================
 # Structural elements
