@@ -4,6 +4,16 @@ Traditional wall creation in Khepri requires managing individual wall paths, man
 
 This tutorial progresses from simple wall networks to complex floor plans, showing both the direct WallGraph API and its integration with the Spaces module.
 
+Each of the steps below produces a progressively richer network:
+
+| Step 1 — single wall | Step 2 — L-shape | Step 3 — T-junction |
+|:---:|:---:|:---:|
+| ![](../assets/tutorials/wallgraph-step1_one_wall.png) | ![](../assets/tutorials/wallgraph-step2_L_shape.png) | ![](../assets/tutorials/wallgraph-step3_T_junction.png) |
+
+| Step 4 — closed room | Step 5 — full house |
+|:---:|:---:|
+| ![](../assets/tutorials/wallgraph-step4_closed_room.png) | ![](../assets/tutorials/wallgraph-step5_house.png) |
+
 ## Setup
 
 ```julia

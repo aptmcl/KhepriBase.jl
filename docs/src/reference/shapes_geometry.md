@@ -7,6 +7,10 @@ Shapes in Khepri are lazy proxies.  They are only realized in a backend when
 their reference is needed.  Each shape carries a `material` parameter that
 defaults to a dimension-appropriate material (point, curve, surface, or solid).
 
+A row of 3D primitives — sphere, box, cylinder, cone, regular pyramid, torus:
+
+![shape primitives](../assets/reference/shapes-primitives.png)
+
 ## Shape0D -- Points and Text
 
 | Shape | Constructor Signature | Description |

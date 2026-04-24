@@ -23,6 +23,11 @@ l.storeys                                # one Storey per distinct z
 Pass `origin_x`, `origin_y`, `origin_z` keywords to place the whole
 composition at a non-origin anchor.
 
+`layout(desc)` fed into `build(...)` on a 4-room tree produces the
+built geometry below:
+
+![layout engine output](../assets/reference/layout-engine.png)
+
 ## Where the types and accessors live
 
 The unified Level-1 types and their accessors — [`Space`](@ref),

@@ -19,7 +19,7 @@ register_scene(
     box(xyz(2.5, -0.5, 0), 1, 1, 1.5)
     cylinder(xyz(5, 0, 0), 0.7, 1.5)
     cone(xyz(7, 0, 0), 0.8, 1.5)
-    regular_pyramid(xyz(9, 0, 0), 4, 0.8, 0, 1.5)
+    regular_pyramid(4, xyz(9, 0, 0), 0.8, 0, 1.5)
     torus(xyz(11.5, 0, 0.5), 0.8, 0.25)
   end,
 )
@@ -29,12 +29,12 @@ register_scene(
 # ==================================================================
 
 _camera_demo_scene() = begin
+  # Doors / windows omitted: the Blender b_subtract_ref encoding bug
+  # breaks wall carve-outs in this context.
   slab(rectangular_path(xy(0, 0), 8, 6), level(0))
-  w = wall(closed_polygonal_path([
+  wall(closed_polygonal_path([
       xy(0, 0), xy(8, 0), xy(8, 6), xy(0, 6)]),
     level(0), level(3.0))
-  add_door(w, xy(2, 0))
-  add_window(w, xy(5, 1.2))
 end
 
 register_scene(

@@ -59,6 +59,10 @@ wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
      ground, first_floor, exterior_wall)
 ```
 
+| Straight wall | L-shaped walls |
+|:---:|:---:|
+| ![straight wall](../assets/bim/vertical-wall.png) | ![L walls](../assets/bim/vertical-L_walls.png) |
+
 ### Joining Walls
 
 Two walls with the same levels, family, and offset can be joined into a single continuous wall:

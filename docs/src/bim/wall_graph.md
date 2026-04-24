@@ -17,6 +17,10 @@ A **junction** is a point where wall segments meet. Each junction has a **valenc
 - **Valence 3** (T-junction): one wall passes through while another abuts it. The through-wall continues uninterrupted; the abutting wall extends to meet the through-wall's face.
 - **Valence 4+** (cross): two or more walls cross at a point. Each collinear pair is identified and treated as a through-wall.
 
+| Single wall (v1) | L-junction (v2) | T-junction (v3) | Cross (v4) | Full house |
+|:---:|:---:|:---:|:---:|:---:|
+| ![](../assets/bim/wallgraph-single_wall.png) | ![](../assets/bim/wallgraph-l_junction.png) | ![](../assets/bim/wallgraph-t_junction.png) | ![](../assets/bim/wallgraph-cross_junction.png) | ![](../assets/bim/wallgraph-full_house.png) |
+
 A **chain** is a maximal sequence of segments connected at valence-2 junctions (elbows) with the same wall family and offset. Chains are the units that get merged into single wall paths. At T-junctions, chains continue through the collinear ("through") pair, so a wall that passes through several T-junctions becomes a single chain.
 
 ### Resolution Pipeline

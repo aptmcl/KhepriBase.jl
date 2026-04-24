@@ -5,6 +5,10 @@ system to create parametric, algorithmic, and generative designs. The patterns
 shown here form the foundation for procedural architecture, facade generation,
 mathematical surfaces, and recursive structures.
 
+| Column grid | Recursive setback tower | Radial colonnade |
+|:---:|:---:|:---:|
+| ![](../assets/tutorials/algorithmic-column_grid.png) | ![](../assets/tutorials/algorithmic-recursive_tower.png) | ![](../assets/tutorials/algorithmic-radial_columns.png) |
+
 ## Subdivision with division and map_division
 
 The `division` function produces evenly-spaced values between two endpoints:

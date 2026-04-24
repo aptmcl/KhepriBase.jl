@@ -33,6 +33,8 @@ The number of risers is `ceil(Int, height / riser_height)` where `height = top_l
 
 ### Examples
 
+![straight stair](../assets/bim/circulation-straight_stair.png)
+
 ```julia
 ground = level(0)
 first_floor = level(3.0)
@@ -82,6 +84,10 @@ spiral_stair(center::Loc=u0(),
 The `family` parameter is the same `StairFamily` used by straight stairs. The `width` parameter of the family is unused — the tread width is determined by `radius`.
 
 ### Examples
+
+| Full-turn spiral | Half-turn spiral |
+|:---:|:---:|
+| ![spiral](../assets/bim/circulation-spiral_stair.png) | ![spiral half](../assets/bim/circulation-spiral_half.png) |
 
 ```julia
 ground = level(0)

@@ -2,6 +2,14 @@
 
 The Spaces module provides a space-first approach to architectural layout. Instead of manually constructing individual walls, doors, and windows, you define **spaces** (rooms) as closed polygonal areas and **connections** (doors, windows, arches) between them. A single call to `build()` generates all BIM geometry automatically: shared walls between adjacent rooms are detected and built only once, exterior walls are placed around the perimeter, and openings are positioned on the correct wall segments.
 
+A four-room house built from a single declarative layout:
+
+![4-room house plan](../assets/bim/spaces-4room_plan.png)
+
+Stacking two storeys with the `^` operator:
+
+![two-storey](../assets/bim/spaces-two_storey.png)
+
 After building, the result carries a descriptive boundary model that records which elements bound which spaces. This supports introspection queries ("which walls surround this room?", "which rooms does this door connect?") and validation rules ("every bedroom must be at least 9 m^2").
 
 For a walkthrough with complete house designs, parameterized layouts, and custom validation, see the [Spaces Tutorial](../tutorials/spaces_tutorial.md).

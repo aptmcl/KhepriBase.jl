@@ -29,6 +29,8 @@ The `profile` is a `ClosedPath` that defines the cross-section shape. The beam i
 
 ### Examples
 
+![beam](../assets/bim/structural-beam.png)
+
 ```julia
 # Simple beam spanning 6 meters
 beam(xyz(0, 0, 3), xyz(6, 0, 3))
@@ -63,6 +65,10 @@ column(cb::Loc=u0(), angle::Real=0,
 | `material` | `material_concrete` | Column material |
 
 ### Examples
+
+| Single column | Grid of columns |
+|:---:|:---:|
+| ![column](../assets/bim/structural-column.png) | ![grid columns](../assets/bim/structural-grid_columns.png) |
 
 ```julia
 ground = level(0)
@@ -174,6 +180,10 @@ truss_node_coincidence_tolerance(1e-4)      # change tolerance
 ```
 
 ### Analysis Workflow
+
+A Warren truss with bottom chord nodes and diagonals / verticals:
+
+![truss](../assets/bim/structural-truss.png)
 
 ```julia
 # 1. Build the truss

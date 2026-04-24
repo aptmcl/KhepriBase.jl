@@ -3,6 +3,12 @@
 This page documents the camera, rendering, and film animation system defined in
 `Camera.jl` and `Frontend.jl`.
 
+Three view presets of the same scene:
+
+| Isometric | Top (plan) | Elevation |
+|:---:|:---:|:---:|
+| ![](../assets/reference/camera-iso.png) | ![](../assets/reference/camera-top.png) | ![](../assets/reference/camera-elevation.png) |
+
 ## Render Parameters
 
 All render parameters are `Parameter` instances and can be temporarily overridden

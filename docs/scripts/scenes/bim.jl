@@ -76,36 +76,11 @@ register_scene(
   end,
 )
 
-register_scene(
-  id = "bim_vertical_wall_with_openings",
-  section = "bim",
-  filename = "vertical-wall_with_openings.png",
-  backend = :blender,
-  view = VIEW_ISO_SMALL,
-  build = () -> begin
-    w = wall(open_polygonal_path([xy(0, 0), xy(10, 0)]),
-             level(0), level(3.0))
-    add_door(w, xy(2, 0))
-    add_window(w, xy(5, 1.0))
-    add_window(w, xy(7.5, 1.0))
-  end,
-)
-
-register_scene(
-  id = "bim_vertical_closed_wall_room",
-  section = "bim",
-  filename = "vertical-closed_wall_room.png",
-  backend = :blender,
-  view = VIEW_ISO_MEDIUM,
-  build = () -> begin
-    slab(rectangular_path(xy(0, 0), 8, 6), level(0))
-    w = wall(closed_polygonal_path([
-        xy(0, 0), xy(8, 0), xy(8, 6), xy(0, 6)]),
-      level(0), level(3.0))
-    add_door(w, xy(1, 0))
-    add_window(w, xy(4, 1.0))
-  end,
-)
+# Skipping wall-with-openings renders: the KhepriBlender
+# `b_subtract_ref(NativeRefs, NativeRefs)` path (used for door/window
+# carve-outs) hits a NativeRefs → Int32 conversion bug inside the
+# Python-side encoder.  Leaving the scene shelved until that is
+# fixed; the wall-only variants above already illustrate the geometry.
 
 # ==================================================================
 # Structural elements
@@ -263,11 +238,11 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_SMALL,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     j1 = junction!(g, xy(0, 0))
     j2 = junction!(g, xy(6, 0))
     segment!(g, j1, j2)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
   end,
 )
 
@@ -278,13 +253,13 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_SMALL,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     j1 = junction!(g, xy(0, 0))
     j2 = junction!(g, xy(5, 0))
     j3 = junction!(g, xy(5, 4))
     segment!(g, j1, j2)
     segment!(g, j2, j3)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
   end,
 )
 
@@ -295,7 +270,7 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_SMALL,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     a = junction!(g, xy(0, 0))
     b = junction!(g, xy(8, 0))
     c = junction!(g, xy(4, 0))
@@ -303,7 +278,7 @@ register_scene(
     segment!(g, a, c)
     segment!(g, c, b)
     segment!(g, c, d)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
   end,
 )
 
@@ -314,7 +289,7 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_SMALL,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     c = junction!(g, xy(0, 0))
     n = junction!(g, xy(0, 4))
     s = junction!(g, xy(0, -4))
@@ -322,7 +297,7 @@ register_scene(
     w = junction!(g, xy(-4, 0))
     segment!(g, n, c); segment!(g, c, s)
     segment!(g, w, c); segment!(g, c, e)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
   end,
 )
 
@@ -333,7 +308,7 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_MEDIUM,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     # Outline corners
     p1 = junction!(g, xy(0, 0))
     p2 = junction!(g, xy(10, 0))
@@ -351,7 +326,7 @@ register_scene(
     segment!(g, p4, p1)
     # Interior partition
     segment!(g, pmid_bot, pmid_top)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
     slab(rectangular_path(xy(0, 0), 10, 8), level(0))
   end,
 )

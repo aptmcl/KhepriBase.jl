@@ -3,7 +3,11 @@
 This tutorial builds the Isenberg School of Management Business Innovation
 Hub — the arc-shaped BIG/Goody Clancy building whose "domino effect" copper
 facade won the UNESCO Prix Versailles 2020 — using KhepriBase's
-**Space-first Level-1 API**. The same building is constructed by
+**Space-first Level-1 API**.
+
+A rendered stand-in of the composed plan:
+
+![Isenberg bottom-up](../assets/tutorials/isenberg-bottom_up.png) The same building is constructed by
 progressively declaring every room as a first-class `Space`, composing
 them into a `Layout`, and letting `build(layout)` emit walls, doors,
 windows, and slabs.

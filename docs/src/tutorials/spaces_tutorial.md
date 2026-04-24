@@ -14,6 +14,12 @@ placed around the perimeter. Internally, `build()` uses a
 [WallGraph](../bim/wall_graph.md) to merge adjacent wall segments into
 multi-vertex paths with proper corner miters and T-junction geometry.
 
+Starting from two adjacent rooms and growing out:
+
+| Two rooms | Four rooms | Two storeys |
+|:---:|:---:|:---:|
+| ![](../assets/tutorials/spaces-two_rooms.png) | ![](../assets/tutorials/spaces-four_rooms.png) | ![](../assets/tutorials/spaces-multi_storey.png) |
+
 After building, the result can be *introspected*: which walls bound a room, which
 spaces share a door, what is the area of each room. Validation rules can check
 construction regulations --- minimum areas, mandatory doors, maximum room sizes ---

@@ -6,6 +6,10 @@ Business Innovation Hub as the companion
 **geometry is declared top-down** as a tree of `SpaceDesc` nodes
 rather than constructed room by room.
 
+The same plan produced by a top-down recipe:
+
+![Isenberg top-down](../assets/tutorials/isenberg-top_down.png)
+
 The centrepiece is [`polar_envelope`](@ref): a `SpaceDesc` leaf that
 describes an annular-sector volume around a centre point. Once you
 have an envelope, the usual subdivision operators apply:

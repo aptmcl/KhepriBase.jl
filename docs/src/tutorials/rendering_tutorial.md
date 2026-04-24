@@ -4,6 +4,16 @@ This tutorial covers how to configure rendering parameters, set up camera views,
 produce rendered images, and create animated films using Khepri's camera and
 rendering system.
 
+The same scene rendered from four camera positions — isometric, top, front, and close-up:
+
+| Isometric | Top |
+|:---:|:---:|
+| ![iso](../assets/tutorials/rendering-iso.png) | ![top](../assets/tutorials/rendering-top.png) |
+
+| Front | Close-up |
+|:---:|:---:|
+| ![front](../assets/tutorials/rendering-front.png) | ![close](../assets/tutorials/rendering-close.png) |
+
 ## Render Parameters
 
 Khepri uses a set of global `Parameter` values to control the output of rendered

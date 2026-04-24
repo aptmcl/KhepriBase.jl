@@ -31,36 +31,22 @@ register_scene(
   end,
 )
 
-register_scene(
-  id = "tutorials_building_step3_openings",
-  section = "tutorials",
-  filename = "building-step3_openings.png",
-  backend = :blender,
-  view = VIEW_ISO_MEDIUM,
-  build = () -> begin
-    slab(rectangular_path(xy(0, 0), 10, 8), level(0))
-    w = wall(closed_polygonal_path([
-        xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
-      level(0), level(3.0))
-    add_door(w, xy(2, 0))
-    add_window(w, xy(6, 1.2))
-    add_window(w, xy(8.5, 1.2))
-  end,
-)
+# Step 3/4 originally placed a door + windows on the perimeter wall;
+# KhepriBlender's subtract_ref path for that combination has a
+# NativeRefs encoding bug, so the openings are dropped for now and
+# the tutorial shot progresses from walls directly to the roof.
 
 register_scene(
-  id = "tutorials_building_step4_roof",
+  id = "tutorials_building_step3_roof",
   section = "tutorials",
-  filename = "building-step4_roof.png",
+  filename = "building-step3_roof.png",
   backend = :blender,
   view = VIEW_ISO_MEDIUM,
   build = () -> begin
     slab(rectangular_path(xy(0, 0), 10, 8), level(0))
-    w = wall(closed_polygonal_path([
+    wall(closed_polygonal_path([
         xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
       level(0), level(3.0))
-    add_door(w, xy(2, 0))
-    add_window(w, xy(6, 1.2))
     roof(rectangular_path(xy(-0.3, -0.3), 10.6, 8.6), level(3.0))
   end,
 )
@@ -143,11 +129,11 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_SMALL,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     j1 = junction!(g, xy(0, 0))
     j2 = junction!(g, xy(6, 0))
     segment!(g, j1, j2)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
   end,
 )
 
@@ -158,12 +144,12 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_SMALL,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     a = junction!(g, xy(0, 0))
     b = junction!(g, xy(5, 0))
     c = junction!(g, xy(5, 4))
     segment!(g, a, b); segment!(g, b, c)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
   end,
 )
 
@@ -174,13 +160,13 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_SMALL,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     a = junction!(g, xy(0, 0))
     b = junction!(g, xy(8, 0))
     c = junction!(g, xy(4, 0))
     d = junction!(g, xy(4, 4))
     segment!(g, a, c); segment!(g, c, b); segment!(g, c, d)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
   end,
 )
 
@@ -191,14 +177,14 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_SMALL,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     a = junction!(g, xy(0, 0))
     b = junction!(g, xy(6, 0))
     c = junction!(g, xy(6, 5))
     d = junction!(g, xy(0, 5))
     segment!(g, a, b); segment!(g, b, c)
     segment!(g, c, d); segment!(g, d, a)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
     slab(rectangular_path(xy(0, 0), 6, 5), level(0))
   end,
 )
@@ -210,7 +196,7 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_MEDIUM,
   build = () -> begin
-    g = wall_graph()
+    g = wall_graph(level=level(0), height=3.0)
     # Perimeter of a 10x8 house with interior dividers
     p1 = junction!(g, xy(0, 0));  p2 = junction!(g, xy(10, 0))
     p3 = junction!(g, xy(10, 8)); p4 = junction!(g, xy(0, 8))
@@ -220,7 +206,7 @@ register_scene(
     segment!(g, p2, p3); segment!(g, p3, mid_top)
     segment!(g, mid_top, p4); segment!(g, p4, p1)
     segment!(g, mid_bot, mid_top)
-    build_walls(g, level(0), level(3.0))
+    build_walls(g)
     slab(rectangular_path(xy(0, 0), 10, 8), level(0))
   end,
 )
@@ -229,14 +215,16 @@ register_scene(
 # Rendering tutorial — four camera angles of same scene
 # ==================================================================
 
+#=
+Door/window carve-outs hit a KhepriBlender `b_subtract_ref`
+encoding bug (NativeRefs → Int32), so the rendering demo scene
+ships as a walls-plus-roof without openings.
+=#
 _render_demo_scene() = begin
   slab(rectangular_path(xy(0, 0), 10, 8), level(0))
-  w = wall(closed_polygonal_path([
+  wall(closed_polygonal_path([
       xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
     level(0), level(3.0))
-  add_door(w, xy(2, 0))
-  add_window(w, xy(6, 1.2))
-  add_window(w, xy(4, 8))
   roof(rectangular_path(xy(-0.3, -0.3), 10.6, 8.6), level(3.0))
 end
 
@@ -323,7 +311,7 @@ register_scene(
   backend = :blender,
   view = VIEW_ISO_MEDIUM,
   build = () -> begin
-    slab(surface_regular_polygon_path(12, xy(0, 0), 10), level(0))
+    slab(circular_path(xy(0, 0), 10), level(0))
     for θ in range(0, 2π; length=13)[1:end-1]
       column(xy(8*cos(θ), 8*sin(θ)), 0, level(0), level(4.5))
     end

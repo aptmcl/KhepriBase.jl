@@ -44,6 +44,10 @@ thick_floor = slab_family(thickness=0.35)
 slab(rectangular_path(xy(0, 0), 10, 8), ground, thick_floor)
 ```
 
+| Rectangular slab | L-shaped slab |
+|:---:|:---:|
+| ![](../assets/bim/horizontal-slab.png) | ![](../assets/bim/horizontal-l_slab.png) |
+
 ## Roof
 
 A roof is structurally similar to a slab but sits on top of its level — the bottom surface is at the level height, and the roof extrudes upward.
@@ -76,6 +80,8 @@ roof(rectangular_path(xy(0, 0), 12, 10), roof_level)
 # Roof with overhang (larger region than the floor below)
 roof(rectangular_path(xy(-0.5, -0.5), 13, 11), roof_level)
 ```
+
+![slab with roof](../assets/bim/horizontal-roof.png)
 
 ## Ceiling
 

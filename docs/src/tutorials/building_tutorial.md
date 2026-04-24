@@ -2,6 +2,16 @@
 
 This tutorial walks through the creation of a 2-story office building using Khepri's BIM operations. The code is backend-portable -- change the `using` line to switch between any Khepri backend.
 
+Each step produces progressively more geometry — slab, walls, roof, and finally a second storey:
+
+| Step 1 — slab | Step 2 — walls |
+|:---:|:---:|
+| ![slab](../assets/tutorials/building-step1_slab.png) | ![walls](../assets/tutorials/building-step2_walls.png) |
+
+| Step 3 — roof | Step 4 — two-storey |
+|:---:|:---:|
+| ![roof](../assets/tutorials/building-step3_roof.png) | ![two-storey](../assets/tutorials/building-step5_two_storey.png) |
+
 ## Setup
 
 ```julia
