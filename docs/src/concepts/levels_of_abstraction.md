@@ -6,6 +6,8 @@ compose between them. The analogy to bear in mind is Julia's own
 `Vector` — you can build one with `push!` inside a loop, or describe
 it with a comprehension. Both are valid. Both produce the same type.
 
+![three levels of abstraction](../assets/concepts/levels_of_abstraction.svg)
+
 ```
 Level 2  (declarative)   ── a Design: immutable tree, combinators ─┐
                                        │                            │

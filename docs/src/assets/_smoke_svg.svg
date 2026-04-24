@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="-0.5 -3 5.5 3.5">
+<defs>
+<marker id="arrowhead-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="rgb(211,211,211)"/></marker>
+<marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
+</defs>
+<g stroke-width="0.014">
+<rect x="0" y="-1" width="2" height="1" style="fill:rgb(0,0,0);stroke:none"/>
+<rect x="2.5" y="-1" width="2" height="1" style="fill:rgb(0,0,0);stroke:none"/>
+<circle cx="1" cy="-2" r="0.5" style="fill:rgb(0,0,0);stroke:none"/>
+</g>
+</svg>

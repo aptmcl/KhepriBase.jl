@@ -1,0 +1,26 @@
+Waiting for a connection
+Matched 20 scene(s) of 73 total.
+Connected!
+--- Rendering 20 SVG scenes ---
+  [svg] concepts/levels_of_abstraction.svg
+Waiting for a connection
+  [svg] concepts/composition-beside_x.svg
+  [svg] concepts/composition-beside_y.svg
+  [svg] concepts/composition-above.svg
+  [svg] concepts/composition-mixed.svg
+  [svg] concepts/subdivision-subdivide_x.svg
+  [svg] concepts/subdivision-split_x.svg
+  [svg] concepts/subdivision-partition_x.svg
+  [svg] concepts/subdivision-carve.svg
+  [svg] concepts/subdivision-refine.svg
+  [svg] concepts/subdivision-subdivide_remaining.svg
+  [svg] concepts/leaf-room.svg
+  [svg] concepts/leaf-void.svg
+  [svg] concepts/leaf-envelope.svg
+  [svg] concepts/leaf-polar_envelope.svg
+  [svg] concepts/adjacency-basic.svg
+  [svg] concepts/constraint-min_area_violation.svg
+  [svg] concepts/constraint-must_adjoin_failure.svg
+  [svg] concepts/designs-tree.svg
+  [svg] concepts/family-variants.svg
+Done in 4.6s.

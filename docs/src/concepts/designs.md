@@ -74,6 +74,10 @@ without producing one.
 replicates a unit along an axis; `GridLayout` tiles a 2D grid with a
 cell function.
 
+A four-room example tree:
+
+![designs tree](../assets/concepts/designs-tree.svg)
+
 **Transforms** — one child whose geometry or metadata is rewritten
 on the way down. `Scaled`, `Mirrored`, `HeightOverride`,
 `PropsOverlay`, `Annotated`.

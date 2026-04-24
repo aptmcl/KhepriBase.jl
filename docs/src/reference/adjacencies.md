@@ -45,6 +45,10 @@ correct `level_z`. Use `detect_adjacencies(spaces)` when you have a
 loose collection (a `Vector{Space}`, or a `Dict{Symbol, Space}`)
 and have not wrapped them into a `Layout` yet.
 
+The interior and exterior edges of a four-room layout:
+
+![adjacency example](../assets/reference/adjacencies-example.svg)
+
 ## Worked example
 
 ```julia

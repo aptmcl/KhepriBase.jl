@@ -23,6 +23,8 @@ bed = room(:bed, :bedroom, 4.0, 3.5)
 bed = room(:bed, :bedroom, 4.0, 3.5; height=3.0, props=(min_windows=2,))
 ```
 
+![room leaf](../assets/concepts/leaf-room.svg)
+
 The `width` and `depth` are exact — the layout engine preserves them.
 When adjacent rooms have different depths, the building outline
 becomes stepped (no stretching).
@@ -45,6 +47,8 @@ apartment = bed | kitchen | (has_balcony ? balcony : void())
 plan = room(:a, :bedroom, 4.0, 3.0) | void(2.0, 3.0) | room(:b, :bedroom, 4.0, 3.0)
 ```
 
+![void leaf](../assets/concepts/leaf-void.svg)
+
 ### Envelope
 
 An `Envelope` defines a rectangular volume for top-down subdivision. It works like a room but is meant to be partitioned into
@@ -53,6 +57,12 @@ smaller zones:
 ```julia
 floor = envelope(20.0, 10.0, 2.8)
 ```
+
+![envelope leaf](../assets/concepts/leaf-envelope.svg)
+
+A polar envelope is a ring sector — the root of a polar subtree:
+
+![polar envelope leaf](../assets/concepts/leaf-polar_envelope.svg)
 
 ## Composite Nodes
 

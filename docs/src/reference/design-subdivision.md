@@ -5,6 +5,8 @@ named zones. Mixes freely with the bottom-up combinators: any
 subdivided node can be replaced later via [`refine`](@ref) or
 labelled via [`assign`](@ref).
 
+![assign](../assets/reference/designs-assign.svg)
+
 - `subdivide_x`, `subdivide_y` take proportional ratios summing to 1.
 - `split_x`, `split_y` take absolute positions (split lines).
 - `partition_x`, `partition_y` divide into equal parts.

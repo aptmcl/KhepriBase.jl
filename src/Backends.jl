@@ -745,24 +745,50 @@ view_type(::Type{<:LocalBackend}) = FrontendView()
 
 # ─── LocalBackend default operations ─────────────────────────────────────────
 # These serve as defaults for any LocalBackend subtype (including @defbackend
-# backends with parent = LocalBackend). Field access goes through getproperty,
-# so mixin forwarding works transparently.
+# backends with parent = LocalBackend).  Historically the helpers below read
+# `b.shapes`/`b.layers` directly, which only works for the legacy IOBackend
+# with direct fields.  The new @defbackend+mixin style exposes the same names
+# via `getproperty` forwarding, but Julia specialises `save_shape!(b::LocalBackend,
+# s)` against the `Base.getproperty(::Any, ::Symbol) = getfield(…)` fallback
+# when the mixin-typed backend was not yet loaded at KhepriBase compile time,
+# and the specialisation misses the per-type getproperty method added by
+# @defbackend.  Going through `local_shape_storage` and `local_shape_refs`
+# sidesteps that: the accessor dispatches on `hasfield` at compile time so
+# legacy and mixin backends both resolve to the right container.
+#=
+See also: `@defbackend` (src/Backend.jl) and the `_local_shapes` mixin
+(LocalShapes, above), which is where the struct these accessors bridge to
+is declared.
+=#
+
+# Returns the `Shape` vector the backend stores locally.
+local_shape_storage(b) =
+  hasfield(typeof(b), :_local_shapes) ? b._local_shapes.shapes : b.shapes
+
+# Returns the backend's current layer (may be `nothing`).
+local_current_layer(b) =
+  hasfield(typeof(b), :_local_shapes) ? b._local_shapes.current_layer : b.current_layer
+
+# Returns the `Dict{AbstractLayer,Vector{Shape}}` the backend keeps.
+local_layer_index(b) =
+  hasfield(typeof(b), :_local_shapes) ? b._local_shapes.layers : b.layers
 
 connection(b::LocalBackend) = b.io
 
 public save_shape!
 save_shape!(b::LocalBackend, s::Shape) =
   begin
-    push!(b.shapes, s)
-    if !isnothing(b.current_layer)
-      push!(get!(b.layers, b.current_layer, Shape[]), s)
+    push!(local_shape_storage(b), s)
+    cur = local_current_layer(b)
+    if !isnothing(cur)
+      push!(get!(local_layer_index(b), cur, Shape[]), s)
     end
     s
   end
 
 public realize_shapes
 realize_shapes(b::LocalBackend) =
-  for s in b.shapes
+  for s in local_shape_storage(b)
     reset_ref(b, s)
     force_realize(b, s)
   end
@@ -770,7 +796,7 @@ realize_shapes(b::LocalBackend) =
 public used_materials
 used_materials(b::LocalBackend) =
   let materials = Set{Material}()
-    for s in b.shapes
+    for s in local_shape_storage(b)
       for m in used_materials(s)
         push!(materials, m)
       end
@@ -783,8 +809,8 @@ used_materials(b::LocalBackend) =
 
 KhepriBase.b_delete_all_shape_refs(b::LocalBackend) =
   begin
-    empty!(b.shapes)
-    for ss in values(b.layers)
+    empty!(local_shape_storage(b))
+    for ss in values(local_layer_index(b))
       empty!(ss)
     end
     empty!(b.refs.shapes)
@@ -793,14 +819,14 @@ KhepriBase.b_delete_all_shape_refs(b::LocalBackend) =
 
 KhepriBase.b_delete_shape(b::LocalBackend, shape::Shape) =
   let f(s) = s !== shape
-    filter!(f, b.shapes)
-    for ss in values(b.layers)
+    filter!(f, local_shape_storage(b))
+    for ss in values(local_layer_index(b))
       filter!(f, ss)
     end
   end
 
-KhepriBase.b_all_shapes(b::LocalBackend) = b.shapes
-KhepriBase.b_all_shapes_in_layer(b::LocalBackend, layer) = b.layers[layer]
+KhepriBase.b_all_shapes(b::LocalBackend) = local_shape_storage(b)
+KhepriBase.b_all_shapes_in_layer(b::LocalBackend, layer) = local_layer_index(b)[layer]
 
 KhepriBase.b_realistic_sky(b::LocalBackend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
   begin

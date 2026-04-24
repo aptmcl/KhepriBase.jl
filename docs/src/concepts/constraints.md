@@ -27,6 +27,15 @@ constructor took (minimum area, target kind, adjacency pair, etc.).
 Validating a vector of constraints is simply "run every check, group
 the results by severity":
 
+A minimum-area violation looks like this — the too-small bedroom is
+marked with the diagonal hatch:
+
+![min_area violation](../assets/concepts/constraint-min_area_violation.svg)
+
+An unmet `must_adjoin` between rooms that share no boundary:
+
+![must_adjoin failure](../assets/concepts/constraint-must_adjoin_failure.svg)
+
 ```julia
 using KhepriBase
 

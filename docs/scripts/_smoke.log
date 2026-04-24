@@ -1,0 +1,9 @@
+[2026-04-24T11:51:05.550] Starting smoke test
+==== SVG smoke test ====
+SVG render returned: C:\Users\aml\Vault\AML\Projects\Khepri\Julia\KhepriBase\docs\src\assets\_smoke_svg.svg isfile=true
+
+==== Blender smoke test ====
+Starting Blender…
+current_backends() now has 1 entry(ies): DataType[KhepriSVG.SVGBackend]
+Connected: false
+[2026-04-24T11:53:08.623] Done.

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -7 9 7.5">
+<defs>
+<marker id="arrowhead-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="rgb(211,211,211)"/></marker>
+<marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
+</defs>
+<g stroke-width="0.011">
+<rect x="0" y="-1.5" width="8" height="1.5" style="fill:rgb(0,0,0);stroke:none"/>
+<text x="0.3" y="-0.5" style="font-family:sans-serif;font-size:0.35">Level 0 — BIM primitives  (wall, slab, door, …)</text>
+<rect x="0" y="-4" width="8" height="1.5" style="fill:rgb(0,0,0);stroke:none"/>
+<text x="0.3" y="-3" style="font-family:sans-serif;font-size:0.35">Level 1 — Layout  (Space, Storey, Layout)</text>
+<rect x="0" y="-6.5" width="8" height="1.5" style="fill:rgb(0,0,0);stroke:none"/>
+<text x="0.3" y="-5.5" style="font-family:sans-serif;font-size:0.35">Level 2 — Design  (SpaceDesc tree)</text>
+<polyline points="4,-5 4,-4.1" style="fill:none;stroke:rgb(0,0,0)"/>
+<text x="4.15" y="-4.5" style="font-family:sans-serif;font-size:0.3">layout(desc)</text>
+<polyline points="4,-2.5 4,-1.6" style="fill:none;stroke:rgb(0,0,0)"/>
+<text x="4.15" y="-2" style="font-family:sans-serif;font-size:0.3">build(layout)</text>
+</g>
+</svg>

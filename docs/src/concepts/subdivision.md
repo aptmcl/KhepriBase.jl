@@ -27,6 +27,8 @@ floor |> e -> subdivide_x(e, [0.3, 0.4, 0.3], [:left, :center, :right])
 This creates three zones: left (30% of width), center (40%), right
 (30%).
 
+![subdivide_x](../assets/concepts/subdivision-subdivide_x.svg)
+
 ## Absolute-Position Splits
 
 [`split_x`](@ref) and [`split_y`](@ref) cut a space at absolute
@@ -38,6 +40,8 @@ envelope(20.0, 12.0, 3.0) |>
   e -> split_x(e, [6.0, 16.0], [:entry, :middle, :service])
 # zones of width 6, 10, 4 metres
 ```
+
+![split_x](../assets/concepts/subdivision-split_x.svg)
 
 Use `split_x`/`split_y` when a design needs a fixed-width corridor
 or service zone regardless of the envelope size; use `subdivide_x`/
@@ -54,6 +58,8 @@ floor |> e -> partition_x(e, 5, :office)
 # Creates :office_1, :office_2, :office_3, :office_4, :office_5
 ```
 
+![partition_x](../assets/concepts/subdivision-partition_x.svg)
+
 ## Carving
 
 [`carve`](@ref) places a named room at specific coordinates within a
@@ -62,6 +68,8 @@ space:
 ```julia
 floor |> e -> carve(e, :meeting, :meeting_room; x=2.0, y=3.0, width=5.0, depth=4.0)
 ```
+
+![carve](../assets/concepts/subdivision-carve.svg)
 
 ## Refining Zones
 
@@ -80,6 +88,8 @@ floor |>
   e -> subdivide_x(e, [0.5, 0.5], [:left, :right]) |>
   refine(:left, env -> room(:office, :private_office, env.width, env.depth))
 ```
+
+![refine](../assets/concepts/subdivision-refine.svg)
 
 ## Assigning Uses
 
@@ -117,6 +127,8 @@ envelope(50.0, 40.0, 3.0) |>
     (:west_block,  :west),
   ])
 ```
+
+![subdivide_remaining](../assets/concepts/subdivision-subdivide_remaining.svg)
 
 Each block is emitted as a zone with `use = :zone`; refine it with
 [`refine`](@ref) or promote it with [`assign`](@ref) the same way

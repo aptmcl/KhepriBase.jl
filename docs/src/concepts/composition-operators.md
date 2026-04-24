@@ -10,6 +10,10 @@ Three infix operators provide concise spatial composition:
 | `a / b` | [`beside_y`](@ref) | y (front to back) | middle |
 | `a ^ b` | [`above`](@ref) | z (stack vertically) | highest |
 
+| `a \| b` | `a / b` | `b ^ a` |
+|:---:|:---:|:---:|
+| ![beside_x](../assets/concepts/composition-beside_x.svg) | ![beside_y](../assets/concepts/composition-beside_y.svg) | ![above](../assets/concepts/composition-above.svg) |
+
 Precedence follows the architectural hierarchy: vertical stacking
 binds tightest, then depth, then width. This means:
 
@@ -18,6 +22,10 @@ a | b / c      # parses as  a | (b / c)
 a / b ^ c      # parses as  a / (b ^ c)
 a | b / c ^ d  # parses as  a | (b / (c ^ d))
 ```
+
+A four-room house combining all three axes:
+
+![composed house](../assets/concepts/composition-mixed.svg)
 
 ## Function Forms
 

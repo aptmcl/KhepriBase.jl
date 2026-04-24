@@ -41,6 +41,18 @@ Base.:(/)(::SpaceDesc, ::SpaceDesc)
 Base.:(^)(::SpaceDesc, ::SpaceDesc)
 ```
 
+Three units produced by `repeat_unit(unit, 3; axis=:x)`:
+
+![repeat_unit](../assets/reference/designs-repeat_unit.svg)
+
+A 2 × 3 grid of identically-shaped cells produced by `grid`:
+
+![grid](../assets/reference/designs-grid.svg)
+
+A subtree and its `mirror_x`-transformed twin:
+
+![mirror_x](../assets/reference/designs-mirror.svg)
+
 ## Repetition and Grid
 
 ```@docs

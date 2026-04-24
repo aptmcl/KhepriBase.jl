@@ -1,0 +1,8 @@
+name = "KhepriBaseDocRenders"
+authors = ["António Menezes Leitão <antonio.menezes.leitao@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+KhepriBase = "4cc0fe96-1163-46f3-ba32-de1e65d9548f"
+KhepriBlender = "972dbe12-e583-40ed-b27f-1957d74bf95d"
+KhepriSVG = "21a3a3f1-f947-49a3-8a23-8eee06b14c12"
