@@ -102,6 +102,43 @@ function render_blender_scenes(scenes)
   end
 end
 
+#=
+Per-scene lighting for Blender.  The spawned headless Blender has an
+empty world with no sun, no environment HDR — every shot would be
+black without a manual rig.  `b_realistic_sky` installs a Blender
+Sky Texture with a sun disc at a fixed elevation + rotation, which
+matches what the user sees in an interactive Blender session with
+"Sky" enabled.  Angles are in degrees (the backend converts).
+
+`render_exposure=1.2` adds ~1.2 stops of post-exposure to compensate
+for the Eevee clay defaults; `render_quality=0.5` lifts the Eevee
+sample count out of the muddy-noise range without pushing render
+time past a few seconds per scene.
+=#
+#=
+Headless Blender ships a dark default world.  We try to install a
+Sky Texture with a sun disc first; when the Blender build is old
+enough that `NISHITA` is unavailable (only `PREETHAM`/`HOSEK_WILKIE`
+exist in ≤ 3.x), we fall back to an explicit sun-light + pointlight
+rig that's independent of world-shader features.
+=#
+function setup_blender_lighting!(b)
+  try
+    KhepriBase.b_realistic_sky(b, 55, 135, 3, true)
+    return
+  catch
+    # fall through to explicit lights
+  end
+  try
+    KhepriBase.b_pointlight(b, xyz(10, -10, 15), 8000.0,
+                             RGB(1.0, 0.96, 0.90))
+    KhepriBase.b_pointlight(b, xyz(-6, -8, 12), 4000.0,
+                             RGB(0.85, 0.9, 1.0))
+  catch err
+    @warn "fallback lighting setup failed" err
+  end
+end
+
 function render_one(s)
   dir = abspath(joinpath(ASSETS, s.section))
   mkpath(dir)
@@ -114,8 +151,14 @@ function render_one(s)
   with(render_color_dir, ".") do
   with(render_width, s.width) do
   with(render_height, s.height) do
+  with(render_exposure, s.backend == :blender ? 1.2 : 0.0) do
+  with(render_quality, s.backend == :blender ? 0.5 : 0.0) do
     try
-      reset_backend_state!(KhepriBase.top_backend())
+      b = KhepriBase.top_backend()
+      reset_backend_state!(b)
+      if s.backend == :blender
+        setup_blender_lighting!(b)
+      end
       s.build()
       if s.view !== nothing
         try
@@ -124,11 +167,15 @@ function render_one(s)
           @debug "set_view failed (expected on SVG)" err
         end
       end
-      render_view(name)
+      if s.backend == :blender
+        render_view(name; visual_style=:shaded)
+      else
+        render_view(name)
+      end
     catch err
       @error "scene failed" id=s.id exception=(err, catch_backtrace())
     end
-  end; end; end; end; end; end; end
+  end; end; end; end; end; end; end; end; end
 end
 
 function main()

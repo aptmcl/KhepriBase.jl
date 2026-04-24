@@ -3,7 +3,7 @@ Scenes for docs/src/tutorials/*.md — 3D progression shots.
 =#
 
 # ==================================================================
-# Building tutorial — 5 stages from empty to finished
+# Building tutorial — 4 stages from empty to two-storey
 # ==================================================================
 
 register_scene(
@@ -11,7 +11,7 @@ register_scene(
   section = "tutorials",
   filename = "building-step1_slab.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 4, 0, 10),
   build = () -> begin
     slab(rectangular_path(xy(0, 0), 10, 8), level(0))
   end,
@@ -22,7 +22,7 @@ register_scene(
   section = "tutorials",
   filename = "building-step2_walls.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 4, 1.5, 11),
   build = () -> begin
     slab(rectangular_path(xy(0, 0), 10, 8), level(0))
     wall(closed_polygonal_path([
@@ -41,7 +41,7 @@ register_scene(
   section = "tutorials",
   filename = "building-step3_roof.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 4, 1.8, 12),
   build = () -> begin
     slab(rectangular_path(xy(0, 0), 10, 8), level(0))
     wall(closed_polygonal_path([
@@ -56,7 +56,7 @@ register_scene(
   section = "tutorials",
   filename = "building-step5_two_storey.png",
   backend = :blender,
-  view = VIEW_ISO_LARGE,
+  view = iso_view(5, 4, 3, 16),
   build = () -> begin
     slab(rectangular_path(xy(0, 0), 10, 8), level(0))
     wall(closed_polygonal_path([
@@ -79,7 +79,7 @@ register_scene(
   section = "tutorials",
   filename = "spaces-two_rooms.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(4, 2, 1.5, 8),
   build = () -> begin
     desc = room(:a, :living_room, 5.0, 4.0) |
            room(:b, :kitchen,    3.0, 4.0)
@@ -92,7 +92,7 @@ register_scene(
   section = "tutorials",
   filename = "spaces-four_rooms.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(4, 3.5, 1.5, 11),
   build = () -> begin
     desc = (room(:living, :living_room, 5.0, 4.0) |
             room(:kitchen, :kitchen,    3.0, 4.0)) /
@@ -107,7 +107,7 @@ register_scene(
   section = "tutorials",
   filename = "spaces-multi_storey.png",
   backend = :blender,
-  view = VIEW_ISO_LARGE,
+  view = iso_view(5, 2.5, 3, 15),
   build = () -> begin
     ground = (room(:living, :living_room, 6.0, 5.0) |
               room(:kitchen, :kitchen,    4.0, 5.0))
@@ -127,7 +127,7 @@ register_scene(
   section = "tutorials",
   filename = "wallgraph-step1_one_wall.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(3, 0, 1.5, 5),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     j1 = junction!(g, xy(0, 0))
@@ -142,7 +142,7 @@ register_scene(
   section = "tutorials",
   filename = "wallgraph-step2_L_shape.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(2.5, 2, 1.5, 6),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     a = junction!(g, xy(0, 0))
@@ -158,7 +158,7 @@ register_scene(
   section = "tutorials",
   filename = "wallgraph-step3_T_junction.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(4, 2, 1.5, 7),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     a = junction!(g, xy(0, 0))
@@ -175,7 +175,7 @@ register_scene(
   section = "tutorials",
   filename = "wallgraph-step4_closed_room.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(3, 2.5, 1.5, 7),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     a = junction!(g, xy(0, 0))
@@ -194,7 +194,7 @@ register_scene(
   section = "tutorials",
   filename = "wallgraph-step5_house.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 4, 1.5, 12),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     # Perimeter of a 10x8 house with interior dividers
@@ -233,7 +233,7 @@ register_scene(
   section = "tutorials",
   filename = "rendering-iso.png",
   backend = :blender,
-  view = (eye=xyz(18, -18, 14), target=xyz(5, 4, 1.5)),
+  view = iso_view(5, 4, 1.8, 14),
   build = _render_demo_scene,
 )
 
@@ -242,7 +242,7 @@ register_scene(
   section = "tutorials",
   filename = "rendering-top.png",
   backend = :blender,
-  view = (eye=xyz(5, 4, 30), target=xyz(5, 4, 0)),
+  view = top_view(5, 4, 11),
   build = _render_demo_scene,
 )
 
@@ -251,7 +251,7 @@ register_scene(
   section = "tutorials",
   filename = "rendering-front.png",
   backend = :blender,
-  view = (eye=xyz(5, -15, 3), target=xyz(5, 4, 2)),
+  view = front_view(5, 4, 1.8, 11),
   build = _render_demo_scene,
 )
 
@@ -260,7 +260,7 @@ register_scene(
   section = "tutorials",
   filename = "rendering-close.png",
   backend = :blender,
-  view = (eye=xyz(12, -6, 3), target=xyz(2, 0, 1.5)),
+  view = (eye=xyz(12, -3, 3.0), target=xyz(2, 4, 1.5)),
   build = _render_demo_scene,
 )
 
@@ -273,7 +273,7 @@ register_scene(
   section = "tutorials",
   filename = "algorithmic-column_grid.png",
   backend = :blender,
-  view = VIEW_ISO_LARGE,
+  view = iso_view(12, 9, 2, 26),
   build = () -> begin
     slab(rectangular_path(xy(0, 0), 24, 18), level(0))
     for i in 0:6, j in 0:4
@@ -287,7 +287,7 @@ register_scene(
   section = "tutorials",
   filename = "algorithmic-recursive_tower.png",
   backend = :blender,
-  view = VIEW_ISO_LARGE,
+  view = iso_view(5, 5, 9, 22),
   build = () -> begin
     # Stack 6 stepping-back floors
     for i in 0:5
@@ -309,7 +309,7 @@ register_scene(
   section = "tutorials",
   filename = "algorithmic-radial_columns.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(0, 0, 2.25, 14),
   build = () -> begin
     slab(circular_path(xy(0, 0), 10), level(0))
     for θ in range(0, 2π; length=13)[1:end-1]
@@ -327,7 +327,7 @@ register_scene(
   section = "tutorials",
   filename = "isenberg-bottom_up.png",
   backend = :blender,
-  view = VIEW_ISO_LARGE,
+  view = iso_view(6, 5, 1.5, 13),
   build = () -> begin
     # Simple stand-in: 3 offices in a row, corridor, 3 offices
     ground = (room(:o1, :office, 4.0, 4.0) |
@@ -346,7 +346,7 @@ register_scene(
   section = "tutorials",
   filename = "isenberg-top_down.png",
   backend = :blender,
-  view = VIEW_ISO_LARGE,
+  view = iso_view(6, 5, 1.5, 13),
   build = () -> begin
     # Start from an envelope, carve a corridor, subdivide remaining
     env  = envelope(12.0, 10.0, 3.0; id=:floor)

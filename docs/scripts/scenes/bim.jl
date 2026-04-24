@@ -1,8 +1,9 @@
 #=
 Scenes for docs/src/bim/*.md — 3D renders produced by KhepriBlender.
 
-Each scene stands on its own: it calls `delete_all_shapes()` first
-(done by the driver) and builds its mini-scene from scratch.
+Each scene declares the center and characteristic radius of its
+content via `iso_view(...)` so the camera actually frames the
+geometry instead of defaulting to the world origin.
 =#
 
 # ==================================================================
@@ -14,7 +15,7 @@ register_scene(
   section = "bim",
   filename = "horizontal-slab.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 4, 0, 10),
   build = () -> begin
     slab(rectangular_path(xy(0, 0), 10, 8), level(0))
   end,
@@ -25,7 +26,7 @@ register_scene(
   section = "bim",
   filename = "horizontal-l_slab.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 4, 0, 10),
   build = () -> begin
     l = closed_polygonal_path([
       xy(0, 0), xy(10, 0), xy(10, 4),
@@ -39,7 +40,7 @@ register_scene(
   section = "bim",
   filename = "horizontal-roof.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 4, 1.5, 12),
   build = () -> begin
     ground = level(0)
     slab(rectangular_path(xy(0, 0), 10, 8), ground)
@@ -56,7 +57,7 @@ register_scene(
   section = "bim",
   filename = "vertical-wall.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(4, 0, 1.5, 7),
   build = () -> begin
     wall(open_polygonal_path([xy(0, 0), xy(8, 0)]),
          level(0), level(3.0))
@@ -68,7 +69,7 @@ register_scene(
   section = "bim",
   filename = "vertical-L_walls.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(2.5, 2.5, 1.5, 7),
   build = () -> begin
     b, t = level(0), level(3.0)
     wall(open_polygonal_path([xy(0, 0), xy(5, 0)]), b, t)
@@ -91,7 +92,7 @@ register_scene(
   section = "bim",
   filename = "structural-beam.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(4, 0, 3, 6),
   build = () -> begin
     beam(xyz(0, 0, 3), xyz(8, 0, 3))
   end,
@@ -102,7 +103,7 @@ register_scene(
   section = "bim",
   filename = "structural-column.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(0, 0, 1.75, 4),
   build = () -> begin
     column(xy(0, 0), 0, level(0), level(3.5))
   end,
@@ -113,7 +114,7 @@ register_scene(
   section = "bim",
   filename = "structural-grid_columns.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(6, 4.5, 1.5, 14),
   build = () -> begin
     slab(rectangular_path(xy(0, 0), 12, 9), level(0))
     for x in 0:3:12, y in 0:3:9
@@ -128,12 +129,9 @@ register_scene(
   section = "bim",
   filename = "structural-truss.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 0, 0.75, 8),
   build = () -> begin
     # Simple Warren truss — 5 bottom + 4 top nodes
-    pts_b = [xy(2*i, 0) for i in 0:5]
-    pts_t = [xy(2*i + 1, 0, ) for i in 0:4]  # overridden below
-    # Use xyz explicitly
     bottom = [xyz(2*i, 0, 0) for i in 0:5]
     top    = [xyz(2*i + 1, 0, 1.5) for i in 0:4]
     nb = [truss_node(p) for p in bottom]
@@ -163,7 +161,7 @@ register_scene(
   section = "bim",
   filename = "circulation-straight_stair.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(0.5, 2.5, 1.5, 6),
   build = () -> begin
     stair(xy(0, 0), vy(1), level(0), level(3.0))
   end,
@@ -174,7 +172,7 @@ register_scene(
   section = "bim",
   filename = "circulation-spiral_stair.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(0, 0, 1.5, 5),
   build = () -> begin
     spiral_stair(xy(0, 0), 1.5, 0, 2*pi, true, level(0), level(3.0))
   end,
@@ -185,7 +183,7 @@ register_scene(
   section = "bim",
   filename = "circulation-spiral_half.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(0, 0, 1.5, 5),
   build = () -> begin
     spiral_stair(xy(0, 0), 2.0, 0, pi, false, level(0), level(3.0))
   end,
@@ -200,7 +198,7 @@ register_scene(
   section = "bim",
   filename = "spaces-4room_plan.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(4, 3.5, 1.5, 11),
   build = () -> begin
     desc = (room(:living, :living_room, 5.0, 4.0) |
             room(:kitchen, :kitchen,    3.0, 4.0)) /
@@ -215,7 +213,7 @@ register_scene(
   section = "bim",
   filename = "spaces-two_storey.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 2.5, 3, 14),
   build = () -> begin
     ground = room(:living, :living_room, 6.0, 5.0) |
              room(:kitchen, :kitchen, 4.0, 5.0)
@@ -236,7 +234,7 @@ register_scene(
   section = "bim",
   filename = "wallgraph-single_wall.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(3, 0, 1.5, 5),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     j1 = junction!(g, xy(0, 0))
@@ -251,7 +249,7 @@ register_scene(
   section = "bim",
   filename = "wallgraph-l_junction.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(2.5, 2, 1.5, 6),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     j1 = junction!(g, xy(0, 0))
@@ -268,7 +266,7 @@ register_scene(
   section = "bim",
   filename = "wallgraph-t_junction.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(4, 2, 1.5, 8),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     a = junction!(g, xy(0, 0))
@@ -287,7 +285,7 @@ register_scene(
   section = "bim",
   filename = "wallgraph-cross_junction.png",
   backend = :blender,
-  view = VIEW_ISO_SMALL,
+  view = iso_view(0, 0, 1.5, 8),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     c = junction!(g, xy(0, 0))
@@ -306,7 +304,7 @@ register_scene(
   section = "bim",
   filename = "wallgraph-full_house.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(5, 4, 1.5, 12),
   build = () -> begin
     g = wall_graph(level=level(0), height=3.0)
     # Outline corners

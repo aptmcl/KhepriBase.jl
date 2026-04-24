@@ -12,7 +12,7 @@ register_scene(
   section = "reference",
   filename = "shapes-primitives.png",
   backend = :blender,
-  view = (eye=xyz(14, -14, 10), target=xyz(5, 2, 1)),
+  view = iso_view(6, 0, 1, 10),
   build = () -> begin
     # Row of primitives
     sphere(xyz(0, 0, 1), 1)
@@ -42,7 +42,7 @@ register_scene(
   section = "reference",
   filename = "camera-iso.png",
   backend = :blender,
-  view = (eye=xyz(16, -16, 12), target=xyz(4, 3, 1.5)),
+  view = iso_view(4, 3, 1.5, 10),
   build = _camera_demo_scene,
 )
 
@@ -51,7 +51,7 @@ register_scene(
   section = "reference",
   filename = "camera-top.png",
   backend = :blender,
-  view = (eye=xyz(4, 3, 25), target=xyz(4, 3, 0)),
+  view = top_view(4, 3, 9),
   build = _camera_demo_scene,
 )
 
@@ -60,7 +60,7 @@ register_scene(
   section = "reference",
   filename = "camera-elevation.png",
   backend = :blender,
-  view = (eye=xyz(4, -12, 1.5), target=xyz(4, 3, 1.5)),
+  view = front_view(4, 3, 1.5, 9),
   build = _camera_demo_scene,
 )
 
@@ -73,7 +73,7 @@ register_scene(
   section = "reference",
   filename = "layout-engine.png",
   backend = :blender,
-  view = VIEW_ISO_MEDIUM,
+  view = iso_view(4, 3.5, 1.5, 11),
   build = () -> begin
     desc = (room(:living, :living_room, 5.0, 4.0) |
             room(:kitchen, :kitchen,    3.0, 4.0)) /
