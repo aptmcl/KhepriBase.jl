@@ -2,15 +2,14 @@
 
 This tutorial walks through the creation of a 2-story office building using Khepri's BIM operations. The code is backend-portable -- change the `using` line to switch between any Khepri backend.
 
-Each step produces progressively more geometry — slab, walls, roof, and finally a second storey:
+The finished building, rendered from a perspective camera with
+interior lights and furnishings in place:
 
-| Step 1 — slab | Step 2 — walls |
-|:---:|:---:|
-| ![slab](../assets/tutorials/building-step1_slab.png) | ![walls](../assets/tutorials/building-step2_walls.png) |
+![office hero shot](../assets/tutorials/building-12_hero.png)
 
-| Step 3 — roof | Step 4 — two-storey |
-|:---:|:---:|
-| ![roof](../assets/tutorials/building-step3_roof.png) | ![two-storey](../assets/tutorials/building-step5_two_storey.png) |
+Every code block below adds one more layer of geometry; the
+rendered result after each block appears inline as you work down
+the page.
 
 ## Setup
 
@@ -65,6 +64,8 @@ building_region = rectangular_path(xy(0, 0), 16, 12)
 slab(building_region, ground)
 ```
 
+![ground slab](../assets/tutorials/building-01_slab.png)
+
 ### Exterior Walls
 
 Use a closed path for the building perimeter. The offset defaults to `1/2` for closed paths, placing wall thickness to the interior.
@@ -75,6 +76,8 @@ exterior = wall(
     xy(0, 0), xy(16, 0), xy(16, 12), xy(0, 12)]),
   ground, first_floor, ext_wall)
 ```
+
+![+ exterior walls](../assets/tutorials/building-02_walls.png)
 
 ### Doors and Windows on Exterior Walls
 
@@ -100,6 +103,8 @@ add_window(exterior, xy(42, 1.0), tall_window)
 add_window(exterior, xy(45, 1.0), tall_window)
 ```
 
+![+ exterior doors & windows](../assets/tutorials/building-03_openings.png)
+
 ### Interior Partitions
 
 ```julia
@@ -117,6 +122,8 @@ add_door(corridor_wall, xy(3, 0), office_door)   # left office
 add_door(corridor_wall, xy(10, 0), office_door)  # right office
 ```
 
+![+ interior partitions](../assets/tutorials/building-04_partitions.png)
+
 ### Columns
 
 ```julia
@@ -127,6 +134,8 @@ for x in [0.15, 8, 15.85]
   end
 end
 ```
+
+![+ structural columns](../assets/tutorials/building-05_columns.png)
 
 ### Stairwell
 
@@ -139,6 +148,8 @@ railing(open_polygonal_path([xy(13, 8), xyz(13, 13.5, 3.5)]), ground)
 railing(open_polygonal_path([xy(14.2, 8), xyz(14.2, 13.5, 3.5)]), ground)
 ```
 
+![+ stairwell](../assets/tutorials/building-06_stairwell.png)
+
 ## Step 4: First Floor
 
 ### Floor Slab and Ceiling Below
@@ -147,6 +158,8 @@ railing(open_polygonal_path([xy(14.2, 8), xyz(14.2, 13.5, 3.5)]), ground)
 slab(building_region, first_floor)
 ceiling(building_region, first_floor)
 ```
+
+![+ first-floor slab](../assets/tutorials/building-07_first_floor.png)
 
 ### Walls and Openings
 
@@ -190,6 +203,8 @@ for x in [0.15, 8, 15.85]
 end
 ```
 
+![+ first-floor walls & columns](../assets/tutorials/building-08_upper_walls.png)
+
 ### Balcony with Railing
 
 ```julia
@@ -206,6 +221,8 @@ railing(open_polygonal_path([xy(4, 0), xy(4, -2)]),
         first_floor)
 ```
 
+![+ balcony with railing](../assets/tutorials/building-09_balcony.png)
+
 ## Step 5: Roof
 
 ```julia
@@ -221,6 +238,8 @@ railing(open_polygonal_path([
   nothing,
   railing_family(height=1.1))
 ```
+
+![+ roof with perimeter railing](../assets/tutorials/building-10_roof.png)
 
 ## Step 6: Interior Furnishings
 
@@ -241,6 +260,8 @@ for (x, y) in [(3, 2), (3, 4), (10, 2), (10, 4)]
   chair(xy(x, y - 0.6), 0, ground)
 end
 ```
+
+![+ furnishings](../assets/tutorials/building-11_furnishings.png)
 
 ## Step 7: Lighting
 

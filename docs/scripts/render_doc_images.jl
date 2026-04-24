@@ -70,6 +70,7 @@ include("scenes/bim.jl")
 include("scenes/tutorials.jl")
 include("scenes/reference.jl")
 include("scenes/extended.jl")
+include("scenes/extended2.jl")
 
 # ---------------------------------------------------------------
 # Runner

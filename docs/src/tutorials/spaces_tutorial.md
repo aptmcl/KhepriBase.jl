@@ -48,6 +48,8 @@ add_door(plan, room_a, room_b)
 build(plan)
 ```
 
+![two rooms with a door](../assets/tutorials/spaces-two_rooms_door.png)
+
 `floor_plan()` creates an empty plan with default level, height, wall, and slab
 families. `add_space` registers a named space defined by a closed path ---
 here, two 5x4 rectangles sharing the edge at x=5. `add_door` declares a door
@@ -139,6 +141,8 @@ facade where the door should land:
 # Front door: living room onto the south facade
 add_door(plan, living, :exterior, loc=xy(3.0, 0))
 ```
+
+![house after connections](../assets/tutorials/spaces-house.png)
 
 ### Step 4: Add Windows
 
@@ -481,6 +485,10 @@ end
 result = office_floor(5, 3)
 ```
 
+A 4 × 3 grid of equally-sized offices:
+
+![office grid](../assets/tutorials/spaces-grid_offices.png)
+
 ### Radial Layout
 
 ```julia
@@ -512,6 +520,10 @@ end
 
 result = radial_rooms(8)
 ```
+
+Six radial rooms around a hexagonal atrium:
+
+![radial rooms](../assets/tutorials/spaces-radial.png)
 
 ## Complete House Example with Validation
 

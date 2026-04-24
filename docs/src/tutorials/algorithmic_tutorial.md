@@ -9,6 +9,14 @@ mathematical surfaces, and recursive structures.
 |:---:|:---:|:---:|
 | ![](../assets/tutorials/algorithmic-column_grid.png) | ![](../assets/tutorials/algorithmic-recursive_tower.png) | ![](../assets/tutorials/algorithmic-radial_columns.png) |
 
+More parametric constructions — a sinusoidal colonnade (`division` +
+`map`), a staggered grid (alternating row offsets), and a six-slab
+spiral tower driven by `cs_from_o_phi`:
+
+| Sine facade | Staggered grid | Spiral tower |
+|:---:|:---:|:---:|
+| ![](../assets/tutorials/algorithmic-sine_facade.png) | ![](../assets/tutorials/algorithmic-staggered_grid.png) | ![](../assets/tutorials/algorithmic-spiral_tower.png) |
+
 ## Subdivision with division and map_division
 
 The `division` function produces evenly-spaced values between two endpoints:

@@ -56,6 +56,8 @@ build_walls(wg)
 
 The door is placed 3 meters from junction j1. If `at` is omitted, the door is centered on the segment.
 
+![wall-graph segment with door](../assets/tutorials/wallgraph-with_door.png)
+
 ### Adding Windows
 
 Windows take an additional `sill` parameter for the height above the floor.
@@ -78,6 +80,8 @@ add_wall_window!(wg, s1, at=7.0, sill=0.9,
 
 build_walls(wg)
 ```
+
+![wall-graph segment with window](../assets/tutorials/wallgraph-with_window.png)
 
 ## L-Corners and Chain Merging
 

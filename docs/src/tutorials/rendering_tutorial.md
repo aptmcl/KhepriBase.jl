@@ -150,6 +150,13 @@ to_render("scene_01") do
 end
 ```
 
+Same scene, different lighting. Plain daylight, extra bright pointlights,
+and a single warm fixture for a night-time feel:
+
+| Shaded (daylight) | Bright interior | Night |
+|:---:|:---:|:---:|
+| ![](../assets/tutorials/rendering-style_shaded.png) | ![](../assets/tutorials/rendering-exposure_bright.png) | ![](../assets/tutorials/rendering-night.png) |
+
 ## Film and Animation Workflow
 
 Khepri supports frame-by-frame animation. The workflow is:
