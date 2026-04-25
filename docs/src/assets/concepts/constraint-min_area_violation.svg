@@ -4,23 +4,23 @@
 <marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
 </defs>
 <g stroke-width="0.011">
-<polygon points="0,0 5,0 5,-4 0,-4" style="fill:rgb(235,238,244);stroke:none;stroke:none"/>
-<polygon points="0,0 5,0 5,-4 0,-4 0,0" style="fill:none;fill:none;stroke:rgb(55,70,95);stroke-width:0.04"/>
-<text x="0.772" y="-1.84" style="font-family:sans-serif;font-size:0.32;fill:rgb(30,30,30);stroke:none">:bedroom  20m²  ok</text>
-<polygon points="5,0 8,0 8,-2 5,-2" style="fill:rgb(235,238,244);stroke:none;stroke:none"/>
-<polygon points="5,0 8,0 8,-2 5,-2 5,0" style="fill:none;fill:none;stroke:rgb(55,70,95);stroke-width:0.04"/>
-<text x="6.5" y="-0.84" style="font-family:sans-serif;font-size:0.32;fill:rgb(30,30,30);stroke:none"></text>
-<text x="5.1" y="-1" style="font-family:sans-serif;font-size:0.3">:bedroom  6m²  ✗</text>
-<polyline points="5.1,-0.1 5.3,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="5.4,-0.1 5.6,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="5.7,-0.1 5.9,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="6,-0.1 6.2,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="6.3,-0.1 6.5,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="6.6,-0.1 6.8,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="6.9,-0.1 7.1,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="7.2,-0.1 7.4,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="7.5,-0.1 7.7,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<polyline points="7.8,-0.1 8,-0.3" style="fill:none;stroke:rgb(0,0,0)"/>
-<text x="0" y="0.9" style="font-family:sans-serif;font-size:0.35">min_area(:bedroom, 9.0) violated.</text>
+<polygon points="0,0 5,0 5,-4 0,-4" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="0,0 5,0 5,-4 0,-4 0,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="0.772" y="-1.84" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247);stroke:none">:bedroom  20m²  ok</text>
+<polygon points="5,0 8,0 8,-2 5,-2" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="5,0 8,0 8,-2 5,-2 5,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="6.5" y="-0.84" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247);stroke:none"></text>
+<text x="5.1" y="-1" style="font-family:sans-serif;font-size:0.3;fill:rgb(245,245,247)">:bedroom  6m²  ✗</text>
+<polyline points="5.1,-0.1 5.3,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="5.4,-0.1 5.6,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="5.7,-0.1 5.9,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="6,-0.1 6.2,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="6.3,-0.1 6.5,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="6.6,-0.1 6.8,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="6.9,-0.1 7.1,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="7.2,-0.1 7.4,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="7.5,-0.1 7.7,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="7.8,-0.1 8,-0.3" style="fill:none;stroke:rgb(245,245,247)"/>
+<text x="0" y="0.9" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">min_area(:bedroom, 9.0) violated.</text>
 </g>
 </svg>

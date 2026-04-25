@@ -26,6 +26,44 @@ using KhepriSVG
 using KhepriBlender
 
 #=
+The doc site renders SVG figures on a dark background, where
+KhepriSVG's hard-coded `rgb(0,0,0)` default for unmaterialed
+shapes turns into invisible black-on-black.  Override the default
+to a near-white so untagged shapes stay legible; per-scene
+materials still take precedence.
+=#
+function KhepriSVG.svg_style(mat, filled)
+  if mat isa Integer || isnothing(mat) || mat == ""
+    filled ? "fill:rgb(245,245,247);stroke:none" :
+             "fill:none;stroke:rgb(245,245,247)"
+  elseif startswith(mat, "fill:") || startswith(mat, "stroke:") ||
+         startswith(mat, "stroke-")
+    filled ? "$(mat);stroke:none" : "fill:none;$(mat)"
+  else
+    filled ? "fill:$(mat);stroke:none" : "fill:none;stroke:$(mat)"
+  end
+end
+
+# `svg_text` builds its style attribute by hand and ignores
+# `svg_style`'s default — text without a material renders as black.
+# Patch it so untagged text picks up the same near-white default.
+function KhepriSVG.svg_text(out::IO, str, c, size, mat)
+  let (x, y) = KhepriSVG.svg_coord(c),
+      n      = KhepriSVG.svg_number,
+      parts  = String["font-family:sans-serif",
+                      "font-size:$(n(size))"]
+    if !(mat isa Integer) && !isnothing(mat) && mat != ""
+      push!(parts, mat)
+    else
+      push!(parts, "fill:rgb(245,245,247)")
+    end
+    println(out, "<text x=\"$(n(x))\" y=\"$(n(y))\" ",
+                 "style=\"$(join(parts, ';'))\">",
+                 KhepriSVG.svg_escape(string(str)), "</text>")
+  end
+end
+
+#=
 Route walls-with-openings through the polygonal-decomposition path
 instead of CSG subtract.  KhepriBlender declares
 `has_boolean_ops(::Type{BLR}) = HasBooleanOps{true}()`, so Blender

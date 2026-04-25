@@ -20,18 +20,25 @@ separate outline primitive on top to get the schematic "boxed room"
 look with a faint panel fill.
 =#
 
+#=
+Light palette tuned for the doc site's dark background.  Strokes
+and text are off-white; room fills are a faint white tint so the
+schematic structure shows through without dominating the figure.
+Highlight colours stay vivid so they pop on dark.
+=#
+
 const _fill_material = KhepriSVG.svg_option(
-  "fill:rgb(235,238,244);stroke:none")
+  "fill:rgba(255,255,255,0.10);stroke:none")
 const _warm_fill     = KhepriSVG.svg_option(
-  "fill:rgb(255,225,220);stroke:none")
+  "fill:rgba(255,180,160,0.40);stroke:none")
 const _highlight_material = KhepriSVG.svg_option(
-  "fill:rgb(90,150,90);stroke:none")
+  "fill:rgb(120,200,140);stroke:none")
 const _stroke_material = KhepriSVG.svg_option(
-  "fill:none;stroke:rgb(55,70,95);stroke-width:0.04")
+  "fill:none;stroke:rgb(245,245,247);stroke-width:0.05")
 const _faint_stroke    = KhepriSVG.svg_option(
-  "fill:none;stroke:rgb(120,130,150);stroke-width:0.02")
+  "fill:none;stroke:rgba(245,245,247,0.55);stroke-width:0.025")
 const _label_material = KhepriSVG.svg_option(
-  "fill:rgb(30,30,30);stroke:none")
+  "fill:rgb(245,245,247);stroke:none")
 
 _room_rect(x, y, w, d; fill=_fill_material, stroke=_stroke_material) = begin
   corners = [xy(x, y), xy(x+w, y), xy(x+w, y+d), xy(x, y+d)]

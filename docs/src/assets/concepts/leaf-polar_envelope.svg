@@ -4,9 +4,9 @@
 <marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
 </defs>
 <g stroke-width="0.006">
-<path d="M 0,0 L 4.698,-1.71 A 5,5 0 0,0 -1.71,-4.698 Z" style="fill:rgb(0,0,0);stroke:none"/>
-<circle cx="0" cy="0" r="2" style="fill:rgb(0,0,0);stroke:none"/>
-<text x="1.5" y="-3" style="font-family:sans-serif;font-size:0.3">polar_envelope</text>
-<text x="-3" y="1" style="font-family:sans-serif;font-size:0.25">(center, r_inner, r_outer, θ_start, θ_end, height)</text>
+<path d="M 0,0 L 4.698,-1.71 A 5,5 0 0,0 -1.71,-4.698 Z" style="fill:rgb(245,245,247);stroke:none"/>
+<circle cx="0" cy="0" r="2" style="fill:rgb(245,245,247);stroke:none"/>
+<text x="1.5" y="-3" style="font-family:sans-serif;font-size:0.3;fill:rgb(245,245,247)">polar_envelope</text>
+<text x="-3" y="1" style="font-family:sans-serif;font-size:0.25;fill:rgb(245,245,247)">(center, r_inner, r_outer, θ_start, θ_end, height)</text>
 </g>
 </svg>

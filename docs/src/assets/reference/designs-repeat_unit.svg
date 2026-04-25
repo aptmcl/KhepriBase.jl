@@ -4,12 +4,12 @@
 <marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
 </defs>
 <g stroke-width="0.024">
-<rect x="0" y="-5" width="6" height="5" style="fill:rgb(0,0,0);stroke:none"/>
-<text x="2" y="-2.3" style="font-family:sans-serif;font-size:0.4">unit_1</text>
-<rect x="6" y="-5" width="6" height="5" style="fill:rgb(0,0,0);stroke:none"/>
-<text x="8" y="-2.3" style="font-family:sans-serif;font-size:0.4">unit_2</text>
-<rect x="12" y="-5" width="6" height="5" style="fill:rgb(0,0,0);stroke:none"/>
-<text x="14" y="-2.3" style="font-family:sans-serif;font-size:0.4">unit_3</text>
-<text x="0" y="1" style="font-family:sans-serif;font-size:0.35">repeat_unit(unit, 3; axis=:x)</text>
+<rect x="0" y="-5" width="6" height="5" style="fill:rgb(245,245,247);stroke:none"/>
+<text x="2" y="-2.3" style="font-family:sans-serif;font-size:0.4;fill:rgb(245,245,247)">unit_1</text>
+<rect x="6" y="-5" width="6" height="5" style="fill:rgb(245,245,247);stroke:none"/>
+<text x="8" y="-2.3" style="font-family:sans-serif;font-size:0.4;fill:rgb(245,245,247)">unit_2</text>
+<rect x="12" y="-5" width="6" height="5" style="fill:rgb(245,245,247);stroke:none"/>
+<text x="14" y="-2.3" style="font-family:sans-serif;font-size:0.4;fill:rgb(245,245,247)">unit_3</text>
+<text x="0" y="1" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">repeat_unit(unit, 3; axis=:x)</text>
 </g>
 </svg>
