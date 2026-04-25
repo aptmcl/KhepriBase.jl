@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-2.5 -4.5 5.92 5.518">
+<defs>
+<marker id="arrowhead-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="rgb(211,211,211)"/></marker>
+<marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
+</defs>
+<g stroke-width="0.007">
+<polyline points="-2,0.4 0,-4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="2,0.4 0,-4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="0,-0.4 0,-4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="-2,0.4 0,-0.4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="0,-0.4 2,0.4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="-2,0.4 2,0.4" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<circle cx="0" cy="0" r="0.06" style="fill:rgb(255,168,96);stroke:none;stroke:none"/>
+<text x="-0.5" y="0.4" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">p</text>
+<polyline points="0,0 2,0.4" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="0.024,-0.118 -0.024,0.118" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="2.024,0.282 1.976,0.518" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<text x="1.039" y="0.004" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">rb</text>
+<polyline points="2.8,0.4 2.8,-4" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="2.68,0.4 2.92,0.4" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="2.68,-4 2.92,-4" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<text x="2.6" y="-1.8" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">h</text>
+</g>
+</svg>

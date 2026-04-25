@@ -66,6 +66,20 @@ left: `material_basic`, `_metal`, `_glass`, `_wood`, `_concrete`,
 | `regular_polygon` | `regular_polygon(edges::Integer=3, center::Loc=u0(), radius::Real=1, angle::Real=0, inscribed::Bool=true; material)` | Regular polygon. |
 | `rectangle` | `rectangle(corner::Loc=u0(), dx::Real=1, dy::Real=1; material)` | Axis-aligned rectangle. Also: `rectangle(p::Loc, q::Loc)` (two-corner form). |
 
+### Parameter illustrations — 1D shapes
+
+| `line(p1, p2, …)` | `polygon(p1, p2, …)` | `spline(p1, p2, …)` |
+|:---:|:---:|:---:|
+| ![](../assets/reference/illustrations-line.svg) | ![](../assets/reference/illustrations-polygon.svg) | ![](../assets/reference/illustrations-spline.svg) |
+
+| `circle(p, r)` | `arc(c, r, α, Δα)` | `ellipse(center, radius_x, radius_y)` |
+|:---:|:---:|:---:|
+| ![](../assets/reference/illustrations-circle.svg) | ![](../assets/reference/illustrations-arc.svg) | ![](../assets/reference/illustrations-ellipse.svg) |
+
+| `regular_polygon(n, center, radius, ϕ)` | `rectangle(corner, dx, dy)` |
+|:---:|:---:|
+| ![](../assets/reference/illustrations-regular_polygon.svg) | ![](../assets/reference/illustrations-rectangle.svg) |
+
 ## Shape2D -- Surfaces
 
 | Shape | Constructor Signature | Description |
@@ -81,6 +95,12 @@ left: `material_basic`, `_metal`, `_glass`, `_wood`, `_concrete`,
 | `surface` | `surface(frontier::Shapes1D=[circle()]; material)` | Surface bounded by one or more closed curves. Also: `surface(c0, cs...)`. |
 | `surface_grid` | `surface_grid(points::Matrix{<:Loc}, closed_u=false, closed_v=false, smooth_u=true, smooth_v=true; material)` | Parametric surface from a grid of points. Also accepts `Vector{Vector{Loc}}`. |
 | `surface_mesh` | `surface_mesh(vertices::Locs, faces::Vector{Vector{Int}}; material)` | Triangulated or polygonal mesh. Face indices are 1-based. |
+
+### Parameter illustrations — 2D shapes
+
+| `surface_circle(p, r)` | `surface_rectangle(corner, dx, dy)` |
+|:---:|:---:|
+| ![](../assets/reference/illustrations-surface_circle.svg) | ![](../assets/reference/illustrations-surface_rectangle.svg) |
 
 ## Shape3D -- Solids
 
@@ -103,6 +123,25 @@ left: `material_basic`, `_metal`, `_glass`, `_wood`, `_concrete`,
 | `isosurface` | `isosurface(frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(1,1,1)]; material)` | Implicit surface defined by `frep(loc) = 0`. |
 | `thicken` | `thicken(shape::Shape=surface_circle(), thickness::Real=1)` | Thicken a surface into a solid. |
 | `unknown` | `unknown(baseref::Any)` | Opaque wrapper for shapes imported from backends. |
+
+### Parameter illustrations — 3D shapes
+
+The diagrams below show each solid's most informative 2D
+projection (front view, isometric, …) with every parameter named
+on the figure.  The annotations are styled identically to the 1D
+and 2D cases — orange dimension lines, ticks at endpoints.
+
+| `sphere(p, r)` | `box(corner, dx, dy, dz)` | `box(p1, p2)` |
+|:---:|:---:|:---:|
+| ![](../assets/reference/illustrations-sphere.svg) | ![](../assets/reference/illustrations-box.svg) | ![](../assets/reference/illustrations-box_corners.svg) |
+
+| `cylinder(p, r, h)` | `cone(p, r, h)` | `regular_pyramid(n, p, rb, …, h)` |
+|:---:|:---:|:---:|
+| ![](../assets/reference/illustrations-cylinder.svg) | ![](../assets/reference/illustrations-cone.svg) | ![](../assets/reference/illustrations-regular_pyramid.svg) |
+
+| `torus(p, R, r)` |
+|:---:|
+| ![](../assets/reference/illustrations-torus.svg) |
 
 ## Annotation Shapes
 

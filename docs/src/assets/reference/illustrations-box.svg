@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-2 -3.96 6.965 4.98">
+<defs>
+<marker id="arrowhead-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="rgb(211,211,211)"/></marker>
+<marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
+</defs>
+<g stroke-width="0.009">
+<polygon points="0,0 4,0 4,-2.5 0,-2.5" style="fill:none;stroke:rgb(245,245,247)"/>
+<polygon points="0,-2.5 4,-2.5 2.5,-3.46 -1.5,-3.46" style="fill:none;stroke:rgb(245,245,247)"/>
+<polygon points="4,0 2.5,-0.96 2.5,-3.46 4,-2.5" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="0,0 -1.5,-0.96" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="-1.5,-0.96 2.5,-0.96" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="-1.5,-0.96 -1.5,-3.46" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<circle cx="0" cy="0" r="0.06" style="fill:rgb(255,168,96);stroke:none;stroke:none"/>
+<text x="-1.6" y="0.4" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">corner</text>
+<polyline points="0,0.4 4,0.4" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="0,0.28 0,0.52" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="4,0.28 4,0.52" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<text x="2" y="0.2" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">dx</text>
+<polyline points="-0.5,0 -0.5,-2.5" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="-0.62,0 -0.38,0" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="-0.62,-2.5 -0.38,-2.5" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<text x="-0.05" y="-1.25" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">dz</text>
+<polyline points="4.4,0 2.9,-0.96" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="4.335,0.101 4.465,-0.101" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<polyline points="2.835,-0.859 2.965,-1.061" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
+<text x="3.542" y="-0.312" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">dy</text>
+</g>
+</svg>
