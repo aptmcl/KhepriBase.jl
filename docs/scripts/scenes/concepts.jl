@@ -1,12 +1,12 @@
 #=
-Scenes for docs/src/concepts/*.md — mostly schematic 2D line drawings
+Scenes for docs/src/concepts/*.md - mostly schematic 2D line drawings
 rendered via KhepriSVG.
 
 Convention for floor-plan schematics:
 - Rooms are surface_rectangles with a light fill and a thin dark
   outline (see `_room_material` / `_label_material` below).
 - Labels are black text sized to the rectangle.
-- Dimensions are suggestive, not real — images communicate topology,
+- Dimensions are suggestive, not real - images communicate topology,
   not measurements.
 =#
 
@@ -15,7 +15,7 @@ Convention for floor-plan schematics:
 #=
 SVG styling.  The SVG backend's `svg_style_attr` blanks out `stroke` on
 filled shapes, so a single `surface_rectangle(..., material=...)` can't
-carry both a fill and an outline — we stack a filled shape and a
+carry both a fill and an outline - we stack a filled shape and a
 separate outline primitive on top to get the schematic "boxed room"
 look with a faint panel fill.
 =#
@@ -71,17 +71,17 @@ register_scene(
   filename = "levels_of_abstraction.svg",
   backend = :svg,
   build = () -> begin
-    # Level 0 — BIM primitives (low)
+    # Level 0 - BIM primitives (low)
     surface_rectangle(xy(0, 0), 8, 1.5)
-    text("Level 0 — BIM primitives  (wall, slab, door, …)",
+    text("Level 0 - BIM primitives  (wall, slab, door, ...)",
          xy(0.3, 0.5), 0.35)
-    # Level 1 — Layout (middle)
+    # Level 1 - Layout (middle)
     surface_rectangle(xy(0, 2.5), 8, 1.5)
-    text("Level 1 — Layout  (Space, Storey, Layout)",
+    text("Level 1 - Layout  (Space, Storey, Layout)",
          xy(0.3, 3.0), 0.35)
-    # Level 2 — Design (top)
+    # Level 2 - Design (top)
     surface_rectangle(xy(0, 5.0), 8, 1.5)
-    text("Level 2 — Design  (SpaceDesc tree)",
+    text("Level 2 - Design  (SpaceDesc tree)",
          xy(0.3, 5.5), 0.35)
     # Downward arrows between layers
     line(xy(4, 5.0), xy(4, 4.1))
@@ -103,7 +103,7 @@ register_scene(
   build = () -> begin
     _labelled_rect(0, 0, 4, 3, "a")
     _labelled_rect(4, 0, 4, 3, "b")
-    text("a | b  —  beside_x", xy(1, -1), 0.5)
+    text("a | b  -  beside_x", xy(1, -1), 0.5)
   end,
 )
 
@@ -115,7 +115,7 @@ register_scene(
   build = () -> begin
     _labelled_rect(0, 0, 4, 3, "a")
     _labelled_rect(0, 3, 4, 3, "b")
-    text("a / b  —  beside_y", xy(0, -1), 0.5)
+    text("a / b  -  beside_y", xy(0, -1), 0.5)
   end,
 )
 
@@ -137,7 +137,7 @@ register_scene(
     line(xy(4, 0), xy(4, 1.6))
     line(xy(4.6, 0.8), xy(4.6, 2.4))
     line(xy(0.6, 0.8), xy(0.6, 2.4))
-    text("b ^ a  —  above", xy(0, -0.8), 0.5)
+    text("b ^ a  -  above", xy(0, -0.8), 0.5)
   end,
 )
 
@@ -188,9 +188,9 @@ register_scene(
     surface_rectangle(xy(0, 0), 12, 6)
     line(xy(4, 0), xy(4, 6))
     line(xy(9, 0), xy(9, 6))
-    text("0 … 4",     xy(1.0,  3),   0.35)
-    text("4 … 9",     xy(5.8,  3),   0.35)
-    text("9 … 12",    xy(10.0, 3),   0.35)
+    text("0 ... 4",     xy(1.0,  3),   0.35)
+    text("4 ... 9",     xy(5.8,  3),   0.35)
+    text("9 ... 12",    xy(10.0, 3),   0.35)
     # Dimension arrows
     line(xy(0, -0.3), xy(4, -0.3))
     line(xy(4, -0.3), xy(9, -0.3))
@@ -332,7 +332,7 @@ register_scene(
   build = () -> begin
     surface_rectangle(xy(0, 0), 8, 5)
     text(":envelope", xy(3.2, 2.3), 0.5)
-    text("envelope(8, 5, 3)  —  a shell for top-down subdivision",
+    text("envelope(8, 5, 3)  -  a shell for top-down subdivision",
          xy(0, -0.9), 0.35)
   end,
 )
@@ -347,7 +347,7 @@ register_scene(
     surface_arc(xy(0, 0), 5, deg2rad(20), deg2rad(90))
     surface_circle(xy(0, 0), 2)
     text("polar_envelope", xy(1.5, 3), 0.3)
-    text("(center, r_inner, r_outer, θ_start, θ_end, height)",
+    text("(center, r_inner, r_outer, theta_start, theta_end, height)",
          xy(-3, -1), 0.25)
   end,
 )
@@ -390,9 +390,9 @@ register_scene(
   filename = "constraint-min_area_violation.svg",
   backend = :svg,
   build = () -> begin
-    _labelled_rect(0, 0, 5, 4, ":bedroom  20m²  ok")
+    _labelled_rect(0, 0, 5, 4, ":bedroom  20m^2  ok")
     _labelled_rect(5, 0, 3, 2, "")
-    text(":bedroom  6m²  ✗", xy(5.1, 1), 0.3)
+    text(":bedroom  6m^2  X", xy(5.1, 1), 0.3)
     # Red-ish cross-hatch on the violating room
     for x in 5.1:0.3:7.9
       line(xy(x, 0.1), xy(x + 0.2, 0.3))
@@ -413,7 +413,7 @@ register_scene(
     # Mark bath-bed pair with a strike
     line(xy(1.5, 1.5), xy(4, 4.5))
     line(xy(4, 1.5), xy(1.5, 4.5))
-    text("must_adjoin(:bath, :bed) violated — no shared wall.",
+    text("must_adjoin(:bath, :bed) violated - no shared wall.",
          xy(0, -0.9), 0.3)
   end,
 )

@@ -1,9 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -6.5 11 7">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -6.5 17.217 8.117">
 <defs>
-<marker id="arrowhead-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="rgb(211,211,211)"/></marker>
-<marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
 </defs>
-<g stroke-width="0.014">
+<g stroke-width="0.022">
 <rect x="0" y="-6" width="10" height="6" style="fill:rgb(245,245,247);stroke:none"/>
 <polyline points="3,-2 6,-2" style="fill:none;stroke:rgb(245,245,247)"/>
 <polyline points="6,-2 6,-4" style="fill:none;stroke:rgb(245,245,247)"/>

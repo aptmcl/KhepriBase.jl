@@ -2,12 +2,12 @@
 Parameter-explainer illustrations.
 
 Each scene shows the geometry produced by a Khepri shape
-constructor with every parameter named on the figure itself —
+constructor with every parameter named on the figure itself -
 `circle(p, r)` becomes a circle with a centred dot labelled `p`
 and a radius marker labelled `r`.
 
 Implemented entirely with KhepriBase's standard annotation
-primitives — `label`, `radius_illustration`, `vector_illustration`,
+primitives - `label`, `radius_illustration`, `vector_illustration`,
 `angle_illustration`, `arc_illustration`.  KhepriSVG implements
 the corresponding `b_*` operations; KhepriBase routes annotations
 through `save_shape!` so they participate in the regular render
@@ -15,7 +15,7 @@ pass.
 
 For 3D shapes we draw the shape's most informative 2D silhouette
 (a circle for `sphere`, an iso outline for `box`, a front view
-with elliptical caps for `cylinder`, …) and annotate the defining
+with elliptical caps for `cylinder`, ...) and annotate the defining
 parameters in the same style.  The doc page text makes the
 3D nature explicit.
 =#
@@ -26,7 +26,7 @@ const _ill_ann_mat = material(
         rgba(255/255, 168/255, 96/255, 1.0)))
 
 # Run a build under the doc-illustration annotation material so every
-# label / radius_illustration / … inherits the same warm orange.
+# label / radius_illustration / ... inherits the same warm orange.
 _with_ann(f) = with(default_annotation_material, _ill_ann_mat) do
   f()
 end
@@ -62,7 +62,7 @@ register_scene(
     α0 = π/6; Δα = 2π/3
     arc(c, r, α0, Δα)
     label(c, "c")
-    arc_illustration(c, r, α0, Δα, "r", "α", "Δα")
+    arc_illustration(c, r, α0, Δα, "r", "alpha", "delta_alpha")
   end),
 )
 
@@ -183,7 +183,7 @@ register_scene(
 )
 
 # ==================================================================
-# 3D shapes — projected silhouettes with annotated parameters
+# 3D shapes - projected silhouettes with annotated parameters
 # ==================================================================
 
 register_scene(

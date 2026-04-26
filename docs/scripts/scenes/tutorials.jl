@@ -1,9 +1,9 @@
 #=
-Scenes for docs/src/tutorials/*.md — 3D progression shots.
+Scenes for docs/src/tutorials/*.md - 3D progression shots.
 =#
 
 # ==================================================================
-# Building tutorial — 4 stages from empty to two-storey
+# Building tutorial - 4 stages from empty to two-storey
 # ==================================================================
 
 register_scene(
@@ -212,7 +212,7 @@ register_scene(
 )
 
 # ==================================================================
-# Rendering tutorial — four camera angles of same scene
+# Rendering tutorial - four camera angles of same scene
 # ==================================================================
 
 #=
@@ -265,7 +265,7 @@ register_scene(
 )
 
 # ==================================================================
-# Algorithmic tutorial — parametric structures
+# Algorithmic tutorial - parametric structures
 # ==================================================================
 
 register_scene(
@@ -319,7 +319,7 @@ register_scene(
 )
 
 # ==================================================================
-# Isenberg — same building bottom-up vs top-down
+# Isenberg - same building bottom-up vs top-down
 # ==================================================================
 
 register_scene(

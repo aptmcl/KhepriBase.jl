@@ -1,5 +1,5 @@
 #=
-Extended scene coverage — additional images commissioned to
+Extended scene coverage - additional images commissioned to
 illustrate parts of Khepri that the first pass left under-served.
 Grouped by the doc page they're embedded in.
 =#
@@ -486,7 +486,7 @@ register_scene(
     for i in 0:3
       fill = _fill_material
       _labelled_rect(i * 4, 0, 4, 3,
-                     (i % 2 == 0) ? "u$(i+1)" : "u$(i+1)ᵣ")
+                     (i % 2 == 0) ? "u$(i+1)" : "u$(i+1)R")
     end
     text("repeat_unit(unit, 4; mirror_alternate=true)",
          xy(0, -1), 0.35, material=_label_material)
@@ -540,9 +540,9 @@ register_scene(
   filename = "designs-room_sizes.svg",
   backend = :svg,
   build = () -> begin
-    _labelled_rect(0, 0, 3, 2.5, "3 × 2.5")
-    _labelled_rect(4, 0, 5, 4,   "5 × 4")
-    _labelled_rect(10, 0, 7, 5,  "7 × 5")
+    _labelled_rect(0, 0, 3, 2.5, "3 x 2.5")
+    _labelled_rect(4, 0, 5, 4,   "5 x 4")
+    _labelled_rect(10, 0, 7, 5,  "7 x 5")
     text("room(:id, :use, width, depth)",
          xy(0, -1), 0.3, material=_label_material)
   end,

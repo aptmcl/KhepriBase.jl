@@ -1,5 +1,5 @@
 #=
-Scenes for docs/src/bim/*.md — 3D renders produced by KhepriBlender.
+Scenes for docs/src/bim/*.md - 3D renders produced by KhepriBlender.
 
 Each scene declares the center and characteristic radius of its
 content via `iso_view(...)` so the camera actually frames the
@@ -228,7 +228,7 @@ register_scene(
   backend = :blender,
   view = iso_view(5, 0, 0.75, 8),
   build = () -> begin
-    # Simple Warren truss — 5 bottom + 4 top nodes
+    # Simple Warren truss - 5 bottom + 4 top nodes
     bottom = [xyz(2*i, 0, 0) for i in 0:5]
     top    = [xyz(2*i + 1, 0, 1.5) for i in 0:4]
     nb = [truss_node(p) for p in bottom]

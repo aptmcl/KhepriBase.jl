@@ -1,5 +1,5 @@
 #=
-Scenes for docs/src/reference/*.md — shape catalogues and worked
+Scenes for docs/src/reference/*.md - shape catalogues and worked
 examples used in the reference section.
 =#
 
@@ -65,7 +65,7 @@ register_scene(
 )
 
 # ==================================================================
-# Layout engine — a worked example (top-down)
+# Layout engine - a worked example (top-down)
 # ==================================================================
 
 register_scene(
@@ -84,7 +84,7 @@ register_scene(
 )
 
 # ==================================================================
-# Design combinators — schematic SVG floorplans
+# Design combinators - schematic SVG floorplans
 # ==================================================================
 
 register_scene(
@@ -175,7 +175,7 @@ register_scene(
 )
 
 # ==================================================================
-# Designs subdivision gallery — one SVG per operator
+# Designs subdivision gallery - one SVG per operator
 # (All operators shown in concepts already; repeat a compact one here
 # for the reference page)
 # ==================================================================
@@ -192,7 +192,7 @@ register_scene(
     text(":a",            xy(2.5, 1.8), 0.45)
     text(":open_office",  xy(6.4, 1.8), 0.35)
     text(":storage",      xy(9.4, 1.8), 0.35)
-    text("assign(:a, :entrance)  …  assign(:b, :open_office)  …  assign(:c, :storage)",
+    text("assign(:a, :entrance)  ...  assign(:b, :open_office)  ...  assign(:c, :storage)",
          xy(0, -0.9), 0.3)
   end,
 )

@@ -1,5 +1,5 @@
 #=
-Extended scene set #2 — progressive tutorial shots.
+Extended scene set #2 - progressive tutorial shots.
 
 Each tutorial has a numbered step sequence; this file materialises
 most of those steps as rendered images so the doc reader sees what
@@ -7,7 +7,7 @@ every chunk of code produces, not just the final result.
 =#
 
 # ==================================================================
-# Tutorials / Building a Complete Building — cumulative office
+# Tutorials / Building a Complete Building - cumulative office
 # ==================================================================
 #=
 Builds the tutorial's 2-storey office up to `up_to_step`.  Each
@@ -192,7 +192,7 @@ register_scene(id = "tutorials_building_12_hero",
   build = () -> _build_office(12))
 
 # ==================================================================
-# Tutorials / Space-First — house progression + examples
+# Tutorials / Space-First - house progression + examples
 # ==================================================================
 
 register_scene(
@@ -292,7 +292,7 @@ register_scene(
 )
 
 # ==================================================================
-# Tutorials / Rendering — visual_style variations
+# Tutorials / Rendering - visual_style variations
 # ==================================================================
 
 _render_demo_scene_v2() = begin
@@ -352,7 +352,7 @@ register_scene(
 )
 
 # ==================================================================
-# Tutorials / Algorithmic — utility-function visualisations
+# Tutorials / Algorithmic - utility-function visualisations
 # ==================================================================
 
 register_scene(
@@ -362,7 +362,7 @@ register_scene(
   backend = :blender,
   view = iso_view(6, 0.5, 1.5, 12),
   build = () -> begin
-    # A column row whose heights trace a sinusoid — division + map.
+    # A column row whose heights trace a sinusoid - division + map.
     slab(rectangular_path(xy(-0.5, -0.5), 13, 1.5), level(0))
     for i in 0:12
       h = 2 + 1.5 * sin(i * π / 6)
@@ -378,7 +378,7 @@ register_scene(
   backend = :blender,
   view = iso_view(7, 5, 1.5, 16),
   build = () -> begin
-    # Staggered column grid — odd rows offset by half the spacing.
+    # Staggered column grid - odd rows offset by half the spacing.
     slab(rectangular_path(xy(0, 0), 14, 10), level(0))
     for r in 0:5
       offset = isodd(r) ? 1.0 : 0.0
@@ -406,7 +406,7 @@ register_scene(
 )
 
 # ==================================================================
-# Tutorials / Wall graph — door + window on a segment
+# Tutorials / Wall graph - door + window on a segment
 # ==================================================================
 
 register_scene(

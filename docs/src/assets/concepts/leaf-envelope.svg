@@ -1,11 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -5.5 9 6">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -5.5 17.975 7.017">
 <defs>
-<marker id="arrowhead-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="rgb(211,211,211)"/></marker>
-<marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
 </defs>
-<g stroke-width="0.011">
+<g stroke-width="0.022">
 <rect x="0" y="-5" width="8" height="5" style="fill:rgb(245,245,247);stroke:none"/>
 <text x="3.2" y="-2.3" style="font-family:sans-serif;font-size:0.5;fill:rgb(245,245,247)">:envelope</text>
-<text x="0" y="0.9" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">envelope(8, 5, 3)  —  a shell for top-down subdivision</text>
+<text x="0" y="0.9" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">envelope(8, 5, 3)  -  a shell for top-down subdivision</text>
 </g>
 </svg>
