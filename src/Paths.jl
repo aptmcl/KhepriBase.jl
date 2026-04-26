@@ -866,8 +866,8 @@ function planar_region(vs::Locs)
         frame = loc_from_o_vx_vy(p0, v1, v2),
         wpts = map(in_world, vs),
         max_dev = maximum(abs(dot(wp - p0, n)) for wp in wpts)
-      max_dev > planarity_tolerance &&
-        error("Panel vertices are not coplanar (max deviation: $(max_dev) > $(planarity_tolerance)).")
+      max_dev > planarity_tolerance() &&
+        error("Panel vertices are not coplanar (max deviation: $(max_dev) > $(planarity_tolerance())).")
       let ux = unitized(v1),
           uz = n,
           uy = cross(uz, ux),
