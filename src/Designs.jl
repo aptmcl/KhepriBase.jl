@@ -36,7 +36,7 @@ export Subdivided, Partitioned, Carved, Refined, Assigned, SubdivideRemaining
 export PolarEnvelope, SubdividedPolar, PartitionedPolar
 
 # ---- Annotation types ----
-export Annotation, ConnectAnnotation, ConnectExteriorAnnotation
+export DesignAnnotation, ConnectAnnotation, ConnectExteriorAnnotation
 export DisconnectAnnotation, NoWindowsAnnotation
 
 # ---- Leaf constructors ----

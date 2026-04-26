@@ -1,22 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-2.5 -4.5 5.92 7">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-2.5 -4.5 5 7">
 <defs>
 <marker id="arrowhead-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="rgb(211,211,211)"/></marker>
 <marker id="arrowhead-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto"><polygon points="10 0, 0 3.5, 10 7" fill="rgb(211,211,211)"/></marker>
 </defs>
-<g stroke-width="0.007">
-<polyline points="-2,0 0,-4" style="fill:none;stroke:rgb(245,245,247)"/>
-<polyline points="0,-4 2,0" style="fill:none;stroke:rgb(245,245,247)"/>
+<g stroke-width="0.006">
+<polyline points="-2,0 0,-4 2,0" style="fill:none;stroke:rgb(245,245,247)"/>
 <path d="M 2,0 A 2,2 0 0,0 -2,0" style="fill:none;stroke:rgb(245,245,247)"/>
-<polyline points="-2,0 2,0" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<circle cx="0" cy="0" r="0.06" style="fill:rgb(255,168,96);stroke:none;stroke:none"/>
-<text x="0.15" y="-0.25" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">p</text>
-<polyline points="0,0 2,0" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<polyline points="0,-0.12 0,0.12" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<polyline points="2,-0.12 2,0.12" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<text x="1" y="-0.2" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">r</text>
-<polyline points="2.8,0 2.8,-4" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<polyline points="2.68,0 2.92,0" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<polyline points="2.68,-4 2.92,-4" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<text x="2.6" y="-2" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">h</text>
+<circle cx="0" cy="0" r="0.03" style="fill:rgb(255,168,96);stroke:none"/>
+<text x="0.354" y="0.354" text-anchor="middle" dominant-baseline="central" style="font-family:sans-serif;font-size:0.3;font-size:0.3;fill:rgb(255,168,96)">p</text>
+<line x1="0" y1="0" x2="2" y2="0" style="fill:none;stroke:rgb(255,168,96);stroke-width:0.2"/>
+<text x="1" y="0" text-anchor="middle" dominant-baseline="central" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);font-size:0.3">r</text>
+<line x1="0" y1="0" x2="0" y2="-4" style="fill:none;stroke:rgb(255,168,96);stroke-width:0.2"/>
+<text x="0" y="-2" text-anchor="middle" dominant-baseline="central" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);font-size:0.3">h</text>
 </g>
 </svg>

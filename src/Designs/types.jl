@@ -303,19 +303,21 @@ end
 # ---- Annotation Types ----
 
 """
-    Annotation
+    DesignAnnotation
 
 Abstract supertype for annotations attached to a space description tree.
 Annotations describe connections, disconnections, and other metadata.
+The name is qualified to avoid clashing with `KhepriBase.Annotation`,
+which is the BIM annotation type used for labels, dimensions, and so on.
 """
-abstract type Annotation end
+abstract type DesignAnnotation end
 
 """
-    ConnectAnnotation <: Annotation
+    ConnectAnnotation <: DesignAnnotation
 
 Declares a connection (door, window, or arch) between two named spaces.
 """
-struct ConnectAnnotation <: Annotation
+struct ConnectAnnotation <: DesignAnnotation
   from::Symbol
   to::Symbol
   kind::Symbol        # :door, :window, :arch
@@ -324,11 +326,11 @@ struct ConnectAnnotation <: Annotation
 end
 
 """
-    ConnectExteriorAnnotation <: Annotation
+    ConnectExteriorAnnotation <: DesignAnnotation
 
 Declares an exterior opening (door or window) on a specific face of a space.
 """
-struct ConnectExteriorAnnotation <: Annotation
+struct ConnectExteriorAnnotation <: DesignAnnotation
   space_id::Symbol
   kind::Symbol        # :door, :window
   face::Symbol        # :north, :south, :east, :west, :auto
@@ -338,21 +340,21 @@ struct ConnectExteriorAnnotation <: Annotation
 end
 
 """
-    DisconnectAnnotation <: Annotation
+    DisconnectAnnotation <: DesignAnnotation
 
 Removes any default connection between two adjacent spaces.
 """
-struct DisconnectAnnotation <: Annotation
+struct DisconnectAnnotation <: DesignAnnotation
   from::Symbol
   to::Symbol
 end
 
 """
-    NoWindowsAnnotation <: Annotation
+    NoWindowsAnnotation <: DesignAnnotation
 
 Suppresses automatic window generation for the given space.
 """
-struct NoWindowsAnnotation <: Annotation
+struct NoWindowsAnnotation <: DesignAnnotation
   space_id::Symbol
 end
 
@@ -361,12 +363,12 @@ end
 """
     Annotated <: SpaceDesc
 
-Wraps a space description with a single [`Annotation`](@ref).
+Wraps a space description with a single [`DesignAnnotation`](@ref).
 Multiple annotations are represented by nesting `Annotated` nodes.
 """
 struct Annotated <: SpaceDesc
   base::SpaceDesc
-  annotation::Annotation
+  annotation::DesignAnnotation
 end
 
 # ---- Subdivision Nodes ----
@@ -577,30 +579,30 @@ collect_ids(pp::PartitionedPolar) =
   vcat(collect_ids(pp.base), [Symbol(pp.id_prefix, "_", i) for i in 1:pp.count])
 
 """
-    collect_annotations(desc::SpaceDesc) -> Vector{Annotation}
+    collect_annotations(desc::SpaceDesc) -> Vector{DesignAnnotation}
 
 Recursively collect all annotations from a space description tree.
 """
-collect_annotations(::Room) = Annotation[]
-collect_annotations(::Void) = Annotation[]
-collect_annotations(::Envelope) = Annotation[]
+collect_annotations(::Room) = DesignAnnotation[]
+collect_annotations(::Void) = DesignAnnotation[]
+collect_annotations(::Envelope) = DesignAnnotation[]
 collect_annotations(b::BesideX) = vcat(collect_annotations(b.left), collect_annotations(b.right))
 collect_annotations(b::BesideY) = vcat(collect_annotations(b.front), collect_annotations(b.back))
 collect_annotations(a::Above) = vcat(collect_annotations(a.below), collect_annotations(a.above))
 collect_annotations(r::Repeated) = collect_annotations(r.unit)
-collect_annotations(g::GridLayout) = Annotation[]
+collect_annotations(g::GridLayout) = DesignAnnotation[]
 collect_annotations(s::Scaled) = collect_annotations(s.base)
 collect_annotations(m::Mirrored) = collect_annotations(m.base)
 collect_annotations(h::HeightOverride) = collect_annotations(h.base)
 collect_annotations(p::PropsOverlay) = collect_annotations(p.base)
-collect_annotations(a::Annotated) = vcat(Annotation[a.annotation], collect_annotations(a.base))
+collect_annotations(a::Annotated) = vcat(DesignAnnotation[a.annotation], collect_annotations(a.base))
 collect_annotations(s::Subdivided) = collect_annotations(s.base)
 collect_annotations(p::Partitioned) = collect_annotations(p.base)
 collect_annotations(c::Carved) = collect_annotations(c.base)
 collect_annotations(r::Refined) = collect_annotations(r.base)
 collect_annotations(a::Assigned) = collect_annotations(a.base)
 collect_annotations(sr::SubdivideRemaining) = collect_annotations(sr.base)
-collect_annotations(::PolarEnvelope) = Annotation[]
+collect_annotations(::PolarEnvelope) = DesignAnnotation[]
 collect_annotations(sp::SubdividedPolar) = collect_annotations(sp.base)
 collect_annotations(pp::PartitionedPolar) = collect_annotations(pp.base)
 

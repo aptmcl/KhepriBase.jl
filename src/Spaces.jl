@@ -194,7 +194,7 @@ don't hit a stale cache.
 mutable struct Layout
   storeys::Vector{Storey}
   rules::Vector{Constraint}
-  annotations::Vector{Annotation}
+  annotations::Vector{DesignAnnotation}
   _index::Union{Nothing, Dict{Symbol, Tuple{Storey, Space}}}
   Layout(storeys, rules, annotations) =
     new(storeys, rules, annotations, nothing)
@@ -261,7 +261,7 @@ storey(; level = default_level(),
          wall_family, slab_family, generate_slabs)
 
 "Wrap one or more `Storey`s in a `Layout` plus validation `rules` and `annotations`."
-layout(storeys::Storey...; rules = Constraint[], annotations = Annotation[]) =
+layout(storeys::Storey...; rules = Constraint[], annotations = DesignAnnotation[]) =
   Layout(collect(storeys), collect(rules), collect(annotations))
 
 "Shortcut for the common one-storey case; returns a `Layout` with a single `Storey` that subsequent `add_space` / `add_door` calls route to."
@@ -271,7 +271,7 @@ floor_plan(; level = default_level(),
              slab_family = default_slab_family(),
              generate_slabs = true,
              rules = Constraint[],
-             annotations = Annotation[]) =
+             annotations = DesignAnnotation[]) =
   Layout([storey(; level, height, wall_family, slab_family, generate_slabs)],
          collect(rules), collect(annotations))
 

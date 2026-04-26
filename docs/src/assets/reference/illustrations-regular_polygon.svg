@@ -5,16 +5,12 @@
 </defs>
 <g stroke-width="0.006">
 <polygon points="1.848,-0.765 0.261,-1.983 -1.587,-1.218 -1.848,0.765 -0.261,1.983 1.587,1.218" style="fill:none;stroke:rgb(245,245,247)"/>
-<circle cx="0" cy="0" r="0.06" style="fill:rgb(255,168,96);stroke:none;stroke:none"/>
-<text x="-1.4" y="-0.2" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">center</text>
-<polyline points="0,0 1.848,-0.765" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<polyline points="-0.046,-0.111 0.046,0.111" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<polyline points="1.802,-0.876 1.894,-0.655" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<text x="0.847" y="-0.567" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">radius</text>
-<path d="M 0.8,0 A 0.8,0.8 0 0,0 0.739,-0.306" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<polyline points="0,0 2,0" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<polyline points="0,0 1.848,-0.765" style="fill:none;fill:none;stroke:rgb(255,168,96);stroke-width:0.04"/>
-<text x="1.079" y="-0.215" style="font-family:sans-serif;font-size:0.28;fill:rgb(255,168,96);stroke:none">ϕ</text>
-<text x="-2.5" y="1.4" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);stroke:none">n = 6</text>
+<circle cx="0" cy="0" r="0.03" style="fill:rgb(255,168,96);stroke:none"/>
+<text x="0.354" y="0.354" text-anchor="middle" dominant-baseline="central" style="font-family:sans-serif;font-size:0.3;font-size:0.3;fill:rgb(255,168,96)">center</text>
+<line x1="0" y1="0" x2="0.4" y2="0" style="fill:none;stroke:rgb(255,168,96);stroke-width:0.2"/>
+<line x1="0" y1="0" x2="1.848" y2="-0.765" style="fill:none;stroke:rgb(255,168,96);stroke-width:0.2"/>
+<path d="M 0.4,0 A 0.4,0.4 0 0,0 0.37,-0.153" style="fill:none;stroke:rgb(255,168,96);stroke-width:0.2"/>
+<text x="0.392" y="-0.078" text-anchor="middle" dominant-baseline="central" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);font-size:0.3">angle</text>
+<text x="0.924" y="-0.383" text-anchor="middle" dominant-baseline="central" style="font-family:sans-serif;font-size:0.3;fill:rgb(255,168,96);font-size:0.3">radius</text>
 </g>
 </svg>

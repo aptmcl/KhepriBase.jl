@@ -73,7 +73,7 @@ layout.
 - `PropsOverlay` — merge a `NamedTuple` into each placed space's
   `props` (used by `with_props`, `tag_wall_family`,
   `tag_slab_family`).
-- `Annotated` — attach an `Annotation` (see
+- `Annotated` — attach a `DesignAnnotation` (see
   [Annotations](design-annotations.md)) to the subtree. Transparent
   to layout; the annotation is collected by
   `collect_annotations(desc)` for downstream consumption.
@@ -161,7 +161,7 @@ PartitionedPolar
   and transform nodes via function calls and infix operators
 - [Subdivision](design-subdivision.md) — construction of the
   subdivision nodes
-- [Annotations](design-annotations.md) — the `Annotation` subtree
+- [Annotations](design-annotations.md) — the `DesignAnnotation` subtree
   attached by `Annotated`
 - [Layout Engine](layout-engine.md) — what `layout(desc)` does with
   each type above

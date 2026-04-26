@@ -619,10 +619,31 @@ end
 
 public LocalShapes, RenderState, IOState
 
+#=
+`shapes` holds both `Shape` *and* `Annotation` instances.  An
+`Annotation` (`label`, `radius_illustration`, …) is realised by the
+backend exactly like a shape — the realisation calls `b_labels` /
+`b_radii_illustration` / … on the backend — but it carries no
+geometry of its own, only decorations on top of whatever shapes were
+emitted earlier.  Storing it alongside shapes lets the backend's
+render path realise everything in one pass; a separate annotation
+queue would force every backend to commit a transaction at the
+right moment and for the right reasons, which historically ended
+up forgotten in the SVG and TikZ pipelines.
+
+The narrower-typed accessors (`save_shape_local!`, etc.) take
+`Proxy` rather than `Shape` so an `Annotation` flows through the
+same path; backends that want to special-case annotations can still
+filter on `is_illustration(...)` or `isa Annotation` when they
+render.  See also: KhepriSVG / KhepriTikZ `sort_illustrations!` —
+they expect annotations to live in `b.shapes`.
+=#
+const LocalShapeStorage = Vector{Proxy}
+
 @kwdef mutable struct LocalShapes
-  shapes::Shapes = Shape[]
+  shapes::LocalShapeStorage = Proxy[]
   current_layer::Union{Nothing, AbstractLayer} = nothing
-  layers::Dict{AbstractLayer, Vector{Shape}} = Dict{AbstractLayer, Vector{Shape}}()
+  layers::Dict{AbstractLayer, LocalShapeStorage} = Dict{AbstractLayer, LocalShapeStorage}()
 end
 
 @kwdef mutable struct RenderState
@@ -645,11 +666,11 @@ public save_shape_local!, delete_all_local!, delete_shape_local!,
        set_realistic_sky_local!, set_ground_local!,
        realize_shapes_local!, used_materials_local!
 
-save_shape_local!(ls::LocalShapes, s::Shape) =
+save_shape_local!(ls::LocalShapes, s::Proxy) =
   begin
     push!(ls.shapes, s)
     if !isnothing(ls.current_layer)
-      push!(get!(ls.layers, ls.current_layer, Shape[]), s)
+      push!(get!(ls.layers, ls.current_layer, Proxy[]), s)
     end
     s
   end
@@ -663,7 +684,7 @@ delete_all_local!(ls::LocalShapes) =
     nothing
   end
 
-delete_shape_local!(ls::LocalShapes, shape::Shape) =
+delete_shape_local!(ls::LocalShapes, shape::Proxy) =
   let f(s) = s !== shape
     filter!(f, ls.shapes)
     for ss in values(ls.layers)
@@ -776,12 +797,12 @@ local_layer_index(b) =
 connection(b::LocalBackend) = b.io
 
 public save_shape!
-save_shape!(b::LocalBackend, s::Shape) =
+save_shape!(b::LocalBackend, s::Proxy) =
   begin
     push!(local_shape_storage(b), s)
     cur = local_current_layer(b)
     if !isnothing(cur)
-      push!(get!(local_layer_index(b), cur, Shape[]), s)
+      push!(get!(local_layer_index(b), cur, Proxy[]), s)
     end
     s
   end
@@ -817,7 +838,7 @@ KhepriBase.b_delete_all_shape_refs(b::LocalBackend) =
     nothing
   end
 
-KhepriBase.b_delete_shape(b::LocalBackend, shape::Shape) =
+KhepriBase.b_delete_shape(b::LocalBackend, shape::Proxy) =
   let f(s) = s !== shape
     filter!(f, local_shape_storage(b))
     for ss in values(local_layer_index(b))
@@ -841,10 +862,22 @@ b_set_ground(b::LocalBackend, level, mat) =
     b.ground_material = mat
   end
 
-# LocalBackend stores Shape proxies locally instead of immediately realizing them.
-# Non-Shape proxies (UniqueProxy: Level, Material, Layer, Family) fall through
-# to the transaction-based maybe_realize(b, s) in Shapes.jl.
-maybe_realize(b::LocalBackend, s::Shape) = save_shape!(b, s)
+# LocalBackend stores Shape *and* Annotation proxies locally instead of
+# immediately realizing them.  Annotations need the same deferred
+# realization as shapes — backends like KhepriSVG / KhepriTikZ build their
+# document inside `b_render_and_save_view` by setting `b.io` to a temporary
+# buffer and then calling `realize_shapes`; if annotations were realised
+# eagerly via the transaction path, their output would land in the wrong
+# IO and be silently dropped.  Routing them through `save_shape!` puts them
+# on the same `local_shape_storage` queue as shapes and they get realised
+# in the render pass.  See also: `LocalShapes` definition and the
+# `sort_illustrations!` hooks in KhepriSVG / KhepriTikZ.
+#
+# Other Proxy subtypes (UniqueProxy: Level, Material, Layer, Family) still
+# fall through to the transaction-based `maybe_realize(b, s)` in Shapes.jl
+# because they are realised once and then reused — caching, not queuing.
+maybe_realize(b::LocalBackend, s::Shape)      = save_shape!(b, s)
+maybe_realize(b::LocalBackend, s::Annotation) = save_shape!(b, s)
 
 # IOBackend (deprecated) inherits all LocalBackend operations above.
 

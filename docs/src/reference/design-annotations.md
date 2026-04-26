@@ -32,7 +32,7 @@ use.
 ## Types
 
 ```@docs
-Annotation
+DesignAnnotation
 ConnectAnnotation
 ConnectExteriorAnnotation
 DisconnectAnnotation
