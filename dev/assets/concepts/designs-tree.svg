@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.3 -0.85 9.28 5.423">
+<defs>
+</defs>
+<g stroke-width="0.012">
+<text x="3.5" y="0" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">BesideY</text>
+<polyline points="4,0 2,2" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="4,0 6,2" style="fill:none;stroke:rgb(245,245,247)"/>
+<text x="1.5" y="2" style="font-family:sans-serif;font-size:0.3;fill:rgb(245,245,247)">BesideX</text>
+<text x="5.5" y="2" style="font-family:sans-serif;font-size:0.3;fill:rgb(245,245,247)">BesideX</text>
+<polyline points="2,2 1,4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="2,2 3,4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="6,2 5,4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="6,2 7,4" style="fill:none;stroke:rgb(245,245,247)"/>
+<text x="0.2" y="4" style="font-family:sans-serif;font-size:0.22;fill:rgb(245,245,247)">Room :living</text>
+<text x="2.5" y="4" style="font-family:sans-serif;font-size:0.22;fill:rgb(245,245,247)">Room :kitchen</text>
+<text x="4.5" y="4" style="font-family:sans-serif;font-size:0.22;fill:rgb(245,245,247)">Room :bed</text>
+<text x="6.5" y="4" style="font-family:sans-serif;font-size:0.22;fill:rgb(245,245,247)">Room :bath</text>
+</g>
+</svg>

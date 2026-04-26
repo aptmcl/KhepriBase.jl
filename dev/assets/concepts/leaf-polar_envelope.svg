@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-3.5 -3.8 14.292 6.3">
+<defs>
+</defs>
+<g stroke-width="0.018">
+<path d="M 0,0 L 4.698,-1.71 A 5,5 0 0,0 -1.71,-4.698 Z" style="fill:rgb(245,245,247);stroke:none"/>
+<circle cx="0" cy="0" r="2" style="fill:rgb(245,245,247);stroke:none"/>
+<text x="1.5" y="-3" style="font-family:sans-serif;font-size:0.3;fill:rgb(245,245,247)">polar_envelope</text>
+<text x="-3" y="1" style="font-family:sans-serif;font-size:0.25;fill:rgb(245,245,247)">(center, r_inner, r_outer, theta_start, theta_end, height)</text>
+</g>
+</svg>

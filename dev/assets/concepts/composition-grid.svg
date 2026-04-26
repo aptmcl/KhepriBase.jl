@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -9.5 17 11.117">
+<defs>
+</defs>
+<g stroke-width="0.021">
+<polygon points="0,0 4,0 4,-3 0,-3" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="0,0 4,0 4,-3 0,-3 0,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="1.58" y="-1.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_1_1</text>
+<polygon points="4,0 8,0 8,-3 4,-3" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="4,0 8,0 8,-3 4,-3 4,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="5.58" y="-1.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_1_2</text>
+<polygon points="8,0 12,0 12,-3 8,-3" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="8,0 12,0 12,-3 8,-3 8,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="9.58" y="-1.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_1_3</text>
+<polygon points="12,0 16,0 16,-3 12,-3" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="12,0 16,0 16,-3 12,-3 12,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="13.58" y="-1.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_1_4</text>
+<polygon points="0,-3 4,-3 4,-6 0,-6" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="0,-3 4,-3 4,-6 0,-6 0,-3" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="1.58" y="-4.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_2_1</text>
+<polygon points="4,-3 8,-3 8,-6 4,-6" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="4,-3 8,-3 8,-6 4,-6 4,-3" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="5.58" y="-4.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_2_2</text>
+<polygon points="8,-3 12,-3 12,-6 8,-6" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="8,-3 12,-3 12,-6 8,-6 8,-3" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="9.58" y="-4.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_2_3</text>
+<polygon points="12,-3 16,-3 16,-6 12,-6" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="12,-3 16,-3 16,-6 12,-6 12,-3" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="13.58" y="-4.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_2_4</text>
+<polygon points="0,-6 4,-6 4,-9 0,-9" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="0,-6 4,-6 4,-9 0,-9 0,-6" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="1.58" y="-7.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_3_1</text>
+<polygon points="4,-6 8,-6 8,-9 4,-9" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="4,-6 8,-6 8,-9 4,-9 4,-6" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="5.58" y="-7.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_3_2</text>
+<polygon points="8,-6 12,-6 12,-9 8,-9" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="8,-6 12,-6 12,-9 8,-9 8,-6" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="9.58" y="-7.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_3_3</text>
+<polygon points="12,-6 16,-6 16,-9 12,-9" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="12,-6 16,-6 16,-9 12,-9 12,-6" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="13.58" y="-7.36" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">c_3_4</text>
+<text x="0" y="1" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247);stroke:none">grid((r, c) -&gt; room(..., 4, 3), 3, 4)</text>
+</g>
+</svg>

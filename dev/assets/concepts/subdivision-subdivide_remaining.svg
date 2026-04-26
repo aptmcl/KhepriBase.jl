@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -6.5 20.4 8.1">
+<defs>
+</defs>
+<g stroke-width="0.026">
+<rect x="0" y="-6" width="10" height="6" style="fill:rgb(245,245,247);stroke:none"/>
+<polyline points="2,-1 6,-1" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="6,-1 6,-4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="6,-4 2,-4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="2,-4 2,-1" style="fill:none;stroke:rgb(245,245,247)"/>
+<text x="3.8" y="-4.9" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247)">:north</text>
+<text x="3.8" y="-0.4" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247)">:south</text>
+<text x="7.7" y="-2.4" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247)">:east</text>
+<text x="0.4" y="-2.4" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247)">:west</text>
+<text x="3.3" y="-2.4" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247)">:atrium</text>
+<text x="0" y="1" style="font-family:sans-serif;font-size:0.3;fill:rgb(245,245,247)">subdivide_remaining(env_with_carved_atrium, [:north, :south, :east, :west])</text>
+</g>
+</svg>

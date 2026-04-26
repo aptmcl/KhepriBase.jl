@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -4.5 15.9 6.3">
+<defs>
+</defs>
+<g stroke-width="0.02">
+<polygon points="0,0 6,0 6,-4 0,-4" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="0,0 6,0 6,-4 0,-4 0,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="2.328" y="-1.84" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247);stroke:none">:living</text>
+<rect x="2" y="-0.12" width="2" height="0.24" style="fill:rgb(120,200,140);stroke:none;stroke:none"/>
+<text x="2.1" y="0.35" style="font-family:sans-serif;font-size:0.28;fill:rgb(245,245,247);stroke:none">:window</text>
+<text x="0" y="1.2" style="font-family:sans-serif;font-size:0.3;fill:rgb(245,245,247);stroke:none">connect_exterior(desc, :living; kind=:window, face=:south)</text>
+</g>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -4.5 11 5">
+<defs>
+</defs>
+<g stroke-width="0.014">
+<polygon points="0,0 3,0 3,-2 0,-2" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="0,0 3,0 3,-2 0,-2 0,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="1.404" y="-0.84" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247);stroke:none">a</text>
+<polygon points="4,0 10,0 10,-4 4,-4" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="4,0 10,0 10,-4 4,-4 4,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="5.944" y="-1.84" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247);stroke:none">scale(a, 2)</text>
+</g>
+</svg>

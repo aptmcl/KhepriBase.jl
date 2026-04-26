@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -4.5 9.342 6.017">
+<defs>
+</defs>
+<g stroke-width="0.012">
+<polygon points="0,0 5,0 5,-4 0,-4" style="fill:rgba(255,255,255,0.10);stroke:none;stroke:none"/>
+<polygon points="0,0 5,0 5,-4 0,-4 0,0" style="fill:none;fill:none;stroke:rgb(245,245,247);stroke-width:0.05"/>
+<text x="1.348" y="-1.84" style="font-family:sans-serif;font-size:0.32;fill:rgb(245,245,247);stroke:none">:living_room</text>
+<text x="0" y="0.9" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">room(:id, :use, width, depth)</text>
+</g>
+</svg>

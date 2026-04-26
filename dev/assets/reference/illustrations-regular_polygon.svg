@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-2.5 -2.5 5 5">
+<defs>
+<marker id="ah-end-0" markerUnits="userSpaceOnUse" markerWidth="0.4" markerHeight="0.28" refX="0.4" refY="0.14" orient="auto"><path d="M0,0 L0.4,0.14 L0,0.28 Z" fill="rgb(255,168,96)" stroke="none"/></marker>
+</defs>
+<g stroke-width="0.006">
+<polygon points="1.848,-0.765 0.261,-1.983 -1.587,-1.218 -1.848,0.765 -0.261,1.983 1.587,1.218" style="fill:none;stroke:rgb(245,245,247)"/>
+<circle cx="0" cy="0" r="0.03" style="fill:rgb(255,168,96);stroke:none"/>
+<text x="0.318" y="0.318" text-anchor="start" dominant-baseline="hanging" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">center</text>
+<line x1="0" y1="0" x2="0.4" y2="0" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke"/>
+<line x1="0" y1="0" x2="1.848" y2="-0.765" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke" marker-end="url(#ah-end-0)"/>
+<path d="M 0.4,0 A 0.4,0.4 0 0,0 0.37,-0.153" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke" marker-end="url(#ah-end-0)"/>
+<text x="0.834" y="-0.166" text-anchor="start" dominant-baseline="middle" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">angle</text>
+<text x="1.096" y="0.033" text-anchor="start" dominant-baseline="hanging" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">radius</text>
+</g>
+</svg>

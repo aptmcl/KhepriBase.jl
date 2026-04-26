@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -6.5 16.983 8.117">
+<defs>
+</defs>
+<g stroke-width="0.021">
+<rect x="0" y="-6" width="10" height="6" style="fill:rgb(245,245,247);stroke:none"/>
+<polyline points="3,0 3,-6" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="8,0 8,-6" style="fill:none;stroke:rgb(245,245,247)"/>
+<text x="1" y="-3" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">:entry</text>
+<text x="4.7" y="-3" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">:middle</text>
+<text x="8.7" y="-3" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">:svc</text>
+<text x="0" y="1" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">subdivide_x(env, [0.3, 0.5, 0.2], [:entry, :middle, :svc])</text>
+</g>
+</svg>

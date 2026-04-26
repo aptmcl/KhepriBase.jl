@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-2.3 -6.3 4.6 8.6">
+<defs>
+<marker id="ah-start-0" markerUnits="userSpaceOnUse" markerWidth="0.4" markerHeight="0.28" refX="0" refY="0.14" orient="auto"><path d="M0.4,0 L0,0.14 L0.4,0.28 Z" fill="rgb(255,168,96)" stroke="none"/></marker>
+<marker id="ah-end-1" markerUnits="userSpaceOnUse" markerWidth="0.4" markerHeight="0.28" refX="0.4" refY="0.14" orient="auto"><path d="M0,0 L0.4,0.14 L0,0.28 Z" fill="rgb(255,168,96)" stroke="none"/></marker>
+</defs>
+<g stroke-width="0.006">
+<rect x="-1.8" y="-4" width="3.6" height="4" style="fill:none;stroke:rgb(245,245,247)"/>
+<path d="M 1.8,-4 A 1.8,1.8 0 0,0 -1.8,-4" style="fill:none;stroke:rgb(245,245,247)"/>
+<path d="M 1.8,0 A 1.8,1.8 0 0,0 -1.8,0" style="fill:none;stroke:rgb(245,245,247)"/>
+<circle cx="0" cy="0" r="0.03" style="fill:rgb(255,168,96);stroke:none"/>
+<text x="0.318" y="0.318" text-anchor="start" dominant-baseline="hanging" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">p</text>
+<line x1="0" y1="0" x2="1.8" y2="0" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke" marker-start="url(#ah-start-0)" marker-end="url(#ah-end-1)"/>
+<text x="0.9" y="0.45" text-anchor="middle" dominant-baseline="hanging" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">r</text>
+<line x1="0" y1="0" x2="0" y2="-4" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke" marker-start="url(#ah-start-0)" marker-end="url(#ah-end-1)"/>
+<text x="0.45" y="-2" text-anchor="start" dominant-baseline="middle" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">h</text>
+</g>
+</svg>

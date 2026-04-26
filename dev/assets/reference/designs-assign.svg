@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-0.5 -4.5 20.35 6">
+<defs>
+</defs>
+<g stroke-width="0.025">
+<rect x="0" y="-4" width="12" height="4" style="fill:rgb(245,245,247);stroke:none"/>
+<polyline points="6,0 6,-4" style="fill:none;stroke:rgb(245,245,247)"/>
+<polyline points="9,0 9,-4" style="fill:none;stroke:rgb(245,245,247)"/>
+<text x="2.5" y="-1.8" style="font-family:sans-serif;font-size:0.45;fill:rgb(245,245,247)">:a</text>
+<text x="6.4" y="-1.8" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">:open_office</text>
+<text x="9.4" y="-1.8" style="font-family:sans-serif;font-size:0.35;fill:rgb(245,245,247)">:storage</text>
+<text x="0" y="0.9" style="font-family:sans-serif;font-size:0.3;fill:rgb(245,245,247)">assign(:a, :entrance)  ...  assign(:b, :open_office)  ...  assign(:c, :storage)</text>
+</g>
+</svg>

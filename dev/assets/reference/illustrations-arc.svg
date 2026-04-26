@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="-2.5 -2.5 5 5">
+<defs>
+<marker id="ah-end-0" markerUnits="userSpaceOnUse" markerWidth="0.4" markerHeight="0.28" refX="0.4" refY="0.14" orient="auto"><path d="M0,0 L0.4,0.14 L0,0.28 Z" fill="rgb(255,168,96)" stroke="none"/></marker>
+</defs>
+<g stroke-width="0.006">
+<path d="M 1.732,-1 A 2,2 0 0,0 -1.732,-1" style="fill:none;stroke:rgb(245,245,247)"/>
+<circle cx="0" cy="0" r="0.03" style="fill:rgb(255,168,96);stroke:none"/>
+<text x="0.318" y="0.318" text-anchor="start" dominant-baseline="hanging" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">c</text>
+<polyline points="0,0 0.4,0" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke"/>
+<path d="M 0.4,0 A 0.4,0.4 0 0,0 0.346,-0.2" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke" marker-end="url(#ah-end-0)"/>
+<text x="0.821" y="-0.22" text-anchor="start" dominant-baseline="middle" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">alpha</text>
+<polyline points="0,0 1.732,-1" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke"/>
+<polyline points="0,0 -1.732,-1" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke" marker-end="url(#ah-end-0)"/>
+<path d="M 0.346,-0.2 A 0.4,0.4 0 0,0 -0.346,-0.2" style="fill:none;stroke:rgb(255,168,96);stroke-width:1.5;vector-effect:non-scaling-stroke" marker-end="url(#ah-end-0)"/>
+<text x="0" y="-0.85" text-anchor="middle" dominant-baseline="auto" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">delta_alpha</text>
+<text x="-0.641" y="-0.89" text-anchor="start" dominant-baseline="auto" style="font-family:Helvetica,Arial,sans-serif;font-size:0.42;fill:rgb(255,168,96)">r</text>
+</g>
+</svg>
