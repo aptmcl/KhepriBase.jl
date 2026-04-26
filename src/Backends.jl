@@ -638,12 +638,10 @@ filter on `is_illustration(...)` or `isa Annotation` when they
 render.  See also: KhepriSVG / KhepriTikZ `sort_illustrations!` —
 they expect annotations to live in `b.shapes`.
 =#
-const LocalShapeStorage = Vector{Proxy}
-
 @kwdef mutable struct LocalShapes
-  shapes::LocalShapeStorage = Proxy[]
+  shapes::Vector{Proxy} = Proxy[]
   current_layer::Union{Nothing, AbstractLayer} = nothing
-  layers::Dict{AbstractLayer, LocalShapeStorage} = Dict{AbstractLayer, LocalShapeStorage}()
+  layers::Dict{AbstractLayer, Vector{Proxy}} = Dict{AbstractLayer, Vector{Proxy}}()
 end
 
 @kwdef mutable struct RenderState
