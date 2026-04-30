@@ -1209,14 +1209,25 @@ shape_path(s::Spline) =
     open_spline_path(s.points, s.v0, s.v1) :
     open_polygonal_path(s.points)
 shape_path(s::ClosedSpline) = closed_spline_path(s.points)
+shape_path(s::RegularPolygon) =
+  closed_polygonal_path(regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))
 shape_path(s::SurfaceCircle) = circular_path(s.center, s.radius)
 shape_path(s::SurfaceRectangle) = rectangular_path(s.corner, s.dx, s.dy)
 shape_path(s::SurfacePolygon) = closed_polygonal_path(s.vertices)
 shape_path(s::SurfaceRegularPolygon) = closed_polygonal_path(regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))
+shape_path(s::SurfaceRing) = circular_path(s.center, s.outer_radius)
 shape_path(s::Surface) = length(s.frontier) == 1 ? shape_path(s.frontier[1]) : ClosedPathSequence([shape_path(e) for e in s.frontier])
 
 ## shape_region takes a 2D shape and computes an equivalent region
 shape_region(s::Shape2D) = region(shape_path(s))
+#=
+SurfaceRing has an inner hole that the default `region(shape_path(s))` would
+silently drop, producing a solid disk on extrusion instead of an annulus.
+The override carries both boundary loops into the resulting Region.
+=#
+shape_region(s::SurfaceRing) =
+  region(circular_path(s.center, s.outer_radius),
+         circular_path(s.center, s.inner_radius))
 
 #####################################################################
 ## Conversions
@@ -1269,7 +1280,7 @@ regular_prism(edges::Integer, cb::Loc, r::Real, angle::Real, ct::Loc, inscribed:
   end
 
 @defshape(Shape3D, prism, bs::Locs=[ux(), uy(), uxy()], v::Vec=vz(1))
-prism(bs::Locs, h::Real, m=default_material) =
+prism(bs::Locs, h::Real, m=default_material()) =
   prism(bs, vz(h), m)
 
 @defshape(Shape3D, right_cuboid, cb::Loc=u0(), width::Real=1, height::Real=1, h::Real=1)
@@ -1364,12 +1375,15 @@ sweep(path, profile, args...; kargs...) =
 @defshape(Shape1D, revolved_point, profile::Union{Loc,Point}=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defshape(Shape2D, revolved_curve, profile::Union{Shape,Path}=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defshape(Shape3D, revolved_surface, profile::Union{Shape,Path,Region}=region(circular_path()), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
-revolve(profile::Shape=point(x(1)), args...; kargs...) =
-  if profile isa PointPath || is_point(profile)
+# Profile is untyped so Path and Region can also be passed alongside Shape;
+# the body checks them explicitly. `extrusion` and `sweep` follow the same
+# pattern.
+revolve(profile=point(x(1)), args...; kargs...) =
+  if profile isa PointPath || (profile isa Shape && is_point(profile))
     revolved_point(profile, args...; kargs...)
-  elseif profile isa Path || is_curve(profile)
+  elseif profile isa Path || (profile isa Shape && is_curve(profile))
     revolved_curve(profile, args...; kargs...)
-  elseif profile isa Region || is_surface(profile)
+  elseif profile isa Region || (profile isa Shape && is_surface(profile))
     revolved_surface(profile, args...; kargs...)
   else
     error("Profile is neither a point nor a curve nor a surface")
@@ -1493,46 +1507,72 @@ export union, intersection, subtraction, empty_shape, universal_shape
 struct empty_shape <: Shape0D end
 struct universal_shape <: Shape3D end
 
-@defshape(Shape2D, subtracted_surfaces, source::Shape2D=surface_circle(), mask::Shape2D=surface_rectangle())
-@defshape(Shape3D, subtracted_solids, source::Shape3D=sphere(), mask::Shape3D=box())
-subtraction(shape::Shape, s::empty_shape) = shape
-subtraction(shape::Shape{D}, mask::Shape{D}) where D = 
-  if D == 2
-    subtracted_surfaces(shape, mask)
-  elseif D == 3
-    subtracted_solids(shape, mask)
-  else
-    error("Incorrect dimension for boolean operation: $(D)")
+#=
+Boolean source/mask types are declared `Shape` (not `Shape{D}`) so that
+transformation wrappers — Move, Rotate, Scale, Mirror, Transform — can pass
+through. Those wrappers are declared as `Shape1D` in `@defproxy` regardless
+of the wrapped shape's dimension; without the loosening, dispatch on
+`Shape{D}` rejects e.g. `subtracted_solids(::Box, ::Rotate{Cylinder})`.
+The runtime dimension is recovered via `csg_dim` below.
+=#
+@defshape(Shape2D, subtracted_surfaces, source::Shape=surface_circle(), mask::Shape=surface_rectangle())
+@defshape(Shape3D, subtracted_solids, source::Shape=sphere(), mask::Shape=box())
+@defshape(Shape2D, intersected_surfaces, source::Shape=surface_circle(), mask::Shape=surface_rectangle())
+@defshape(Shape3D, intersected_solids, source::Shape=sphere(), mask::Shape=box())
+@defshape(Shape2D, united_surfaces, source::Shape=surface_circle(), mask::Shape=surface_rectangle())
+@defshape(Shape3D, united_solids, source::Shape=sphere(), mask::Shape=box())
+
+#=
+Effective dimension of a shape for boolean dispatch. Unwraps transformation
+proxies to recover the wrapped shape's dimension; nests through chained
+wrappers (e.g. move(rotate(cylinder, ...))).
+=#
+csg_dim(s::Shape0D) = 0
+csg_dim(s::Shape1D) = 1
+csg_dim(s::Shape2D) = 2
+csg_dim(s::Shape3D) = 3
+csg_dim(s::Union{Move,Rotate,Scale,Mirror,Transform}) = csg_dim(s.shape)
+
+_csg_apply(op::Symbol, s::Shape, m::Shape) =
+  let sd = csg_dim(s), md = csg_dim(m)
+    sd == md ||
+      error("Cannot $(op): dimensions differ ($(sd)D vs $(md)D)")
+    sd == 2 ? Symbol(op, "ed_surfaces") :
+    sd == 3 ? Symbol(op, "ed_solids") :
+    error("$(op) not defined for $(sd)D shapes")
   end
-subtraction(shape::Shape, shapes...) = foldl(subtraction, shapes, init=shape)
+
+subtraction(shape::Shape, s::empty_shape) = shape
+subtraction(shape::Shape, mask::Shape) =
+  csg_dim(shape) == csg_dim(mask) ?
+    (csg_dim(shape) == 2 ? subtracted_surfaces(shape, mask) :
+     csg_dim(shape) == 3 ? subtracted_solids(shape, mask) :
+     error("subtraction not defined for $(csg_dim(shape))D shapes")) :
+    error("Cannot subtract: dimensions differ ($(csg_dim(shape))D vs $(csg_dim(mask))D)")
+subtraction(shape::Shape, mask1::Shape, mask2::Shape, masks...) =
+  foldl(subtraction, (mask1, mask2, masks...), init=shape)
 subtraction(shapes::Shapes) = subtraction(shapes...)
 
-@defshape(Shape2D, intersected_surfaces, source::Shape2D=surface_circle(), mask::Shape2D=surface_rectangle())
-@defshape(Shape3D, intersected_solids, source::Shape3D=sphere(), mask::Shape3D=box())
 intersection(shape::Shape, s::universal_shape) = shape
-intersection(shape::Shape{D}, mask::Shape{D}) where D = 
-  if D == 2
-    intersected_surfaces(shape, mask)
-  elseif D == 3
-    intersected_solids(shape, mask)
-  else
-    error("Incorrect dimension for boolean operation: $(D)")
-  end
-intersection(shape::Shape, shapes...) = foldl(intersection, shapes, init=shape)
+intersection(shape::Shape, mask::Shape) =
+  csg_dim(shape) == csg_dim(mask) ?
+    (csg_dim(shape) == 2 ? intersected_surfaces(shape, mask) :
+     csg_dim(shape) == 3 ? intersected_solids(shape, mask) :
+     error("intersection not defined for $(csg_dim(shape))D shapes")) :
+    error("Cannot intersect: dimensions differ ($(csg_dim(shape))D vs $(csg_dim(mask))D)")
+intersection(shape::Shape, mask1::Shape, mask2::Shape, masks...) =
+  foldl(intersection, (mask1, mask2, masks...), init=shape)
 intersection(shapes::Shapes) = intersection(shapes...)
 
-@defshape(Shape2D, united_surfaces, source::Shape2D=surface_circle(), mask::Shape2D=surface_rectangle())
-@defshape(Shape3D, united_solids, source::Shape3D=sphere(), mask::Shape3D=box())
 union(shape::Shape, s::empty_shape) = shape
-union(shape::Shape{D}, mask::Shape{D}) where D =
-  if D == 2
-    united_surfaces(shape, mask)
-  elseif D == 3
-    united_solids(shape, mask)
-  else
-    error("Incorrect dimension for boolean operation: $(D)")
-  end
-union(shape::Shape, shapes...) = foldl(union, shapes, init=shape)
+union(shape::Shape, mask::Shape) =
+  csg_dim(shape) == csg_dim(mask) ?
+    (csg_dim(shape) == 2 ? united_surfaces(shape, mask) :
+     csg_dim(shape) == 3 ? united_solids(shape, mask) :
+     error("union not defined for $(csg_dim(shape))D shapes")) :
+    error("Cannot union: dimensions differ ($(csg_dim(shape))D vs $(csg_dim(mask))D)")
+union(shape::Shape, mask1::Shape, mask2::Shape, masks...) =
+  foldl(union, (mask1, mask2, masks...), init=shape)
 union(shapes::Shapes) = union(shapes...)
 
 @defshape(Shape3D, slice, shape::Shape3D=sphere(), p::Loc=u0(), n::Vec=vz(1))

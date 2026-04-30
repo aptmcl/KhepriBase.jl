@@ -459,9 +459,6 @@ rotate(path::Path, Δα, rot_p=u0(), rot_v=vz()) =
 
 
 
-#
-transform(s, p::Loc) = in_cs(s, p)
-
 export planar_polygonal_path
 planar_polygonal_path(path) =
   let normal = planar_path_normal(path)

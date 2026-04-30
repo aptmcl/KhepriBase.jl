@@ -1032,10 +1032,32 @@ b_stroke(b::Backend, path::Mesh, mat) =
       b_line(b, vs[face.+1], mat) #1-indexed
     end
   end
+#=
+PathSequence stroke must return a single ref so downstream consumers (e.g.
+sweep, which feeds the stroked path to the backend's sweep operator) can
+treat the sequence as one curve. The earlier for-loop discarded each
+sub-stroke's ref and returned `nothing`, which broke any caller that
+expected a usable ref — `b_swept_curve(::ACAD, ::Path, ::Path, ...)` would
+then pass `nothing` as the path id, triggering "Cannot convert Nothing to
+Int64" in the socket encoder.
+
+Joining curves and uniting solids are distinct operations: `b_unite_refs`
+does boolean CSG, which AutoCAD rejects for curves with a Solid3d cast.
+We delegate to `b_stroke_unite`, which defaults to `b_unite_refs` (correct
+for backends whose union covers both regimes — file-output backends, OBJ
+exporters, etc.) but is overridden by CAD backends that expose a dedicated
+curve-join primitive (AutoCAD: JoinCurves).
+=#
 b_stroke(b::Backend, path::PathSequence, mat) =
-  for path in path.paths
-    b_stroke(b, path, mat)
-  end
+  b_stroke_unite(b, [b_stroke(b, p, mat) for p in path.paths], mat)
+
+#=
+Join a set of curve refs produced by `b_stroke` into a single curve ref.
+Default is `b_unite_refs`; CAD backends that distinguish curve-join from
+boolean-CSG-union must override.
+=#
+public b_stroke_unite
+b_stroke_unite(b::Backend, refs, mat) = b_unite_refs(b, refs)
 
 b_fill(b::Backend, path::CircularPath, mat) =
   b_surface_circle(b, path.center, path.radius, mat)
