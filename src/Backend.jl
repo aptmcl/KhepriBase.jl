@@ -519,7 +519,7 @@ b_surface_ring(b::Backend, c, ri, ro, mat) =
 b_surface_arc(b::Backend, c, r, α, Δα, mat) =
   b_ngon(b,
          [c + vpol(r, a, c.cs)
-          for a in division(α, α + Δα, Δα*32/2/π, true)],
+          for a in division(α, α + Δα, max(ceil(Int, Δα*32/2/π), 2), true)],
          c, false, mat)
 
 b_surface_ellipse(b::Backend, c, rx, ry, mat) =

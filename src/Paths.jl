@@ -447,6 +447,14 @@ scale(path::ClosedPolygonalPath, s::Real, p::Loc=u0()) =
   s == 1 ?
     path :
     closed_polygonal_path([p + (q-p)*s for q in path.vertices])
+scale(path::OpenSplinePath, s::Real, p::Loc=u0()) =
+  s == 1 ?
+    path :
+    open_spline_path([p + (q-p)*s for q in path.vertices], path.v0, path.v1)
+scale(path::ClosedSplinePath, s::Real, p::Loc=u0()) =
+  s == 1 ?
+    path :
+    closed_spline_path([p + (q-p)*s for q in path.vertices])
 
 rotate(path::Path, Δα, rot_p=u0(), rot_v=vz()) =
   Δα == 0 ?

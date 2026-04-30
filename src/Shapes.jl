@@ -1196,8 +1196,10 @@ path_vertices(s::Shape1D) = path_vertices(shape_path(s))
 path_frames(s::Shape1D) = path_frames(shape_path(s))
 
 ## shape_path takes a 0D/1D/2D shape and computes an equivalent path
+export shape_path
 shape_path(s::Point) = point_path(s.position)
 shape_path(s::Circle) = circular_path(s.center, s.radius)
+shape_path(s::Arc) = arc_path(s.center, s.radius, s.start_angle, s.amplitude)
 shape_path(s::Ellipse) = elliptic_path(s.center, s.radius_x, s.radius_y)
 shape_path(s::Rectangle) = rectangular_path(s.corner, s.dx, s.dy)
 shape_path(s::Line) = open_polygonal_path(s.vertices)
@@ -1433,15 +1435,21 @@ b_loft_points(b::Backend, profiles, rails, ruled, closed, mat) =
                       vcat(profiles, rails))
 	end
 
-b_loft_curve_point(b::Backend, profile, point) =
+# Default loft from a curve to a point: emit an n-gon with apex at the
+# point. Earlier signature lacked `mat` and the body referenced an
+# undefined `mat` symbol — broken for any backend that didn't override.
+b_loft_curve_point(b::Backend, profile, point, mat) =
   let p = point_position(point),
-	    path = shape_path(profile),
-	    ps = path_vertices(path)
-	and_delete_shapes(b_ngon(b, ps, p, is_smooth_path(path), mat),
-					          [profile, point])
+      path = shape_path(profile),
+      ps = path_vertices(path)
+    and_delete_shapes(b_ngon(b, ps, p, is_smooth_path(path), mat),
+                      [profile, point])
   end
 
-@bdef b_loft_surface_point(profile, point)
+# Default surface→point loft delegates to curve→point on the surface's
+# boundary. Backends with a native solid loft (AutoCAD, Rhino) override.
+b_loft_surface_point(b::Backend, profile, point, mat) =
+  b_loft_curve_point(b, profile, point, mat)
 
 b_loft_curves(b::Backend, profiles, rails, ruled, closed, mat) =
   b_loft(b, shape_path.(profiles), closed, ! ruled, mat)
