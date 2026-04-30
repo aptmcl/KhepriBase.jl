@@ -104,6 +104,55 @@ export coincidence_tolerance
 
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < coincidence_tolerance()
 
+#=
+Polygonal smoothness budget.
+
+Smooth curves (arcs, circles, ellipses, splines) get flattened to polylines
+in three places: when sent to backends that don't speak curves natively,
+when computing `path_vertices` for region construction, and inside
+`surface(...)` whenever a boundary contains a curved subpath. The polyline
+must be dense enough to render as smooth at viewing scale yet sparse enough
+to keep downstream operations cheap.
+
+This parameter sets the polyline segment count used to flatten one full
+revolution (2π of parameter span) of a smooth curve. A circle and an
+ellipse both use exactly this many segments; an arc of amplitude θ uses
+`ceil(θ/(2π) · n)` segments, clamped to ≥ 2. For splines that already
+carry at least `n+1` user-supplied control points the points are used
+directly so the conversion is exact and paired splines (e.g. two parallel
+boundaries of a thin strip) align by construction; sparser splines are
+uniformly resampled to `n+1` vertices.
+
+The default 64 puts each segment at ~5.6° of parameter span, which renders
+as visually smooth at typical architectural scales while keeping vertex
+counts modest. Override locally for high-resolution renders, or globally
+for fast preview at the cost of visible facets:
+
+    with(path_smoothness_segments, 256) do
+      render_view("hi-res")
+    end
+
+Why uniform sampling rather than adaptive midpoint subdivision? Adaptive
+schemes based on chord-fit collinearity terminate spuriously on periodic
+curves whose period nests the probe parameters on the chord — `sin(x)` on
+`[0, 2π·N]` is the canonical failure case. An earlier implementation made
+matters worse by jittering the secondary probe randomly, which caused two
+parallel splines bounding a thin strip to be sampled at non-corresponding
+points and produce self-intersecting polygons that backends rejected.
+Uniform sampling at a fixed density is reliable, paired smooth boundaries
+align by construction, and the density is exposed to the user for explicit
+control.
+
+See also: `coincidence_tolerance` (governs whether the endpoints of a
+closed sample loop are treated as the same point), `collinearity_tolerance`
+(used by the residual adaptive paths in `path_interpolated_frames` for
+sweep-style frame placement).
+=#
+
+"Polyline segments per 2π of parameter span when flattening smooth curves to polylines. [count]"
+const path_smoothness_segments = Parameter(64)
+export path_smoothness_segments
+
 
 
 struct EmptyPath <: Path
@@ -150,7 +199,8 @@ path_interpolated_frames(path::Path, (t0, t1)=path_domain(path), tol=collinearit
       pm = location_at(path, tm)
     min_recursion < 0 &&
     collinear_points(p0, pm, p1, tol) &&
-    let tr = t0 + (t1 - t0)/(1.99+rand()*0.02),
+    let tr = # t0 + (t1 - t0)/(1.99+rand()*0.02),
+             tm + (t1 - t0)*0.001,  # fixed near-midpoint offset; was randomized
         pr = location_at(path, tr) # To avoid coincidences
       collinear_points(p0, pr, p1, tol)
     end ?
@@ -928,22 +978,67 @@ path_interpolated_lengths(path, t0=0, t1=path_length(path), tol=collinearity_tol
        path_interpolated_lengths(path, tm, t1, tol, min_recursion - 1)[2:end]...]
   end
 
+#### Smooth-path → polyline conversions
+#
+# Deterministic uniform sampling at density `path_smoothness_segments` per 2π
+# of parameter span. See that parameter's prose for the rationale (paired
+# smooth boundaries align by construction; no false-flat termination).
+
+# Segment count for an arc-like path of given amplitude, scaled from the
+# global smoothness budget and clamped to ≥ 2 so degenerate amplitudes
+# (zero, near-zero) still produce a well-formed polyline.
+arc_segment_count(amplitude) =
+  max(2, ceil(Int, path_smoothness_segments() * abs(amplitude) / (2π)))
+
+# n+1 frames sampled at uniform parameter spacing across [t0, t1].
+uniform_path_frames(path, t0, t1, n) =
+  [location_at(path, t) for t in range(t0, t1; length=n+1)]
+
 convert(::Type{ClosedPolygonalPath}, path::CircularPath) =
-  closed_polygonal_path(path_interpolated_frames(path)[1:end-1])
+  let n = path_smoothness_segments()
+    closed_polygonal_path(uniform_path_frames(path, 0, 2π, n)[1:end-1])
+  end
 convert(::Type{OpenPolygonalPath}, path::CircularPath) =
-  open_polygonal_path(path_interpolated_frames(path))
+  let n = path_smoothness_segments()
+    open_polygonal_path(uniform_path_frames(path, 0, 2π, n))
+  end
 convert(::Type{ClosedPolygonalPath}, path::EllipticPath) =
-  closed_polygonal_path(path_interpolated_frames(path)[1:end-1])
+  let n = path_smoothness_segments()
+    closed_polygonal_path(uniform_path_frames(path, 0, 2π, n)[1:end-1])
+  end
 convert(::Type{OpenPolygonalPath}, path::EllipticPath) =
-  open_polygonal_path(path_interpolated_frames(path))
+  let n = path_smoothness_segments()
+    open_polygonal_path(uniform_path_frames(path, 0, 2π, n))
+  end
 convert(::Type{OpenPolygonalPath}, path::ArcPath) =
-  open_polygonal_path(path_interpolated_frames(path))
+  open_polygonal_path(uniform_path_frames(path, 0, path.amplitude,
+                                          arc_segment_count(path.amplitude)))
 convert(::Type{OpenPolygonalPath}, path::ClosedPolygonalPath) =
   open_polygonal_path(vcat(path.vertices, [path.vertices[1]]))
 convert(::Type{OpenPolygonalPath}, path::RectangularPath) =
   convert(OpenPolygonalPath, convert(ClosedPolygonalPath, path))
+# Splines: use the user's control points when they are dense enough to
+# render smoothly on their own; otherwise resample uniformly. Dense user
+# input is preserved exactly so paired splines (parallel boundaries of a
+# thin region) flatten to mathematically aligned polylines.
 convert(::Type{OpenPolygonalPath}, path::OpenSplinePath) =
-  open_polygonal_path(map_division(identity, path))
+  let vs = path.vertices,
+      n = path_smoothness_segments()
+    length(vs) >= n + 1 ?
+      open_polygonal_path(vs) :
+      open_polygonal_path(uniform_path_frames(path, 0, 1, n))
+  end
+convert(::Type{ClosedPolygonalPath}, path::ClosedSplinePath) =
+  let vs = path.vertices,
+      n = path_smoothness_segments()
+    length(vs) >= n ?
+      closed_polygonal_path(vs) :
+      closed_polygonal_path(uniform_path_frames(path, 0, 1, n)[1:end-1])
+  end
+convert(::Type{OpenPolygonalPath}, path::ClosedSplinePath) =
+  let p = convert(ClosedPolygonalPath, path)
+    open_polygonal_path(vcat(p.vertices, [p.vertices[1]]))
+  end
 
 
 curve_interpolator(pts::Locs, closed::Bool) =
