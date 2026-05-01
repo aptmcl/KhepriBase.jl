@@ -109,4 +109,62 @@ stress_pathological(b, reset!, verify) =
       () -> subtraction(sphere(xyz(0,0,0), 2.0), sphere(xyz(20,0,0), 2.0)))
     run_pathological_test(b, slot, "intersect_disjoint",
       () -> intersection(sphere(xyz(0,0,0), 2.0), sphere(xyz(20,0,0), 2.0)))
+
+    # ── Expanded coverage ────────────────────────────────────────────
+
+    # Identical shapes: subtract / intersect / unite a shape with itself.
+    run_pathological_test(b, slot, "subtract_self",
+      () -> subtraction(sphere(u0(), 3.0), sphere(u0(), 3.0)))
+    run_pathological_test(b, slot, "intersect_self",
+      () -> intersection(sphere(u0(), 3.0), sphere(u0(), 3.0)))
+    run_pathological_test(b, slot, "union_self",
+      () -> union(sphere(u0(), 3.0), sphere(u0(), 3.0)))
+
+    # Tangent shapes (shared boundary, no overlap volume).
+    run_pathological_test(b, slot, "subtract_tangent_spheres",
+      () -> subtraction(sphere(u0(), 2.0), sphere(xyz(4, 0, 0), 2.0)))
+
+    # Negative-amplitude arcs / revolves.
+    run_pathological_test(b, slot, "arc_negative_amplitude",
+      () -> arc(u0(), 5.0, 0.0, -π/2))
+    run_pathological_test(b, slot, "revolve_negative_amplitude",
+      () -> revolve(line([xyz(5,0,0), xyz(5,0,5)]), u0(), vz(1), 0.0, -π))
+
+    # Very small / very large dimensions.
+    run_pathological_test(b, slot, "circle_very_small_radius",
+      () -> circle(u0(), 1e-10))
+    run_pathological_test(b, slot, "sphere_very_large_radius",
+      () -> sphere(u0(), 1e8))
+
+    # Polygon with 3 collinear vertices.
+    run_pathological_test(b, slot, "polygon_all_collinear",
+      () -> polygon([xyz(0,0,0), xyz(2,0,0), xyz(4,0,0), xyz(6,0,0)]))
+
+    # Surface polygon with 3 vertices that form a degenerate (zero-area)
+    # triangle.
+    run_pathological_test(b, slot, "surface_polygon_degenerate_triangle",
+      () -> surface_polygon([u0(), xyz(5,0,0), xyz(5,0,0)]))
+
+    # Box with negative dimension (should auto-correct via overload).
+    run_pathological_test(b, slot, "box_negative_all",
+      () -> box(u0(), -3.0, -3.0, -3.0))
+
+    # Loft with two identical profiles (degenerate — zero loft length).
+    run_pathological_test(b, slot, "loft_two_identical",
+      () -> loft([circle(xyz(0, 0, 0), 3.0), circle(xyz(0, 0, 0), 3.0)]))
+
+    # Closed loft of 4 circles arranged in a torus pattern: AutoCAD's
+    # LoftedSurface.CreateLoftedSurface rejects this topology.
+    run_pathological_test(b, slot, "loft_closed_4_circles_torus",
+      () -> loft([circle(xyz(5, 0, 0), 1.5),
+                  circle(xyz(0, 5, 2), 1.5),
+                  circle(xyz(-5, 0, 0), 1.5),
+                  circle(xyz(0, -5, -2), 1.5)],
+                 Shape[], false, true))
+
+    # Sweep with a path that loops back on itself (start ≈ end).
+    run_pathological_test(b, slot, "sweep_self_intersecting_path",
+      () -> sweep(closed_polygonal_path([u0(), xyz(5,0,0),
+                                         xyz(5,5,0), xyz(0,0,0)]),
+                  circular_path(u0(), 0.3)))
   end

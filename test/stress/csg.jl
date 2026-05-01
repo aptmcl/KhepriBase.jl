@@ -96,4 +96,77 @@ stress_csg(b, reset!, verify) =
         nothing,
         verify)
     end
+
+    # ── Expanded coverage ────────────────────────────────────────────
+
+    # CSG with off-center / overlapping pairs of similar primitives.
+    run_one_test(b, slot, "subtract_two_spheres",
+      () -> subtraction(sphere(u0(), 4.0), sphere(xyz(2,2,0), 3.0)),
+      nothing,
+      verify)
+    run_one_test(b, slot, "intersect_two_cylinders_perpendicular",
+      () -> intersection(cylinder(xyz(0,0,-5), 2.0, 10.0),
+                         rotate(cylinder(xyz(0,0,-5), 2.0, 10.0),
+                                π/2, u0(), vy(1))),
+      nothing,
+      verify)
+
+    # 3D pair with one operand fully inside the other.
+    run_one_test(b, slot, "subtract_inner_inside_outer",
+      () -> subtraction(sphere(u0(), 5.0), sphere(u0(), 2.5)),
+      nothing,
+      verify)
+
+    # CSG with translated/rotated operands (exercises proxy realization).
+    run_one_test(b, slot, "subtract_after_move",
+      () -> subtraction(box(xyz(-3,-3,0), 6.0, 6.0, 4.0),
+                        move(sphere(u0(), 2.0), vxyz(0, 0, 4))),
+      nothing,
+      verify)
+
+    # Chain of intersections (3 spheres).
+    run_one_test(b, slot, "intersect_chain_3",
+      () -> intersection(sphere(xyz(-1,0,0), 3.0),
+                         sphere(xyz(1,0,0), 3.0),
+                         sphere(xyz(0,1.5,0), 3.0)),
+      nothing,
+      verify)
+
+    # Larger varargs chain (5 sphere subtractions from a box).
+    run_one_test(b, slot, "subtract_chain_5",
+      () -> subtraction(box(xyz(-6,-6,-3), 12.0, 12.0, 6.0),
+                        sphere(xyz(-4,-4,0), 1.5),
+                        sphere(xyz(4,-4,0), 1.5),
+                        sphere(xyz(0,0,0), 1.5),
+                        sphere(xyz(-4,4,0), 1.5),
+                        sphere(xyz(4,4,0), 1.5)),
+      nothing,
+      verify)
+
+    # 2D booleans: intersection of three surfaces (chain).
+    run_one_test(b, slot, "intersect2d_chain_3",
+      () -> intersection(surface_circle(xyz(-1,0,0), 3.0),
+                         surface_circle(xyz(1,0,0), 3.0),
+                         surface_circle(xyz(0,1.5,0), 3.0)),
+      nothing,
+      verify)
+
+    # Slice with axis-perpendicular plane (different axis from xy/xyz).
+    for (sname, sfn) in (("sphere", () -> sphere(u0(), 4.0)),
+                         ("box",    () -> box(xyz(-3,-3,-3), 6.0, 6.0, 6.0)))
+      run_one_test(b, slot, "slice_$(sname)_x_axis",
+        () -> slice(sfn(), u0(), vx(1)),
+        nothing,
+        verify)
+      run_one_test(b, slot, "slice_$(sname)_y_axis",
+        () -> slice(sfn(), u0(), vy(1)),
+        nothing,
+        verify)
+    end
+
+    # Slice with a non-origin point.
+    run_one_test(b, slot, "slice_sphere_offset_plane",
+      () -> slice(sphere(u0(), 4.0), xyz(0, 0, 2), vz(1)),
+      nothing,
+      verify)
   end

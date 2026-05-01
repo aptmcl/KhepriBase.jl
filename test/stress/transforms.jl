@@ -73,4 +73,80 @@ stress_transforms(b, reset!, verify) =
                                π/4, u0(), vx(1))),
       nothing,
       verify)
+
+    # ── Expanded coverage ────────────────────────────────────────────
+
+    # Move with various vectors.
+    for (label, v) in (("vxyz", vxyz(3.0, 5.0, 2.0)),
+                       ("vneg", vxyz(-2.0, -3.0, -1.0)),
+                       ("vlong", vxyz(50.0, 0.0, 0.0)))
+      run_one_test(b, slot, "move_sphere_$label",
+        () -> move(sphere(u0(), 2.0), v),
+        nothing,
+        verify)
+    end
+
+    # Rotate with multiple angle values.
+    for (label, θ) in (("pi6", π/6), ("pi3", π/3),
+                       ("2pi3", 2π/3), ("neg_pi4", -π/4))
+      run_one_test(b, slot, "rotate_box_$label",
+        () -> rotate(box(xyz(-2,-2,0), 4.0, 4.0, 4.0), θ, u0(), vz(1)),
+        nothing,
+        verify)
+    end
+
+    # Rotate around non-z axes.
+    run_one_test(b, slot, "rotate_box_x_axis",
+      () -> rotate(box(xyz(-2,-2,0), 4.0, 4.0, 4.0), π/3, u0(), vx(1)),
+      nothing,
+      verify)
+    run_one_test(b, slot, "rotate_box_y_axis",
+      () -> rotate(box(xyz(-2,-2,0), 4.0, 4.0, 4.0), π/3, u0(), vy(1)),
+      nothing,
+      verify)
+    run_one_test(b, slot, "rotate_box_oblique_axis",
+      () -> rotate(box(xyz(-2,-2,0), 4.0, 4.0, 4.0), π/3, u0(), vxyz(1,1,1)),
+      nothing,
+      verify)
+
+    # Scale with various factors and pivots.
+    for (label, s) in (("0.25", 0.25), ("3.0", 3.0), ("10.0", 10.0))
+      run_one_test(b, slot, "scale_sphere_$label",
+        () -> scale(sphere(u0(), 2.0), s, u0()),
+        nothing,
+        verify)
+    end
+    # Scale with off-origin pivot — exercises pivot translation in matrix.
+    run_one_test(b, slot, "scale_box_off_pivot",
+      () -> scale(box(xyz(-1,-1,0), 2.0, 2.0, 2.0), 2.0, xyz(5, 0, 0)),
+      nothing,
+      verify)
+
+    # Mirror across non-axis-aligned planes.
+    run_one_test(b, slot, "mirror_box_oblique_plane",
+      () -> mirror(box(xyz(2,2,0), 4.0, 4.0, 4.0), u0(), vxyz(1,1,0)),
+      nothing,
+      verify)
+
+    # Two-level nested transforms (move(rotate(...))).
+    run_one_test(b, slot, "move_then_rotate",
+      () -> move(rotate(box(xyz(-1,-1,0), 2.0, 2.0, 2.0), π/4, u0(), vz(1)),
+                 vxyz(5, 0, 0)),
+      nothing,
+      verify)
+
+    # Three-level nested transforms (different order from existing test).
+    run_one_test(b, slot, "rotate_then_move_then_scale",
+      () -> scale(move(rotate(box(xyz(-1,-1,0), 2.0, 2.0, 2.0), π/4, u0(), vz(1)),
+                       vxyz(5, 0, 0)),
+                  1.5, u0()),
+      nothing,
+      verify)
+
+    # Transform a Shape2D (surface).
+    run_one_test(b, slot, "rotate_surface_polygon",
+      () -> rotate(surface_polygon([u0(), xyz(5,0,0), xyz(5,5,0), xyz(0,5,0)]),
+                   π/4, u0(), vy(1)),
+      nothing,
+      verify)
   end

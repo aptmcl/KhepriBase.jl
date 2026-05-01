@@ -68,4 +68,56 @@ stress_revolve(b, reset!, verify) =
                     u0(), vz(1), π/3, 3π/2),
       nothing,
       verify)
+
+    # ── Expanded coverage ────────────────────────────────────────────
+
+    # Negative amplitude (CW revolution).
+    run_one_test(b, slot, "revolve_line_neg_amplitude",
+      () -> revolve(line([xyz(5, 0, 0), xyz(5, 0, 10)]),
+                    u0(), vz(1), 0.0, -π),
+      nothing,
+      verify)
+
+    # Very small amplitude (thin slice).
+    run_one_test(b, slot, "revolve_line_tiny_amplitude",
+      () -> revolve(line([xyz(5, 0, 0), xyz(5, 0, 10)]),
+                    u0(), vz(1), 0.0, 0.05),
+      nothing,
+      verify)
+
+    # Profile far from the axis (large radius revolution).
+    run_one_test(b, slot, "revolve_line_far_from_axis",
+      () -> revolve(line([xyz(20, 0, 0), xyz(20, 0, 5)]),
+                    u0(), vz(1), 0.0, 2π),
+      nothing,
+      verify)
+
+    # Spline profile at varied positions.
+    run_one_test(b, slot, "revolve_spline_offset",
+      () -> revolve(spline([xyz(8,0,0), xyz(10,0,3), xyz(9,0,7), xyz(11,0,10)]),
+                    u0(), vz(1), 0.0, 2π),
+      nothing,
+      verify)
+
+    # Region with a hole, revolved around z-axis (annular cross-section).
+    run_one_test(b, slot, "revolve_region_with_hole",
+      () -> revolve(region(closed_polygonal_path(
+                              [xyz(5,0,0), xyz(7,0,0), xyz(7,0,3), xyz(5,0,3)]),
+                           closed_polygonal_path(
+                              [xyz(5.5,0,0.5), xyz(6.5,0,0.5),
+                               xyz(6.5,0,2.5), xyz(5.5,0,2.5)])),
+                    u0(), vz(1), 0.0, 2π),
+      nothing,
+      verify)
+
+    # Combined start_angle + amplitude variations.
+    for (label, sa, amp) in (("sa_pi6_amp_pi", π/6, π),
+                             ("sa_negpi4_amp_2pi", -π/4, 2π),
+                             ("sa_pi_amp_pi2", π, π/2))
+      run_one_test(b, slot, "revolve_line_$label",
+        () -> revolve(line([xyz(5, 0, 0), xyz(5, 0, 8)]),
+                      u0(), vz(1), sa, amp),
+        nothing,
+        verify)
+    end
   end

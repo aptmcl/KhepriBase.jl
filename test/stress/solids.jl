@@ -188,4 +188,79 @@ stress_solids(b, reset!, verify) =
         nothing,  # rotated cuboid envelope depends on angle
         verify)
     end
+
+    # ── Expanded coverage: oblique CSes, mismatched bases, edge cases ─
+
+    # Box at oblique CS.
+    run_one_test(b, slot, "box_oblique_cs",
+      () -> box(loc_from_o_phi(u0(), π/4), 5.0, 3.0, 4.0),
+      nothing,
+      verify)
+
+    # Sphere off-axis to verify position propagation.
+    run_one_test(b, slot, "sphere_off_axis",
+      () -> sphere(xyz(7, 4, 2), 2.5),
+      (4.5, 9.5, 1.5, 6.5, -0.5, 4.5),
+      verify)
+
+    # Cylinder with horizontal axis (oblique ct::Loc form).
+    run_one_test(b, slot, "cylinder_horizontal",
+      () -> cylinder(u0(), 1.5, xyz(8, 0, 0)),
+      nothing,
+      verify)
+
+    # Cone with extreme aspect (very thin and tall).
+    run_one_test(b, slot, "cone_thin_tall",
+      () -> cone(u0(), 0.5, 30.0),
+      (-0.5, 0.5, -0.5, 0.5, 0.0, 30.0),
+      verify)
+    # Cone with extreme aspect (very wide and short).
+    run_one_test(b, slot, "cone_wide_short",
+      () -> cone(u0(), 10.0, 0.5),
+      (-10.0, 10.0, -10.0, 10.0, 0.0, 0.5),
+      verify)
+
+    # Torus with extreme ratios.
+    run_one_test(b, slot, "torus_thin",
+      () -> torus(u0(), 8.0, 0.3),
+      (-8.3, 8.3, -8.3, 8.3, -0.3, 0.3),
+      verify)
+
+    # Pyramid with non-convex (L-shaped) base.
+    run_one_test(b, slot, "pyramid_concave_L_base",
+      () -> pyramid([xyz(0,0,0), xyz(4,0,0), xyz(4,2,0),
+                     xyz(2,2,0), xyz(2,4,0), xyz(0,4,0)],
+                    xyz(2, 2, 6)),
+      (0.0, 4.0, 0.0, 4.0, 0.0, 6.0),
+      verify)
+
+    # Pyramid frustum with mismatched-vertex top (unusual but legal — the
+    # default emulation should bridge via ngon-on-quads).
+    run_one_test(b, slot, "pyramid_frustum_4_to_4_offset",
+      () -> pyramid_frustum(
+              [u0(), xyz(5,0,0), xyz(5,5,0), xyz(0,5,0)],
+              [xyz(0.5,0.5,5), xyz(4.5,0.5,5),
+               xyz(4.5,4.5,5), xyz(0.5,4.5,5)]),
+      (0.0, 5.0, 0.0, 5.0, 0.0, 5.0),
+      verify)
+
+    # Larger regular_prism vertex counts.
+    for n in (10, 16, 24)
+      run_one_test(b, slot, "regular_prism_n=$n",
+        () -> regular_prism(n, u0(), 4.0, 0.0, 8.0, true),
+        (-4.0, 4.0, -4.0, 4.0, 0.0, 8.0),
+        verify)
+    end
+
+    # Regular pyramid with non-zero base rotation.
+    run_one_test(b, slot, "regular_pyramid_rotated_base",
+      () -> regular_pyramid(6, u0(), 4.0, π/6, 8.0, true),
+      (-4.0, 4.0, -4.0, 4.0, 0.0, 8.0),
+      verify)
+
+    # Box with zero negative dimensions (corner-form auto-corrects).
+    run_one_test(b, slot, "box_corners_negative_dx",
+      () -> box(xyz(5, 0, 0), xyz(0, 4, 3)),
+      (0.0, 5.0, 0.0, 4.0, 0.0, 3.0),
+      verify)
   end

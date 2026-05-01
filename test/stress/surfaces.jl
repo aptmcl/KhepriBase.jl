@@ -170,4 +170,68 @@ stress_surfaces(b, reset!, verify) =
               [[1,2,3,4], [1,2,5], [2,3,5], [3,4,5], [4,1,5]]),
       nothing,
       verify)
+
+    # ── Expanded coverage ──────────────────────────────────────────────
+
+    # Surface circle on a rotated CS — exercises CS-aware surface plane
+    # derivation. Backends that hard-code Vector3d.ZAxis would fail here.
+    for (label, ϕ) in (("rot_pi4", π/4), ("rot_pi3", π/3))
+      run_one_test(b, slot, "surface_circle_oblique_$label",
+        () -> surface_circle(loc_from_o_phi(u0(), ϕ), 3.0),
+        nothing,
+        verify)
+    end
+
+    # Surface arc covering the full circle (Δα = 2π) — should give a disc.
+    run_one_test(b, slot, "surface_arc_full_circle",
+      () -> surface_arc(u0(), 5.0, 0.0, 2π),
+      nothing,
+      verify)
+    # Negative-amplitude arc (CW direction).
+    run_one_test(b, slot, "surface_arc_neg_amplitude",
+      () -> surface_arc(u0(), 5.0, 0.0, -π/2),
+      nothing,
+      verify)
+
+    # Surface frontiers built from 4 connected curves (line+arc+line+arc).
+    run_one_test(b, slot, "surface_4_curves_mixed",
+      () -> surface(line(u0(), xyz(5,0,0)),
+                    arc(xyz(5,0.5,0), 0.5, -π/2, π),
+                    line(xyz(5,1,0), xyz(0,1,0)),
+                    arc(xyz(0,0.5,0), 0.5, π/2, π)),
+      nothing,
+      verify)
+
+    # Surface from a path_sequence — exercises the closed-sequence stroke
+    # path that revealed the b_stroke_unite issue earlier.
+    run_one_test(b, slot, "surface_path_closed_sequence",
+      () -> surface_path(closed_path_sequence(
+              arc_path(u0(), 3.0, 0.0, π),
+              open_polygonal_path([xyz(-3,0,0), xyz(-3,-1,0), xyz(3,-1,0), xyz(3,0,0)]))),
+      nothing,
+      verify)
+
+    # Larger / irregular surface_grid configurations.
+    grid_8x8_wave() = [xyz(i, j, 0.4*sin(i*0.7)*cos(j*0.7)) for i in 0:7, j in 0:7]
+    grid_3x10()   = [xyz(i, j, 0.0) for i in 0:2, j in 0:9]
+    for (label, gen, cu, cv, su, sv) in (("8x8_smooth", grid_8x8_wave, false, false, true, true),
+                                          ("8x8_closed_u_smooth", grid_8x8_wave, true, false, true, true),
+                                          ("3x10_flat", grid_3x10, false, false, false, false))
+      run_one_test(b, slot, "surface_grid_extra_$label",
+        () -> surface_grid(gen(), cu, cv, su, sv),
+        nothing,
+        verify)
+    end
+
+    # Surface_polygon with reverse winding (CW) — some backends invert
+    # normals here.
+    run_one_test(b, slot, "surface_polygon_reverse_winding",
+      () -> surface_polygon([u0(), xyz(0,5,0), xyz(5,5,0), xyz(5,0,0)]),
+      (0.0, 5.0, 0.0, 5.0, 0.0, 0.0),
+      verify)
+    # 20-vertex regular polygon as a surface.
+    run_one_test(b, slot, "surface_polygon_20",
+      () -> surface_polygon([xyz(5cos(2π*i/20), 5sin(2π*i/20), 0) for i in 0:19]),
+      (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+      verify)
   end

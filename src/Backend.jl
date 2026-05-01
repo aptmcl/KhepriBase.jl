@@ -946,17 +946,21 @@ b_revolved_point(b::Backend, profile, p, n, start_angle, amplitude, mat) =
     b_arc(b, loc_from_o_vz(pp, n), distance(pp, q), start_angle, amplitude, mat)
   end
 
-b_revolved_curve(b::Backend, profile, p, n, start_angle, amplitude, mat) = 
+b_revolved_curve(b::Backend, profile, p, n, start_angle, amplitude, mat) =
   let profile = translate(convert(Path, profile), u0()-p),
       pp = loc_from_o_vz(p, n),
       vertices = path_frames(profile),
-      frames = map_division(ϕ -> loc_from_o_phi(pp, start_angle + ϕ), 0, amplitude, ceil(Int, amplitude*10), amplitude < 2pi),
+      # Sample density tracks the magnitude of `amplitude` so negative
+      # amplitudes (CW revolution) get a positive segment count. The
+      # closed-loop check uses |amplitude| ≥ 2π for the same reason.
+      n_segs = max(ceil(Int, abs(amplitude)*10), 4),
+      frames = map_division(ϕ -> loc_from_o_phi(pp, start_angle + ϕ), 0, amplitude, n_segs, abs(amplitude) < 2pi),
       points = hcat(map(frame->on_cs(vertices, frame), frames)...)
     b_surface_grid(
         b,
         points,
         is_closed_path(profile),
-        amplitude >= 2pi,
+        abs(amplitude) >= 2pi,
         is_smooth_path(profile),
         true,
         mat)
@@ -968,7 +972,7 @@ b_revolved_surface(b::Backend, profile, p, n, start_angle, amplitude, mat) =
       inners = inner_paths(profile)
     vcat(b_revolved_curve(b, outer, p, n, start_angle, amplitude, mat),
          [b_revolved_curve(b, inner, p, n, start_angle, amplitude, mat) for inner in inners]...,
-         (amplitude < 2pi ?
+         (abs(amplitude) < 2pi ?
           let pp = loc_from_o_vz(p, n),
               profile = translate(profile, u0()-p),
               frames = map_division(ϕ -> loc_from_o_phi(pp, start_angle + ϕ), 0, amplitude, 1)

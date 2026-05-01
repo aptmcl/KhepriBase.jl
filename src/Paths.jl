@@ -1045,6 +1045,31 @@ convert(::Type{OpenPolygonalPath}, path::ClosedSplinePath) =
     open_polygonal_path(vcat(p.vertices, [p.vertices[1]]))
   end
 
+#=
+PathOps stores a start location plus a sequence of LineOp/ArcOp/etc.
+Without a `convert(::Type{OpenPolygonalPath}, ::PathOps)` method, callers
+that go through the generic `path_vertices(::Path)` fallback hit
+MethodError — most visibly `b_extruded_curve(::Backend, ::Path, ...)`.
+Sample 8 vertices per op (LineOps get a segment, ArcOps get a curved
+sample) and join into one polyline. Avoids the full-length
+`location_at_length` walk because that errors at the exact endpoint of
+closed paths.
+=#
+convert(::Type{OpenPolygonalPath}, path::PathOps) =
+  let vs = Loc[path.start]
+      curr = path.start
+      for op in path.ops
+        seg_len = path_length(op)
+        n_steps = op isa LineOp ? 1 : 8
+        for i in 1:n_steps
+          push!(vs, location_at_length(op, curr, seg_len * i / n_steps))
+        end
+        curr = vs[end]
+      end
+      path.closed && push!(vs, path.start)
+      open_polygonal_path(vs)
+  end
+
 
 curve_interpolator(pts::Locs, closed::Bool) =
   let pts = length(pts) > 2 ? pts : [pts[1], intermediate_loc(pts...), pts[2]]

@@ -95,4 +95,51 @@ stress_loft(b, reset!, verify) =
       () -> loft_ruled([circle(xyz(0, 0, 0), 3.0), circle(xyz(0, 0, 6), 2.0)]),
       nothing,
       verify)
+
+    # ── Expanded coverage ────────────────────────────────────────────
+
+    # 8 cross-section loft (more profile count).
+    run_one_test(b, slot, "loft_8_circles",
+      () -> loft([circle(xyz(0, 0, i), 2.0 + 0.5*sin(i)) for i in 0:7]),
+      nothing,
+      verify)
+
+    # Loft with non-uniform Z spacing.
+    run_one_test(b, slot, "loft_nonuniform_z",
+      () -> loft([circle(xyz(0, 0, 0), 3.0),
+                  circle(xyz(0, 0, 1), 2.5),
+                  circle(xyz(0, 0, 4), 2.0),
+                  circle(xyz(0, 0, 10), 1.5)]),
+      nothing,
+      verify)
+
+    # Loft with translated cross-sections (spine offset, not just radius).
+    run_one_test(b, slot, "loft_offset_centers",
+      () -> loft([circle(xyz(0, 0, 0), 2.0),
+                  circle(xyz(2, 0, 4), 2.0),
+                  circle(xyz(2, 2, 8), 2.0)]),
+      nothing,
+      verify)
+
+    # Loft of regular polygons of differing edge counts (heavy
+    # map_division usage).
+    run_one_test(b, slot, "loft_polys_3_to_8",
+      () -> loft([regular_polygon(3, xyz(0,0,0), 3.0, 0.0, true),
+                  regular_polygon(5, xyz(0,0,3), 3.0, 0.0, true),
+                  regular_polygon(8, xyz(0,0,6), 3.0, 0.0, true)]),
+      nothing,
+      verify)
+
+    # Closed loft of 4 circles arranged in a torus pattern: AutoCAD's
+    # LoftedSurface.CreateLoftedSurface rejects this topology
+    # (eGeneralModelingFailure). Other backends accept it via emulation.
+    # Tested in stress/pathological.jl as a known-rejected input.
+
+    # Loft with 2 rails of different shapes (one straight, one curved).
+    run_one_test(b, slot, "loft_with_mixed_rails",
+      () -> loft([circle(xyz(0, 0, 0), 2.0), circle(xyz(0, 0, 10), 2.0)],
+                 [line([xyz(2, 0, 0), xyz(2, 0, 10)]),
+                  spline([xyz(-2, 0, 0), xyz(-3, 0, 5), xyz(-2, 0, 10)])]),
+      nothing,
+      verify)
   end

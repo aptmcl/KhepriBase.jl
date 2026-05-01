@@ -173,4 +173,62 @@ stress_curves(b, reset!, verify) =
       () -> rectangle(u0(), 5.0, -5.0),
       (0.0, 5.0, -5.0, 0.0, 0.0, 0.0),
       verify)
+
+    # ── Expanded coverage: oblique CS, edge cases ─────────────────────
+
+    # Circle and arc constructed inside a rotated CS — exercises CS-aware
+    # primitive paths (b_circle uses c.cs to derive plane normal).
+    for (label, ϕ) in (("rot_pi4", π/4), ("rot_pi2", π/2), ("rot_pi", π))
+      run_one_test(b, slot, "circle_oblique_$label",
+        () -> circle(loc_from_o_phi(u0(), ϕ), 3.0),
+        nothing,  # rotated-plane bbox depends on the rotation
+        verify)
+    end
+
+    # Arc starting in non-default quadrants and with negative amplitude.
+    for (label, sa, amp) in (("q3_quarter", π, π/2),
+                             ("q4_quarter", 3π/2, π/2),
+                             ("neg_quarter", 0.0, -π/2),
+                             ("neg_half", π, -π))
+      run_one_test(b, slot, "arc_$label",
+        () -> arc(u0(), 5.0, sa, amp),
+        (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+        verify)
+    end
+
+    # Larger regular polygon vertex counts probe approximation thresholds.
+    for n in (12, 20, 100)
+      run_one_test(b, slot, "regular_polygon_n=$n",
+        () -> regular_polygon(n, u0(), 5.0, 0.0, true),
+        (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+        verify)
+    end
+
+    # Spline with explicit end tangents in different directions.
+    run_one_test(b, slot, "spline_end_tangents_orthogonal",
+      () -> spline([u0(), xyz(5, 5, 0), xyz(10, 0, 0)], vy(1), vy(-1)),
+      (0.0, 10.0, 0.0, 5.0, 0.0, 0.0),
+      verify)
+    # Spline with very long tangent vectors (overshoot magnitude).
+    run_one_test(b, slot, "spline_long_tangents",
+      () -> spline([u0(), xyz(5, 5, 0), xyz(10, 0, 0)], vxyz(5, 0, 0), vxyz(5, 0, 0)),
+      nothing,
+      verify)
+    # Closed spline with high vertex count — exercises curve-fit limits.
+    run_one_test(b, slot, "closed_spline_16",
+      () -> closed_spline([xyz(5cos(2π*i/16), 5sin(2π*i/16), 0) for i in 0:15]),
+      (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+      verify)
+
+    # Polygon with many vertices.
+    run_one_test(b, slot, "polygon_16",
+      () -> polygon([xyz(5cos(2π*i/16), 5sin(2π*i/16), 0) for i in 0:15]),
+      (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+      verify)
+
+    # Closed line with mid-vertex at the start (degenerate-ish).
+    run_one_test(b, slot, "closed_line_repeated_start_mid",
+      () -> closed_line([xyz(0,0,0), xyz(5,0,0), xyz(0,0,0), xyz(0,5,0)]),
+      (0.0, 5.0, 0.0, 5.0, 0.0, 0.0),
+      verify)
   end

@@ -69,4 +69,44 @@ stress_sweep(b, reset!, verify) =
                          circular_path(u0(), 0.5))),
       nothing,
       verify)
+
+    # ── Expanded coverage ────────────────────────────────────────────
+
+    # Sweep with negative rotation (CW twist).
+    run_one_test(b, slot, "sweep_helix_neg_rot",
+      () -> sweep(open_spline_path([u0(), xyz(2,2,5), xyz(0,4,10), xyz(-2,2,15)]),
+                  rectangular_path(xyz(-0.6, -0.4, 0), 1.2, 0.8),
+                  -π, 1.0),
+      nothing,
+      verify)
+
+    # Sweep with very large twist (4π = 2 full rotations).
+    run_one_test(b, slot, "sweep_4pi_rot",
+      () -> sweep(open_polygonal_path([u0(), xyz(0,0,30)]),
+                  rectangular_path(xyz(-0.5, -0.3, 0), 1.0, 0.6),
+                  4π, 1.0),
+      nothing,
+      verify)
+
+    # Sweep on a large arc-shaped 2D path.
+    run_one_test(b, slot, "sweep_arc_path_circle_profile",
+      () -> sweep(arc_path(u0(), 10.0, 0.0, π), circular_path(u0(), 0.5)),
+      nothing,
+      verify)
+
+    # Sweep with shrinking scale (thin tip).
+    run_one_test(b, slot, "sweep_helix_shrink",
+      () -> sweep(open_spline_path([u0(), xyz(0,0,5), xyz(0,0,10), xyz(0,0,15)]),
+                  circular_path(u0(), 1.0),
+                  0.0, 0.1),
+      nothing,
+      verify)
+
+    # Sweep with growing scale (cone-like).
+    run_one_test(b, slot, "sweep_growing",
+      () -> sweep(open_polygonal_path([u0(), xyz(0,0,12)]),
+                  circular_path(u0(), 0.3),
+                  0.0, 6.0),
+      nothing,
+      verify)
   end

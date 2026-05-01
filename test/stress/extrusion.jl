@@ -210,4 +210,79 @@ stress_extrusion(b, reset!, verify) =
             end,
       nothing,
       verify)
+
+    # ── Expanded coverage: more rotation angles, holes, edge cases ────
+
+    # Multiple rotation angles for circle profile in oblique CSes.
+    for (label, ϕ) in (("rot_pi6", π/6), ("rot_pi3", π/3),
+                       ("rot_2pi3", 2π/3), ("rot_negpi4", -π/4))
+      run_one_test(b, slot, "extrude_circle_cs_$label",
+        () -> extrusion(circle(loc_from_o_phi(u0(), ϕ), 3.0), vz(5.0)),
+        nothing,
+        verify)
+    end
+
+    # Region with 4 and 5 holes — exercises the multi-hole region path.
+    run_one_test(b, slot, "extrude_region_4_holes",
+      () -> extrusion(region(rectangular_path(xyz(-7,-7,0), 14.0, 14.0),
+                             circular_path(xyz(-3,-3,0), 0.6),
+                             circular_path(xyz(3,-3,0), 0.6),
+                             circular_path(xyz(-3,3,0), 0.6),
+                             circular_path(xyz(3,3,0), 0.6)),
+                      vz(5.0)),
+      (-7.0, 7.0, -7.0, 7.0, 0.0, 5.0),
+      verify)
+    run_one_test(b, slot, "extrude_region_5_holes",
+      () -> extrusion(region(rectangular_path(xyz(-8,-8,0), 16.0, 16.0),
+                             circular_path(xyz(-4,-4,0), 0.5),
+                             circular_path(xyz(4,-4,0), 0.5),
+                             circular_path(xyz(-4,4,0), 0.5),
+                             circular_path(xyz(4,4,0), 0.5),
+                             circular_path(xyz(0,0,0), 0.5)),
+                      vz(5.0)),
+      (-8.0, 8.0, -8.0, 8.0, 0.0, 5.0),
+      verify)
+
+    # Larger regular polygon profiles (12, 24 sides).
+    for n in (12, 24)
+      run_one_test(b, slot, "extrude_regular_polygon_n=$n",
+        () -> extrusion(surface_regular_polygon(n, u0(), 3.0, 0.0, true), vz(5.0)),
+        (-3.0, 3.0, -3.0, 3.0, 0.0, 5.0),
+        verify)
+    end
+
+    # Very small / very tall extrusions.
+    run_one_test(b, slot, "extrude_circle_tiny_height",
+      () -> extrusion(surface_circle(u0(), 3.0), vz(0.01)),
+      (-3.0, 3.0, -3.0, 3.0, 0.0, 0.01),
+      verify)
+    run_one_test(b, slot, "extrude_circle_tall",
+      () -> extrusion(surface_circle(u0(), 3.0), vz(100.0)),
+      (-3.0, 3.0, -3.0, 3.0, 0.0, 100.0),
+      verify)
+
+    # Thin extrusion (tiny circle, normal height).
+    run_one_test(b, slot, "extrude_circle_tiny_radius",
+      () -> extrusion(surface_circle(u0(), 0.05), vz(5.0)),
+      (-0.05, 0.05, -0.05, 0.05, 0.0, 5.0),
+      verify)
+
+    # Path-sequence profile — exercises the b_stroke(::PathSequence) path.
+    run_one_test(b, slot, "extrude_closed_path_sequence",
+      () -> extrusion(closed_path_sequence(
+              arc_path(u0(), 3.0, 0.0, π),
+              open_polygonal_path([xyz(-3,0,0), xyz(-3,-2,0),
+                                   xyz(3,-2,0), xyz(3,0,0)])),
+            vz(5.0)),
+      nothing,
+      verify)
+
+    # PathOps profile — exercises the path-ops dispatch.
+    run_one_test(b, slot, "extrude_closed_path_ops",
+      () -> extrusion(closed_path_ops(u0(), LineOp(vxyz(5,0,0)),
+                                            LineOp(vxyz(0,3,0)),
+                                            LineOp(vxyz(-5,0,0))),
+                     vz(5.0)),
+      (0.0, 5.0, 0.0, 3.0, 0.0, 5.0),
+      verify)
   end
