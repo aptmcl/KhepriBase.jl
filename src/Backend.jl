@@ -345,14 +345,60 @@ b_arc(b::Backend, c, r, α, Δα, mat) =
     void_ref(b) :
     let pts = [c + vpol(r, a, c.cs)
                for a in division(α, α + Δα, max(ceil(Int, Δα*32/2/π), 2), true)]
-      b_spline(b, pts, nothing, nothing, mat)
+      # `false, false` is the proxy default for spline end tangents; backends'
+      # b_spline overrides test `v == false` to mean "no tangent specified".
+      b_spline(b, pts, false, false, mat)
     end
 
 b_ellipse(b::Backend, c, rx, ry, mat) =
   b_closed_spline(b,
     [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
      for ϕ in division(0, 2pi, 64, false)], mat)
-  
+
+#=
+Sample density for elliptic arc/full-ellipse approximations. 64 segments
+around a full circle gives chord-deviation under ~1% at unit radius and
+matches the b_ellipse default — keeping b_elliptic_arc visually
+indistinguishable from a clipped b_ellipse. For arcs covering less than
+the full circle, density scales linearly with amplitude, with a floor of
+8 to avoid coarse splines on very short arcs.
+=#
+"Default segment count per full revolution for elliptic-arc approximation."
+const elliptic_arc_segments = 64
+
+b_elliptic_arc(b::Backend, c, rx, ry, α, Δα, mat) =
+  Δα ≈ 0.0 ?
+    void_ref(b) :
+    let n = max(ceil(Int, abs(Δα) * elliptic_arc_segments / 2 / π), 8),
+        pts = [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
+               for ϕ in division(α, α + Δα, n, true)]
+      b_spline(b, pts, false, false, mat)
+    end
+
+#=
+Surface forms of ellipse / elliptic-arc. `b_surface_ellipse` previously
+deferred to `b_surface_closed_spline`, which is `@bdef` — a backend
+without that override (Rhino, Blender) raised UnimplementedBackendOp
+even though it could form the same shape via `b_surface_polygon`.
+Sample the parametric formula and pass the points to
+`b_surface_polygon` instead, so the chain bottoms out at the most widely
+implemented surface op. The arc form closes the boundary with the two
+radii to the center, producing a closed pie-sector polygon.
+=#
+b_surface_ellipse(b::Backend, c, rx, ry, mat) =
+  b_surface_polygon(b,
+    [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
+     for ϕ in division(0, 2pi, elliptic_arc_segments, false)], mat)
+
+b_surface_elliptic_arc(b::Backend, c, rx, ry, α, Δα, mat) =
+  Δα ≈ 0.0 ?
+    void_ref(b) :
+    let n = max(ceil(Int, abs(Δα) * elliptic_arc_segments / 2 / π), 8),
+        arc_pts = [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
+                   for ϕ in division(α, α + Δα, n, true)]
+      b_surface_polygon(b, vcat([c], arc_pts), mat)
+    end
+
 b_rectangle(b::Backend, c, dx, dy, mat) =
   b_polygon(b, [c, add_x(c, dx), add_xy(c, dx, dy), add_y(c, dy)], mat)
 
@@ -521,11 +567,6 @@ b_surface_arc(b::Backend, c, r, α, Δα, mat) =
          [c + vpol(r, a, c.cs)
           for a in division(α, α + Δα, max(ceil(Int, Δα*32/2/π), 2), true)],
          c, false, mat)
-
-b_surface_ellipse(b::Backend, c, rx, ry, mat) =
-  b_surface_closed_spline(b,
-    [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
-     for ϕ in division(0, 2pi, 64, false)], mat)
 
 @bdef(b_surface_closed_spline(ps, mat))
 
