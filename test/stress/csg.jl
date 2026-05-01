@@ -169,4 +169,71 @@ stress_csg(b, reset!, verify) =
       () -> slice(sphere(u0(), 4.0), xyz(0, 0, 2), vz(1)),
       nothing,
       verify)
+
+    # ── Round 3 expansion: cross-product CSG pairs ───────────────────
+    # All ordered pairs of {sphere, box, cylinder, cone, torus} for each
+    # of {subtraction, intersection, union}. Positions are chosen so
+    # every pair has a *partial* overlap — full containment would yield
+    # empty intersections / null subtractions, which AutoCAD raises as
+    # eEmptyOperand rather than producing a valid (empty) Brep.
+    cross_primitives = [
+      ("sphere",   () -> sphere(xyz(0, 0, 0), 3.0)),
+      ("box",      () -> box(xyz(-1.5, -1.5, -1.5), 5.0, 5.0, 5.0)),
+      ("cylinder", () -> cylinder(xyz(1, 0, -3), 1.5, 6.0)),
+      ("cone",     () -> cone(xyz(-1, 0, -3), 2.5, 5.0)),
+      ("torus",    () -> torus(xyz(2, 0, 0), 2.0, 0.8)),
+    ]
+    for (op_label, op) in (("sub", subtraction),
+                           ("int", intersection),
+                           ("uni", union))
+      for (aname, afn) in cross_primitives, (bname, bfn) in cross_primitives
+        aname == bname && continue  # same-shape pairs already covered above
+        run_one_test(b, slot, "cross_$(op_label)_$(aname)_$(bname)",
+          () -> op(afn(), bfn()),
+          nothing,
+          verify)
+      end
+    end
+
+    # ── Compound CSG: nested boolean expressions ─────────────────────
+
+    # subtract(union(a,b), c): cut a hole through a fused dumbbell
+    run_one_test(b, slot, "compound_sub_union_c",
+      () -> subtraction(
+              union(sphere(xyz(-2,0,0), 2.0), sphere(xyz(2,0,0), 2.0)),
+              cylinder(xyz(0,0,-3), 0.5, 6.0)),
+      nothing,
+      verify)
+    # intersect(union(a,b), c): keep the cap of a union that fits inside c
+    run_one_test(b, slot, "compound_int_union_c",
+      () -> intersection(
+              union(sphere(xyz(-2,0,0), 2.0), sphere(xyz(2,0,0), 2.0)),
+              box(xyz(-3,-3,-3), 6.0, 6.0, 1.0)),
+      nothing,
+      verify)
+    # union(subtract(a,b), c): a hollowed shape combined with another
+    run_one_test(b, slot, "compound_union_sub_c",
+      () -> union(
+              subtraction(sphere(xyz(0,0,0), 3.0),
+                          sphere(xyz(0,0,0), 2.5)),
+              box(xyz(2,-1,-1), 2.0, 2.0, 2.0)),
+      nothing,
+      verify)
+    # subtract(subtract(a,b), c): chained subtractions of different shapes
+    run_one_test(b, slot, "compound_sub_sub_c",
+      () -> subtraction(
+              subtraction(box(xyz(-3,-3,-3), 6.0, 6.0, 6.0),
+                          sphere(xyz(0,0,0), 2.0)),
+              cylinder(xyz(0,0,-4), 1.0, 8.0)),
+      nothing,
+      verify)
+    # 4-deep nesting
+    run_one_test(b, slot, "compound_4_levels",
+      () -> union(
+              subtraction(box(xyz(-3,-3,0), 6.0, 6.0, 4.0),
+                          sphere(xyz(0,0,4), 2.0)),
+              intersection(cylinder(xyz(0,0,0), 2.0, 4.0),
+                           sphere(xyz(0,0,2), 2.5))),
+      nothing,
+      verify)
   end

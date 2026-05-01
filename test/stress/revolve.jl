@@ -120,4 +120,41 @@ stress_revolve(b, reset!, verify) =
         nothing,
         verify)
     end
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Revolve a polygon (closed shape) — produces a hollow solid.
+    run_one_test(b, slot, "revolve_polygon_torus_like",
+      () -> revolve(polygon([xyz(5,0,0), xyz(7,0,0), xyz(7,0,2), xyz(5,0,2)]),
+                    u0(), vz(1), 0.0, 2π),
+      nothing,
+      verify)
+
+    # Revolve with axis at offset point and oblique direction.
+    run_one_test(b, slot, "revolve_line_offset_oblique_axis",
+      () -> revolve(line([xyz(8, 0, 0), xyz(8, 0, 5)]),
+                    xyz(2, 1, 0), vxyz(0, 1, 1), 0.0, 2π),
+      nothing,
+      verify)
+
+    # Revolve a partial circle profile (arc).
+    run_one_test(b, slot, "revolve_arc_partial_profile",
+      () -> revolve(arc(loc_from_o_vz(xyz(6, 0, 3), vy(1)), 1.5, 0.0, π/2),
+                    u0(), vz(1), 0.0, 2π),
+      nothing,
+      verify)
+
+    # Revolve with very long amplitude (multiple full rotations).
+    run_one_test(b, slot, "revolve_line_4pi",
+      () -> revolve(line([xyz(5, 0, 0), xyz(5, 0, 5)]),
+                    u0(), vz(1), 0.0, 4π),
+      nothing,
+      verify)
+
+    # Revolve with combined non-zero start and amplitude.
+    run_one_test(b, slot, "revolve_line_combo_complex",
+      () -> revolve(line([xyz(5, 0, 0), xyz(7, 0, 5)]),
+                    u0(), vz(1), 2π/3, 5π/3),
+      nothing,
+      verify)
   end

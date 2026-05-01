@@ -149,4 +149,65 @@ stress_transforms(b, reset!, verify) =
                    π/4, u0(), vy(1)),
       nothing,
       verify)
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Mirror across z-axis plane.
+    run_one_test(b, slot, "mirror_box_xy_plane",
+      () -> mirror(box(xyz(2,2,2), 4.0, 4.0, 4.0), u0(), vz(1)),
+      nothing,
+      verify)
+    # Mirror across plane through non-origin point.
+    run_one_test(b, slot, "mirror_box_offset_plane",
+      () -> mirror(box(xyz(0,0,0), 4.0, 4.0, 4.0), xyz(5, 0, 0), vx(1)),
+      nothing,
+      verify)
+
+    # 4-deep nested transforms (move(rotate(scale(mirror(...))))).
+    run_one_test(b, slot, "deep_nested_4",
+      () -> move(rotate(scale(mirror(box(u0(), 2.0, 2.0, 2.0), u0(), vx(1)),
+                              1.5, u0()),
+                        π/3, u0(), vz(1)),
+                 vxyz(5, 5, 0)),
+      nothing,
+      verify)
+
+    # Transform applied to compound CSG result.
+    run_one_test(b, slot, "rotate_after_subtract",
+      () -> rotate(subtraction(box(xyz(-2,-2,0), 4.0, 4.0, 4.0),
+                               sphere(xyz(0,0,2), 1.5)),
+                   π/4, u0(), vz(1)),
+      nothing,
+      verify)
+
+    # Move + scale + rotate compound on a torus.
+    run_one_test(b, slot, "move_scale_rotate_torus",
+      () -> move(scale(rotate(torus(u0(), 5.0, 1.5), π/4, u0(), vx(1)),
+                       0.5, u0()),
+                 vxyz(10, 0, 0)),
+      nothing,
+      verify)
+
+    # Multiple successive moves (translation chain).
+    run_one_test(b, slot, "triple_move",
+      () -> move(move(move(sphere(u0(), 2.0), vxyz(3,0,0)),
+                      vxyz(0,3,0)),
+                 vxyz(0,0,3)),
+      nothing,
+      verify)
+
+    # Rotate around an oblique axis through an off-origin point.
+    run_one_test(b, slot, "rotate_around_oblique_offset_axis",
+      () -> rotate(box(xyz(-1,-1,0), 2.0, 2.0, 2.0),
+                   π/3, xyz(5, 5, 0), vxyz(1, 0, 1)),
+      nothing,
+      verify)
+
+    # Scale with explicit non-origin pivot on a sweep result.
+    run_one_test(b, slot, "scale_after_sweep",
+      () -> scale(sweep(open_polygonal_path([u0(), xyz(0,0,10)]),
+                        circular_path(u0(), 0.5)),
+                  0.5, u0()),
+      nothing,
+      verify)
   end

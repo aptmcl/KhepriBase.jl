@@ -234,4 +234,62 @@ stress_surfaces(b, reset!, verify) =
       () -> surface_polygon([xyz(5cos(2π*i/20), 5sin(2π*i/20), 0) for i in 0:19]),
       (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
       verify)
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Surface_polygon with 100 vertices (high-density approximation).
+    run_one_test(b, slot, "surface_polygon_100",
+      () -> surface_polygon([xyz(5cos(2π*i/100), 5sin(2π*i/100), 0) for i in 0:99]),
+      (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+      verify)
+
+    # Surface(c1, ..., c6) frontier from 6 line segments (regular hexagon).
+    # Six lines that close on themselves form a valid closed boundary,
+    # whereas arc-stitched frontiers can fail Region.CreateFromCurves
+    # endpoint-tolerance checks on AutoCAD.
+    run_one_test(b, slot, "surface_6_lines_hexagon",
+      () -> let pts = [xyz(5cos(2π*i/6), 5sin(2π*i/6), 0) for i in 0:5]
+              surface([line(pts[i], pts[mod1(i+1, 6)]) for i in 1:6]...)
+            end,
+      nothing,
+      verify)
+
+    # Surface_circle at varied radii — including very small/large.
+    for (label, r) in (("nano", 0.001), ("kilo", 1000.0))
+      run_one_test(b, slot, "surface_circle_extreme_$label",
+        () -> surface_circle(u0(), r),
+        (-r, r, -r, r, 0.0, 0.0),
+        verify)
+    end
+
+    # Surface_regular_polygon: 100-edge approximation (≈ disc).
+    run_one_test(b, slot, "surface_regular_polygon_100",
+      () -> surface_regular_polygon(100, u0(), 5.0, 0.0, true),
+      (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+      verify)
+
+    # Surface_grid with mixed smooth/closed configurations.
+    grid_5x5 = [xyz(i, j, sin(i*0.3)*cos(j*0.3)) for i in 0:4, j in 0:4]
+    for (cu, cv) in ((true, true), (true, false), (false, true))
+      for (su, sv) in ((true, false), (false, true), (true, true))
+        name = "surface_grid_5x5_extra_cu=$(cu)_cv=$(cv)_su=$(su)_sv=$(sv)"
+        run_one_test(b, slot, name,
+          () -> surface_grid(grid_5x5, cu, cv, su, sv),
+          nothing,
+          verify)
+      end
+    end
+
+    # Surface_ring with extreme inner/outer ratio.
+    run_one_test(b, slot, "surface_ring_thin",
+      () -> surface_ring(u0(), 4.9, 5.0),
+      (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+      verify)
+
+    # Surface from closed_spline_path with many control points.
+    run_one_test(b, slot, "surface_path_dense_spline",
+      () -> surface_path(closed_spline_path(
+              [xyz(5cos(2π*i/30), 5sin(2π*i/30), 0) for i in 0:29])),
+      nothing,
+      verify)
   end

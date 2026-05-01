@@ -263,4 +263,79 @@ stress_solids(b, reset!, verify) =
       () -> box(xyz(5, 0, 0), xyz(0, 4, 3)),
       (0.0, 5.0, 0.0, 4.0, 0.0, 3.0),
       verify)
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Cylinder oriented along each axis-aligned direction.
+    for (label, ct) in (("x", xyz(8, 0, 0)),
+                        ("y", xyz(0, 8, 0)),
+                        ("neg_x", xyz(-8, 0, 0)),
+                        ("neg_y", xyz(0, -8, 0)),
+                        ("neg_z", xyz(0, 0, -8)))
+      run_one_test(b, slot, "cylinder_axis_$label",
+        () -> cylinder(u0(), 1.5, ct),
+        nothing,
+        verify)
+    end
+
+    # Cone variations.
+    run_one_test(b, slot, "cone_offset_apex",
+      () -> cone(u0(), 3.0, xyz(2, 1, 8)),
+      nothing,
+      verify)
+
+    # Sphere chain (10 spheres along x-axis).
+    run_one_test(b, slot, "sphere_chain_10",
+      () -> [sphere(xyz(i*3, 0, 0), 1.0) for i in 0:9],
+      nothing,
+      verify)
+
+    # Pyramid with very tall aspect ratio.
+    run_one_test(b, slot, "regular_pyramid_tall",
+      () -> regular_pyramid(4, u0(), 1.0, 0.0, 50.0, true),
+      (-1.0, 1.0, -1.0, 1.0, 0.0, 50.0),
+      verify)
+
+    # Pyramid with very flat aspect ratio.
+    run_one_test(b, slot, "regular_pyramid_flat",
+      () -> regular_pyramid(8, u0(), 10.0, 0.0, 0.5, true),
+      (-10.0, 10.0, -10.0, 10.0, 0.0, 0.5),
+      verify)
+
+    # Regular prism with high edge counts.
+    for n in (50, 100)
+      run_one_test(b, slot, "regular_prism_n=$n",
+        () -> regular_prism(n, u0(), 5.0, 0.0, 8.0, true),
+        (-5.0, 5.0, -5.0, 5.0, 0.0, 8.0),
+        verify)
+    end
+
+    # Pyramid frustum with non-circular bases.
+    run_one_test(b, slot, "pyramid_frustum_arbitrary_polys",
+      () -> pyramid_frustum(
+              [xyz(0,0,0), xyz(6,0,0), xyz(8,4,0), xyz(2,5,0)],
+              [xyz(2,1,4), xyz(5,1,4), xyz(6,3,4), xyz(2,4,4)]),
+      nothing,
+      verify)
+
+    # Cuboid with all 8 corners on a sphere (irregular solid).
+    run_one_test(b, slot, "cuboid_on_sphere",
+      () -> cuboid(
+              xyz(2, 0, 0), xyz(0, 2, 0), xyz(-2, 0, 0), xyz(0, -2, 0),
+              xyz(1.5, 0, 1.5), xyz(0, 1.5, 1.5),
+              xyz(-1.5, 0, 1.5), xyz(0, -1.5, 1.5)),
+      nothing,
+      verify)
+
+    # Torus with extremely thin tube.
+    run_one_test(b, slot, "torus_very_thin_tube",
+      () -> torus(u0(), 5.0, 0.05),
+      nothing,
+      verify)
+
+    # Cone frustum with tiny top.
+    run_one_test(b, slot, "cone_frustum_tiny_top",
+      () -> cone_frustum(u0(), 5.0, 10.0, 0.05),
+      (-5.0, 5.0, -5.0, 5.0, 0.0, 10.0),
+      verify)
   end

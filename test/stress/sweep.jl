@@ -109,4 +109,39 @@ stress_sweep(b, reset!, verify) =
                   0.0, 6.0),
       nothing,
       verify)
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Sweep along a horizontal arc path.
+    run_one_test(b, slot, "sweep_horizontal_arc_path",
+      () -> sweep(arc_path(u0(), 8.0, 0.0, π),
+                  circular_path(u0(), 0.4)),
+      nothing,
+      verify)
+
+    # Sweep along an S-curve spline path.
+    run_one_test(b, slot, "sweep_s_curve",
+      () -> sweep(open_spline_path([u0(), xyz(2,3,4), xyz(4,-3,8),
+                                    xyz(2,3,12), xyz(0,0,16)]),
+                  rectangular_path(xyz(-0.4,-0.2,0), 0.8, 0.4)),
+      nothing,
+      verify)
+
+    # Sweep with combined large twist and shrink.
+    run_one_test(b, slot, "sweep_4pi_shrink",
+      () -> sweep(open_polygonal_path([u0(), xyz(0,0,20)]),
+                  rectangular_path(xyz(-1.0,-0.5,0), 2.0, 1.0),
+                  4π, 0.2),
+      nothing,
+      verify)
+
+    # Sweep with closed sequence path (loop).
+    run_one_test(b, slot, "sweep_closed_loop_path",
+      () -> sweep(closed_path_sequence(
+                    arc_path(u0(), 5.0, 0.0, π),
+                    open_polygonal_path([xyz(-5,0,0), xyz(-5,-3,0),
+                                         xyz(5,-3,0), xyz(5,0,0)])),
+                  circular_path(u0(), 0.3)),
+      nothing,
+      verify)
   end

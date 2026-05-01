@@ -231,4 +231,64 @@ stress_curves(b, reset!, verify) =
       () -> closed_line([xyz(0,0,0), xyz(5,0,0), xyz(0,0,0), xyz(0,5,0)]),
       (0.0, 5.0, 0.0, 5.0, 0.0, 0.0),
       verify)
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Arc with start_angle outside [0, 2π] — should normalize internally.
+    for (label, sa) in (("neg_pi", -π), ("5pi2", 5π/2), ("3pi", 3π))
+      run_one_test(b, slot, "arc_start_$label",
+        () -> arc(u0(), 5.0, sa, π/2),
+        (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+        verify)
+    end
+
+    # Arc with very large amplitude (more than full revolution).
+    run_one_test(b, slot, "arc_4pi_amplitude",
+      () -> arc(u0(), 5.0, 0.0, 4π),
+      (-5.0, 5.0, -5.0, 5.0, 0.0, 0.0),
+      verify)
+
+    # Arc with very small amplitude.
+    run_one_test(b, slot, "arc_tiny_amplitude",
+      () -> arc(u0(), 5.0, 0.0, 0.001),
+      nothing,
+      verify)
+
+    # Spline with very dense control points (50).
+    run_one_test(b, slot, "spline_50_control_points",
+      () -> spline([xyz(t, sin(t*0.5), 0) for t in range(0, 20, length=50)]),
+      (0.0, 20.0, -1.0, 1.0, 0.0, 0.0),
+      verify)
+
+    # Spline with 3D wave (alternating Z values across integer steps).
+    run_one_test(b, slot, "spline_3d_zigzag",
+      () -> spline([xyz(i, 0, isodd(i) ? 1.0 : 0.0) for i in 0:8]),
+      (0.0, 8.0, 0.0, 0.0, 0.0, 1.0),
+      verify)
+
+    # Closed_spline at rotated CS.
+    run_one_test(b, slot, "closed_spline_oblique_cs",
+      () -> closed_spline([loc_from_o_phi(u0(), π/4) +
+                           vxyz(3cos(2π*i/8), 3sin(2π*i/8), 0)
+                           for i in 0:7]),
+      nothing,
+      verify)
+
+    # Polygon with vertices in 3D plane (tilted).
+    run_one_test(b, slot, "polygon_tilted_3d",
+      () -> polygon([xyz(0,0,0), xyz(5,0,3), xyz(5,4,3), xyz(0,4,0)]),
+      (0.0, 5.0, 0.0, 4.0, 0.0, 3.0),
+      verify)
+
+    # Regular polygon at oblique CS.
+    run_one_test(b, slot, "regular_polygon_oblique_cs",
+      () -> regular_polygon(8, loc_from_o_phi(u0(), π/3), 4.0, 0.0, true),
+      nothing,
+      verify)
+
+    # Rectangle at offset position with explicit corner-form.
+    run_one_test(b, slot, "rectangle_offset_corners",
+      () -> rectangle(xyz(3, 4, 0), xyz(8, 9, 0)),
+      (3.0, 8.0, 4.0, 9.0, 0.0, 0.0),
+      verify)
   end

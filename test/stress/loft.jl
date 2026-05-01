@@ -142,4 +142,45 @@ stress_loft(b, reset!, verify) =
                   spline([xyz(-2, 0, 0), xyz(-3, 0, 5), xyz(-2, 0, 10)])]),
       nothing,
       verify)
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Loft of 16 cross-sections (high count).
+    run_one_test(b, slot, "loft_16_cross_sections",
+      () -> loft([circle(xyz(0, 0, i), 2.0 + 0.3*sin(i*0.5)) for i in 0:15]),
+      nothing,
+      verify)
+
+    # Loft of polygons with very different vertex counts (3 → 30).
+    run_one_test(b, slot, "loft_polys_3_to_30",
+      () -> loft([regular_polygon(3, xyz(0,0,0), 3.0, 0.0, true),
+                  regular_polygon(10, xyz(0,0,4), 3.0, 0.0, true),
+                  regular_polygon(30, xyz(0,0,8), 3.0, 0.0, true)]),
+      nothing,
+      verify)
+
+    # Loft along a curved spine.
+    run_one_test(b, slot, "loft_curved_spine",
+      () -> loft([circle(xyz(0, 0, 0), 2.0),
+                  circle(xyz(2, 0, 3), 2.0),
+                  circle(xyz(4, 2, 6), 2.0),
+                  circle(xyz(2, 4, 9), 2.0),
+                  circle(xyz(0, 6, 12), 2.0)]),
+      nothing,
+      verify)
+
+    # Loft mixed orientations (cross-sections in different planes).
+    run_one_test(b, slot, "loft_mixed_orientations",
+      () -> loft([circle(loc_from_o_phi(xyz(0,0,0), 0.0), 2.0),
+                  circle(loc_from_o_phi(xyz(0,0,5), π/4), 2.0),
+                  circle(loc_from_o_phi(xyz(0,0,10), π/2), 2.0)]),
+      nothing,
+      verify)
+
+    # Loft of two squares of very different sizes (extreme taper).
+    run_one_test(b, slot, "loft_extreme_taper",
+      () -> loft([rectangle(xyz(-5, -5, 0), 10.0, 10.0),
+                  rectangle(xyz(-0.1, -0.1, 10), 0.2, 0.2)]),
+      nothing,
+      verify)
   end

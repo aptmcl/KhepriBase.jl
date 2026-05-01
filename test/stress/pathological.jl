@@ -167,4 +167,40 @@ stress_pathological(b, reset!, verify) =
       () -> sweep(closed_polygonal_path([u0(), xyz(5,0,0),
                                          xyz(5,5,0), xyz(0,0,0)]),
                   circular_path(u0(), 0.3)))
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Loft with a single profile (zero-length).
+    run_pathological_test(b, slot, "loft_one_circle",
+      () -> loft([circle(u0(), 3.0)]))
+
+    # Sphere with negative radius (mathematically invalid).
+    run_pathological_test(b, slot, "sphere_negative_radius",
+      () -> sphere(u0(), -3.0))
+
+    # Cone with zero base radius and zero height.
+    run_pathological_test(b, slot, "cone_all_zero",
+      () -> cone(u0(), 0.0, 0.0))
+
+    # Polygon where all vertices coincide.
+    run_pathological_test(b, slot, "polygon_all_coincident",
+      () -> polygon([u0(), u0(), u0()]))
+
+    # Surface_grid with a 1x1 (single quad).
+    run_pathological_test(b, slot, "surface_grid_1x1",
+      () -> surface_grid([xyz(0,0,0) xyz(1,0,0); xyz(0,1,0) xyz(1,1,0)],
+                         false, false, false, false))
+
+    # Sweep where path and profile are the same path.
+    run_pathological_test(b, slot, "sweep_self_path",
+      () -> sweep(circular_path(u0(), 5.0), circular_path(u0(), 0.3)))
+
+    # Revolve a profile that lies on the axis (degenerate — profile is the axis).
+    run_pathological_test(b, slot, "revolve_profile_on_axis",
+      () -> revolve(line([xyz(0,0,0), xyz(0,0,5)]),
+                    u0(), vz(1), 0.0, 2π))
+
+    # Closed_spline with only 3 points (minimum for a closed spline).
+    run_pathological_test(b, slot, "closed_spline_3_points",
+      () -> closed_spline([xyz(5,0,0), xyz(0,5,0), xyz(-5,0,0)]))
   end

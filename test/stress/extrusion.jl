@@ -285,4 +285,68 @@ stress_extrusion(b, reset!, verify) =
                      vz(5.0)),
       (0.0, 5.0, 0.0, 3.0, 0.0, 5.0),
       verify)
+
+    # ── Round 3 expansion ───────────────────────────────────────────
+
+    # Multi-step oblique vectors with various profile types.
+    for (pname, pfn) in (("circle", () -> surface_circle(u0(), 2.0)),
+                          ("rect", () -> surface_rectangle(xyz(-2,-1,0), 4.0, 2.0)),
+                          ("pgn", () -> surface_polygon([u0(), xyz(3,0,0),
+                                                          xyz(2,3,0), xyz(0,2,0)])))
+      for (vlabel, v) in (("oblique_xyz", vxyz(1.5, 2.5, 5.0)),
+                          ("oblique_neg", vxyz(-1.0, -2.0, 6.0)),
+                          ("oblique_steep", vxyz(0.5, 0.5, 12.0)))
+        run_one_test(b, slot, "extrude_$(pname)_$(vlabel)",
+          () -> extrusion(pfn(), v),
+          nothing,
+          verify)
+      end
+    end
+
+    # Region with 6 holes — exercises larger hole count.
+    run_one_test(b, slot, "extrude_region_6_holes",
+      () -> extrusion(region(rectangular_path(xyz(-9,-9,0), 18.0, 18.0),
+                             [circular_path(xyz(6cos(2π*i/6), 6sin(2π*i/6), 0), 0.6)
+                              for i in 0:5]...),
+                      vz(5.0)),
+      (-9.0, 9.0, -9.0, 9.0, 0.0, 5.0),
+      verify)
+
+    # Region with one outer + 8 holes in a grid.
+    run_one_test(b, slot, "extrude_region_8_holes",
+      () -> extrusion(region(rectangular_path(xyz(-10,-10,0), 20.0, 20.0),
+                             [circular_path(xyz(-6 + 4*(i%3), -6 + 4*(i÷3), 0), 0.5)
+                              for i in 0:7]...),
+                      vz(5.0)),
+      (-10.0, 10.0, -10.0, 10.0, 0.0, 5.0),
+      verify)
+
+    # Extrusion with explicit material.
+    run_one_test(b, slot, "extrude_circle_explicit_material",
+      () -> extrusion(surface_circle(u0(), 3.0), vz(5.0),
+                      u0(), material(base_color=rgba(0.8, 0.2, 0.2, 1.0))),
+      (-3.0, 3.0, -3.0, 3.0, 0.0, 5.0),
+      verify)
+
+    # Extrusion of multi-edge regular polygon at oblique CS.
+    run_one_test(b, slot, "extrude_octagon_oblique_cs",
+      () -> extrusion(surface_regular_polygon(8, loc_from_o_phi(u0(), π/4),
+                                              3.0, 0.0, true),
+                      vz(5.0)),
+      nothing,
+      verify)
+
+    # Extrusion of an arc-segment (open curve, becomes a ribbon).
+    run_one_test(b, slot, "extrude_arc_segment_ribbon",
+      () -> extrusion(arc(u0(), 5.0, 0.0, π/2), vz(5.0)),
+      (0.0, 5.0, 0.0, 5.0, 0.0, 5.0),
+      verify)
+
+    # Extrusion of polyline with sharp corners.
+    run_one_test(b, slot, "extrude_polyline_sharp",
+      () -> extrusion(line([xyz(0,0,0), xyz(5,0,0), xyz(5,3,0),
+                            xyz(0,3,0), xyz(0,0,0)]),
+                      vz(4.0)),
+      (0.0, 5.0, 0.0, 3.0, 0.0, 4.0),
+      verify)
   end
