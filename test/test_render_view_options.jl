@@ -112,7 +112,10 @@ end
 
   @test length(_mock_render_calls[]) == 1
   c = _mock_render_calls[][1]
-  @test c.path == "/tmp/khepri_test_no_opts.png"
+  # b_render_view runs prepare_for_saving_file → normpath, which on Windows
+  # rewrites "/tmp/..." to "\tmp\...". Compare via normpath so the test
+  # asserts the canonical path on both platforms.
+  @test c.path == normpath("/tmp/khepri_test_no_opts.png")
   @test c.width == render_width()   # took default
   @test c.kind == render_kind()
 end
