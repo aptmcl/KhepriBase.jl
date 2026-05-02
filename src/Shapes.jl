@@ -1343,9 +1343,26 @@ being the marching cubes the most popular one.
 
 @defshape(Shape3D, isosurface, frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(+1,+1,+1)])
 
-@defshape(Shape1D, extruded_point, profile::PointPath=point_path(), v::Vec=vz(1), cb::Loc=u0())
-@defshape(Shape2D, extruded_curve, profile::Path=circular_path(), v::Vec=vz(1), cb::Loc=u0())
-@defshape(Shape3D, extruded_surface, profile::Region=region(circular_path()), v::Vec=vz(1), cb::Loc=u0())
+#=
+The profile fields below are deliberately Union types instead of plain Path /
+Region. With a strictly-typed field, the @defproxy constructor would call
+`convert(Path, profile)` (resp. `convert(Region, profile)`), which deletes the
+input shape and rebuilds an equivalent Path/Region via `shape_path`/
+`shape_region`. That conversion loses native references and forces the default
+fallback in Backend.jl to use surface_grid sampling — which (a) drops the
+backend-native sweep/extrude/revolve and (b) breaks for Shape2D inputs that
+have no `shape_path` method (e.g. UnitedSurfaces from `union(surface_circles)`
+in map30-04b/`pilar_circulos_radiais`).
+
+Backends that can build natively from a shape proxy override
+`b_extruded_*(::Shape*, ...)` (see KhepriAutoCAD/src/AutoCAD.jl line 832 and
+KhepriRhino/src/Rhino.jl line 579) and walk the existing refs via `map_ref`.
+Backends without such overrides still see Path/Region inputs through the
+default fallback chain.
+=#
+@defshape(Shape1D, extruded_point, profile::Union{PointPath,Shape0D}=point_path(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape2D, extruded_curve, profile::Union{Path,Shape1D}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape3D, extruded_surface, profile::Union{Region,Shape2D}=region(circular_path()), v::Vec=vz(1), cb::Loc=u0())
 
 extrusion(profile, h::Real, args...; kargs...) = extrusion(profile, vz(h), args...; kargs...)
 extrusion(profile, v::Vec, args...; kargs...) =
@@ -1359,9 +1376,12 @@ extrusion(profile, v::Vec, args...; kargs...) =
     error("Profile is neither a point nor a curve nor a surface")
   end
 
-@defshape(Shape1D, swept_point, path::Path=circular_path(), profile::Path=point_path(), rotation::Real=0, scale::Real=1)
-@defshape(Shape2D, swept_curve, path::Path=circular_path(), profile::Path=circular_path(), rotation::Real=0, scale::Real=1)
-@defshape(Shape3D, swept_surface, path::Path=circular_path(), profile::Region=region(circular_path()), rotation::Real=0, scale::Real=1)
+# Sweep mirrors extrusion: Union types let proxies retain Shape inputs so that
+# backend overrides keyed on `Shape1D`/`Shape2D` (AutoCAD line 870, Rhino line
+# 619) reach the native plugin sweep without re-realizing through path frames.
+@defshape(Shape1D, swept_point, path::Union{Path,Shape1D}=circular_path(), profile::Union{Path,Shape0D}=point_path(), rotation::Real=0, scale::Real=1)
+@defshape(Shape2D, swept_curve, path::Union{Path,Shape1D}=circular_path(), profile::Union{Path,Shape1D}=circular_path(), rotation::Real=0, scale::Real=1)
+@defshape(Shape3D, swept_surface, path::Union{Path,Shape1D}=circular_path(), profile::Union{Region,Shape2D}=region(circular_path()), rotation::Real=0, scale::Real=1)
 
 sweep(path, profile, args...; kargs...) =
   if profile isa PointPath || is_point(profile)
@@ -1529,6 +1549,53 @@ The runtime dimension is recovered via `csg_dim` below.
 @defshape(Shape3D, intersected_solids, source::Shape=sphere(), mask::Shape=box())
 @defshape(Shape2D, united_surfaces, source::Shape=surface_circle(), mask::Shape=surface_rectangle())
 @defshape(Shape3D, united_solids, source::Shape=sphere(), mask::Shape=box())
+
+#=
+Path of a CSG surface proxy. UnitedSurfaces / SubtractedSurfaces /
+IntersectedSurfaces represent CSG operations on 2D surfaces and have no
+single boundary path: a union of two disjoint discs is a 2D area with two
+outer loops; a union of overlapping discs is one region with a merged outer;
+a subtraction can produce regions with holes or carve a region into multiple
+pieces; an intersection can produce nothing or many pieces. None of these
+maps cleanly to a Khepri `Path` (a 1-D closed loop) or a `Region` (one outer
++ holes).
+
+We return a `PathSet` of the operand boundaries — semantically "a set of
+independent paths." This is correct when the resulting topology is "list of
+disjoint outer boundaries" (the common case for `union(surface_circle,
+surface_circle, ...)` of non-overlapping circles, e.g. map30-04b
+`pilar_circulos_radiais`). It is **incorrect** when operands overlap or when
+the operation introduces holes — `convert(ClosedPath, ::PathSet)` then
+collapses the set via `subtract_paths`, treating the first as outer and the
+rest as holes (Paths.jl line 1115), which silently produces wrong geometry.
+
+A correct fix would require a `MultiRegion` type (a vector of Regions, each
+its own outer + holes) and downstream support in `b_extruded_surface`,
+`b_swept_surface`, and friends. Until then, backends with a native CSG
+operation (AutoCAD, Rhino) override `b_united_surfaces` to walk the operand
+refs directly via `map_ref` and bypass this conversion entirely (see
+`KhepriAutoCAD/src/AutoCAD.jl` `b_united_surfaces(::ACAD)`); this
+shape_path fallback is only exercised by backends that have neither a
+native CSG nor a Shape2D-aware extrude (Blender's mesh-based pipeline).
+=#
+#=
+Recursive `shape_path` on nested CSG proxies (e.g. `union(c0, c1, ..., c5)`
+expands to `UnitedSurfaces(UnitedSurfaces(...), c5)` 5 levels deep) produces
+nested PathSets, but `convert(ClosedPath, ::PathSet)` only knows how to fold
+over flat path lists — it raises `Cannot convert PathSet to
+ClosedPolygonalPath` when an inner element is itself a PathSet. We flatten
+to a single-level path_set so the foldl-via-subtract_paths conversion can
+proceed.
+=#
+flatten_paths(p::PathSet) = mapreduce(flatten_paths, vcat, p.paths; init=Path[])
+flatten_paths(p::Path) = Path[p]
+
+shape_path(s::UnitedSurfaces) =
+  path_set(flatten_paths(shape_path(s.source))..., flatten_paths(shape_path(s.mask))...)
+shape_path(s::SubtractedSurfaces) =
+  path_set(flatten_paths(shape_path(s.source))..., flatten_paths(shape_path(s.mask))...)
+shape_path(s::IntersectedSurfaces) =
+  path_set(flatten_paths(shape_path(s.source))..., flatten_paths(shape_path(s.mask))...)
 
 #=
 Effective dimension of a shape for boolean dispatch. Unwraps transformation

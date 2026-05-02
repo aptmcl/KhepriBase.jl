@@ -84,6 +84,7 @@ const CATEGORY_Y = Dict{Symbol,Float64}(
   :csg          => 2300.0,
   :transforms   => 2550.0,
   :pathological => 2800.0,
+  :exercises    => 3100.0,
 )
 
 # ── Unimplemented detection (mirrors VisualTests.jl) ───────────────────
@@ -234,7 +235,7 @@ slot allocation, so the layout stays compact when running a subset.
 =#
 const CATEGORIES = Symbol[
   :curves, :surfaces, :solids, :extrusion, :sweep, :revolve,
-  :loft, :csg, :transforms, :pathological,
+  :loft, :csg, :transforms, :pathological, :exercises,
 ]
 
 should_run(category, skip) = !(category in skip)
@@ -255,6 +256,7 @@ function run_stress_tests(b::Backend;
     should_run(:csg, skip)          && stress_csg(b, reset!, verify)
     should_run(:transforms, skip)   && stress_transforms(b, reset!, verify)
     should_run(:pathological, skip) && stress_pathological(b, reset!, verify)
+    should_run(:exercises, skip)    && stress_exercises(b, reset!, verify)
   end
 end
 
@@ -269,6 +271,7 @@ stress_loft(b, reset!, verify)         = error("stress_loft not loaded")
 stress_csg(b, reset!, verify)          = error("stress_csg not loaded")
 stress_transforms(b, reset!, verify)   = error("stress_transforms not loaded")
 stress_pathological(b, reset!, verify) = error("stress_pathological not loaded")
+stress_exercises(b, reset!, verify)    = error("stress_exercises not loaded")
 
 include("stress/curves.jl")
 include("stress/surfaces.jl")
@@ -280,5 +283,6 @@ include("stress/loft.jl")
 include("stress/csg.jl")
 include("stress/transforms.jl")
 include("stress/pathological.jl")
+include("stress/exercises.jl")
 
 end # module BackendStressTests

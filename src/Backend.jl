@@ -882,6 +882,28 @@ b_extruded_curve(b::Backend, profile::PathSequence, v, cb, mat) =
 b_extruded_curve(b::Backend, profile::Path, v, cb, mat) =
   b_extruded_curve(b, convert(OpenPolygonalPath, profile), v, cb, mat)
 
+#=
+Default fallbacks for Shape* profile inputs when no backend-specific override
+exists. The proxy field types Union{Path,Shape1D}/Union{Region,Shape2D} let
+backends with a native shape extrusion (AutoCAD, Rhino — via map_ref over the
+existing refs) bypass conversion entirely. Backends without those overrides
+still need a working fallback path: these methods convert via shape_path /
+shape_region (which deletes the source shape) and dispatch on the Path/Region
+body of the operation.
+=#
+b_extruded_curve(b::Backend, profile::Shape1D, v, cb, mat) =
+  b_extruded_curve(b, convert(Path, profile), v, cb, mat)
+b_extruded_surface(b::Backend, profile::Shape2D, v, cb, bmat, tmat, smat) =
+  b_extruded_surface(b, convert(Region, profile), v, cb, bmat, tmat, smat)
+b_swept_curve(b::Backend, path, profile::Shape1D, rotation, scaling, mat) =
+  b_swept_curve(b, path, convert(Path, profile), rotation, scaling, mat)
+b_swept_curve(b::Backend, path::Shape1D, profile::Path, rotation, scaling, mat) =
+  b_swept_curve(b, convert(Path, path), profile, rotation, scaling, mat)
+b_swept_surface(b::Backend, path, profile::Shape2D, rotation, scaling, mat) =
+  b_swept_surface(b, path, convert(Region, profile), rotation, scaling, mat)
+b_swept_surface(b::Backend, path::Shape1D, profile::Region, rotation, scaling, mat) =
+  b_swept_surface(b, convert(Path, path), profile, rotation, scaling, mat)
+
 b_loft(b::Backend, profiles, closed, smooth, mat) =
   let ptss = path_vertices.(profiles),
     n = mapreduce(length, max, ptss),
