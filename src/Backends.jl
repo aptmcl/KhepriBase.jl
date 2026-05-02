@@ -85,54 +85,80 @@ abstract type RemoteBackend{K,T} <: Backend{K,T} end
 backend_name(b::RemoteBackend) = b.name
 
 
+#=
+Discard all state whose lifetime is tied to a single C# Processor instance:
+
+- remote opcodes — assigned by `ProvideOperation` per-Processor; an integer
+  cached from a prior Processor will dispatch to the wrong handler in a fresh
+  one (silent corruption, since opcodes are just ints with no fingerprint).
+- shape/material/layer refs — backend-side handles only valid for the C#
+  session that issued them.
+- family refs — same lifetime as the refs above.
+
+This is called from every path that ends a session (`reset_backend`,
+`retire_dead_backend`) AND from `connection` after a fresh socket is
+established. The latter is the load-bearing one: it makes "if the connection
+is new, the session state is fresh" hold by construction, which closes the
+silent-opcode-drift failure mode where a teardown path forgot to clear.
+
+Idempotent: calling it twice (e.g., in reset_backend then again on the next
+connection) is a no-op the second time.
+
+See also: `connection`, `reset_backend`, `retire_dead_backend`.
+=#
+discard_session_state!(b::RemoteBackend) =
+  begin
+    for f in b.remote
+      reset_opcode(f)
+    end
+    empty!(b.refs)
+    invalidate_family_refs(b)
+  end
+
 # There is a protocol for retrieving the connection
 connection(b::RemoteBackend) =
   begin
     if ismissing(b.connection)
-	    before_connecting(b)
+      before_connecting(b)
       b.connection = start_connection(b)
-	    after_connecting(b)
+      # Must run before after_connecting: hooks like set_material and
+      # set_backend_family populate b.refs in the new session.
+      discard_session_state!(b)
+      after_connecting(b)
     end
-	  b.connection
+    b.connection
   end
 
 #=
-There is a protocol to reset the connection
-It also envolves reseting several resources that are affected such materials, layers, families, etc.
+Teardown layers:
+
+- close_connection!: transport-level — close the socket, mark the field
+  missing. No knowledge of session state.
+- reset_backend: explicit user reset. Discards session state and closes the
+  transport, but leaves the backend in current_backends() so the next op
+  reconnects automatically.
+- retire_dead_backend: auto-recovery on IOError/EOFError mid-RPC. Same as
+  reset_backend, but also removes the backend from current_backends() — the
+  user must explicitly re-add it to use it again.
 =#
 
-reset_backend(b::RemoteBackend) =
-  let c = b.connection
-    for f in b.remote
-      reset_opcode(f)
-    end
-    invalidate_family_refs(b)
-    empty!(b.refs)
-    b.connection = missing
-    try close(c) catch end
-  end
-
-#=
-When a remote backend dies (e.g., the application is closed or rebuilt),
-any operation on it throws an IOError. Instead of letting this error
-propagate and leaving a dead backend in current_backends(), we catch it
-at the broadcast points (maybe_realize, @defcbs) and automatically remove
-the dead backend. try/catch is zero-cost in Julia when no exception is
-thrown, so this has no performance impact in normal operation.
-=#
 close_connection!(b::RemoteBackend) =
   begin
     try close(b.connection) catch end
     b.connection = missing
   end
 
+reset_backend(b::RemoteBackend) =
+  begin
+    discard_session_state!(b)
+    close_connection!(b)
+  end
+
 retire_dead_backend(b::RemoteBackend) =
   begin
     @warn "Backend $(backend_name(b)) disconnected. Removing from active backends."
     delete_global_backend(b)
-    for f in b.remote
-      reset_opcode(f)
-    end
+    discard_session_state!(b)
     close_connection!(b)
   end
 
