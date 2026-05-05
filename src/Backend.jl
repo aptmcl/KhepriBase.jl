@@ -340,8 +340,21 @@ b_closed_spline(b::Backend, ps, mat) =
 b_circle(b::Backend, c, r, mat) =
   b_closed_spline(b, regular_polygon_vertices(32, c, r, 0, true), mat)
 
+#=
+Guard against degenerate arcs (zero or near-zero amplitude). The original
+`Δα ≈ 0.0` only catches exact-zero amplitude (Julia's default `≈` against 0
+is essentially equality), so an arc whose amplitude is small but non-zero
+floats through to `b_spline` with N coincident sample points, where the
+default Dierckx-based `curve_interpolator` raises "1<=k<=5, x[1]<x[2]<...".
+
+The chord length r·|Δα| is the linear span the arc would render. If that's
+below `coincidence_tolerance()` the arc is visually a single point and we
+emit `void_ref(b)` instead of trying to fit a spline through near-coincident
+samples. Surfaced by `recurso_2024_quadrado_arcos` whose `pi/2 - 2*acos(s/r)`
+formula evaluates to ≈ 1e-16 at the last iteration (r = √2·s).
+=#
 b_arc(b::Backend, c, r, α, Δα, mat) =
-  Δα ≈ 0.0 ?
+  abs(Δα)*r < coincidence_tolerance() ?
     void_ref(b) :
     let pts = [c + vpol(r, a, c.cs)
                for a in division(α, α + Δα, max(ceil(Int, Δα*32/2/π), 2), true)]
@@ -1003,6 +1016,35 @@ b_revolved_surface(b::Backend, profile, p, n, start_angle, amplitude, mat) =
           end :
           new_refs(b)))
   end
+
+#=
+Default `b_thicken` for backends without a native shell-creation primitive
+(GL, Shaders, Blender, ...). It walks the wrapped shape's existing refs via
+`map_ref` and returns them unchanged — visually a single-sided surface
+rather than a closed shell, but enough to keep the proxy realized and the
+surrounding test machinery happy. Backends with a native Thicken (AutoCAD,
+Rhino) override `realize(b, s::Thicken)` directly and bypass this fallback.
+A future enhancement could emit the offset twin surfaces and connecting
+side-strip explicitly here, but for the renderer-only backends the visual
+gain doesn't justify the code; mesh-based BIM backends (Blender) would
+benefit and could override on top of this default.
+=#
+#=
+The `@defproxy`-generated `realize(b, s::Thicken)` body is
+`b_thicken(b, ref_value(b, s.shape), ref_value(b, s.thickness))`, so the
+`shape` parameter here is already the resolved ref value (a `T` or a
+`Vector{T}` for the backend's ref type), not the source `Proxy`. Backends
+with a native shell-creation primitive (AutoCAD, Rhino) override
+`realize(b, s::Thicken)` directly and bypass this default.
+
+The default just returns the wrapped refs unchanged: the `Thicken` proxy
+inherits the source shape's geometry, visually a single-sided surface
+rather than a closed shell. For renderers (GL, Shaders) that's fine; for
+mesh-based BIM backends an offset-shell implementation would be a strict
+improvement and can override this on top.
+=#
+public b_thicken
+b_thicken(b::Backend, shape, thickness) = shape
 
 
 # Booleans

@@ -479,6 +479,38 @@ path_length(path::ArcPath) = path.radius*abs(path.amplitude)
 path_length(path::RectangularPath) = 2*(path.dx + path.dy)
 path_length(path::OpenPolygonalPath) = path_length(path.vertices)
 path_length(path::ClosedPolygonalPath) = path_length(path.vertices) + distance(path.vertices[end], path.vertices[1])
+
+#=
+Spline path lengths are computed by polylinizing the spline at the global
+`path_smoothness_segments()` density and summing the resulting polyline.
+The result is a lower bound on the true (continuously parametrized) arc
+length but converges as `path_smoothness_segments()` grows; for the
+tessellation densities the rest of the framework already uses, the
+discrepancy is well under `coincidence_tolerance()`.
+
+Without these, generic backends (Blender, GL, Shaders, ...) that fall
+through to `b_revolved_*`'s path-frame chain raised
+`MethodError: no method matching path_length(::OpenSplinePath)` whenever
+a `revolve(spline_shape, …)` got promoted through `convert(Path, ::Spline)`.
+=#
+path_length(path::OpenSplinePath) =
+  path_length(convert(OpenPolygonalPath, path).vertices)
+path_length(path::ClosedSplinePath) =
+  let vs = convert(ClosedPolygonalPath, path).vertices
+    path_length(vs) + distance(vs[end], vs[1])
+  end
+
+# Same delegation strategy for arc-length lookup. Without these, the
+# revolve fallback path (`b_revolved_curve`'s `path_frames` →
+# `path_interpolated_frames` → `location_at(path, t)` for t in [0,1]) is OK,
+# but `path_start` / `path_end` and any caller that drives the spline by
+# arc length (e.g. `subpath`, `length_at_location`) raise the same kind of
+# `MethodError` `path_length` did. Polylinizing first is consistent with
+# what `path_length(::SplinePath)` already does.
+location_at_length(path::OpenSplinePath, d::Real) =
+  location_at_length(convert(OpenPolygonalPath, path), d)
+location_at_length(path::ClosedSplinePath, d::Real) =
+  location_at_length(convert(ClosedPolygonalPath, path), d)
 path_length(ps::Locs) =
   let p = ps[1]
       l = 0.0
