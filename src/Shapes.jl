@@ -1479,7 +1479,7 @@ b_loft_surfaces(b::Backend{K,T}, profiles, rails, ruled, closed, mat) where {K,T
       top = b_surface(b, paths[begin], mat),
       sides = b_loft(b, paths, closed, ! ruled, mat),
       bottom = b_surface(b, paths[end], mat)
-    T[top, (sides isa Vector ? sides : [sides])..., bottom]
+    b_solidify(b, T[top, (sides isa Vector ? sides : [sides])..., bottom])
   end
 
 # THIS SHOULD BE TYPE-PARAMETRIC. Moving a Shape0D should return a Shape0D, etc

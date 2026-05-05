@@ -885,10 +885,11 @@ b_extruded_surface(b::Backend, profile, v, cb, mat) =
 b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
   let outer = outer_path(profile),
       inners = inner_paths(profile)
-    vcat(b_extruded_curve(b, outer, v, cb, smat),
-         [b_extruded_curve(b, inner, v, cb, smat) for inner in inners]...,
-         b_surface(b, path_on(profile, cb), bmat),
-         b_surface(b, translate(path_on(profile, cb), v), tmat))
+    b_solidify(b,
+      vcat(b_extruded_curve(b, outer, v, cb, smat),
+           [b_extruded_curve(b, inner, v, cb, smat) for inner in inners]...,
+           b_surface(b, path_on(profile, cb), bmat),
+           b_surface(b, translate(path_on(profile, cb), v), tmat)))
   end
 b_extruded_curve(b::Backend, profile::PathSequence, v, cb, mat) =
   vcat([b_extruded_curve(b, subprofile, v, cb, mat) for subprofile in profile.paths]...)
@@ -936,16 +937,17 @@ b_sweep(b::Backend, path, profile::Region, rotation, scaling, mat) =
       inners = inner_paths(profile),
       frames = path_interpolated_frames(path),
       frames = rotation == 0 ?
-        frames : 
+        frames :
         [loc_from_o_phi(frame, phi) for (frame, phi) in zip(frames, map_division(identity, 0, rotation, length(frames)-1))],
       profiles = map_division(s->scale(profile, s, u0()), 1, scaling, length(frames)-1)
-    vcat(b_sweep(b, path, outer, rotation, scaling, mat),
-         [b_sweep(b, path, inner, rotation, scaling, mat) for inner in inners]...,
-         # HACK
-         # If the final profile coincides with the first, then it doesn't make sense
-         # to create the closing surfaces
-         b_surface(b, path_on(profiles[1], frames[1]), mat),
-         b_surface(b, path_on(profiles[end], frames[end]), mat))
+    b_solidify(b,
+      vcat(b_sweep(b, path, outer, rotation, scaling, mat),
+           [b_sweep(b, path, inner, rotation, scaling, mat) for inner in inners]...,
+           # HACK
+           # If the final profile coincides with the first, then it doesn't make sense
+           # to create the closing surfaces
+           b_surface(b, path_on(profiles[1], frames[1]), mat),
+           b_surface(b, path_on(profiles[end], frames[end]), mat)))
   end
 
 b_sweep(b::Backend, path, profile, rotation, scaling, mat) =
@@ -1005,16 +1007,17 @@ b_revolved_surface(b::Backend, profile, p, n, start_angle, amplitude, mat) =
   let profile = convert(Region, profile),
       outer = outer_path(profile),
       inners = inner_paths(profile)
-    vcat(b_revolved_curve(b, outer, p, n, start_angle, amplitude, mat),
-         [b_revolved_curve(b, inner, p, n, start_angle, amplitude, mat) for inner in inners]...,
-         (abs(amplitude) < 2pi ?
-          let pp = loc_from_o_vz(p, n),
-              profile = translate(profile, u0()-p),
-              frames = map_division(ϕ -> loc_from_o_phi(pp, start_angle + ϕ), 0, amplitude, 1)
-           [b_surface(b, path_on(profile, frames[1]), mat),
-            b_surface(b, path_on(profile, frames[end]), mat)]
-          end :
-          new_refs(b)))
+    b_solidify(b,
+      vcat(b_revolved_curve(b, outer, p, n, start_angle, amplitude, mat),
+           [b_revolved_curve(b, inner, p, n, start_angle, amplitude, mat) for inner in inners]...,
+           (abs(amplitude) < 2pi ?
+            let pp = loc_from_o_vz(p, n),
+                profile = translate(profile, u0()-p),
+                frames = map_division(ϕ -> loc_from_o_phi(pp, start_angle + ϕ), 0, amplitude, 1)
+             [b_surface(b, path_on(profile, frames[1]), mat),
+              b_surface(b, path_on(profile, frames[end]), mat)]
+            end :
+            new_refs(b))))
   end
 
 #=
