@@ -1788,7 +1788,13 @@ _b_wall_no_openings_impl(b::Backend, w_path, r_path, l_path, w_height, lmat, rma
           end
         end
       end
-      refs
+      # Why: wall faces emit as four quad strips (+ optional end caps),
+      # each a separate ref. Backends that distinguish solids from
+      # surface collections (e.g. Unity, where quad strips don't carry
+      # colliders) need to fold this back into one solid; b_solidify is
+      # that hook. Default (Backend.jl:665) is identity, so backends that
+      # already produce per-surface output stay unchanged.
+      b_solidify(b, refs)
     end
 
 b_wall_no_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, family) =
@@ -1944,7 +1950,11 @@ _b_wall_with_openings_impl(b::Backend, w_path, w_height, l_thickness, r_thicknes
           _emit_wall_face_rects!(refs, b, l_vs, w_height, openings_in_segment, lmat, true)
         end
       end
-      refs
+      # See no-openings variant above for why we solidify here. With
+      # openings the accumulator can carry per-segment top strips, end
+      # caps, jambs, and rectangle pieces around each opening — still
+      # one wall conceptually, so we fold the lot into one solid.
+      b_solidify(b, refs)
     end
 
 #=
