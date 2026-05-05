@@ -8,3 +8,6 @@
 *~
 *.bak
 *.tmp
+
+# Local HDRI / texture bundle — large binary asset, not part of source.
+/resources.zip
