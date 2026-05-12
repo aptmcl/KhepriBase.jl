@@ -1555,7 +1555,7 @@ b_unhighlight_all_refs(b::Backend) =
 
 # BIM
 public b_slab, b_roof, b_ceiling, b_beam, b_column, b_free_column, b_wall, b_curtain_wall,
-       b_railing, b_ramp, b_stair, b_spiral_stair, b_stair_landing,
+       b_railing, b_ramp, b_stair, b_spiral_stair, b_stair_landing, b_panel,
        b_wall_no_openings, b_wall_with_openings, WallOpening
 
 #=

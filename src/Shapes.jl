@@ -931,7 +931,7 @@ b_stroke(b::Backend, path::Shape, mat) =
 
 
 # This might be usable, so
-public @defproxy, realize, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
+public @defproxy, realize, realized, Shape0D, Shape1D, Shape2D, Shape3D, void_ref
 
 #=
 A shape is just a proxy with a set of configurable defaults (e.g., material, layer, etc) and a 
