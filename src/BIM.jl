@@ -301,8 +301,7 @@ macro deffamily(name, parent, fields...)
                   join(field_lines, "\n"), "\n\n",
                   "Default parameter: `default_", name_str, "`\n")
   quote
-    export $(constructor_name), $(default_name), $(predicate_name), $(with_name), $(struct_name)
-    $(Expr(:public, instance_name))
+    export $(constructor_name), $(default_name), $(predicate_name), $(with_name), $(struct_name), $(instance_name)
     struct $struct_name <: $parent
       $(struct_fields...)
       based_on::Union{Family, Nothing}
@@ -991,12 +990,36 @@ realize(b::Backend, s::Ramp) =
 
 # Stair
 
+#=
+`base_point` convention.
+
+`base_point` is the bottom-left corner of the stair as seen by a person
+standing at the bottom and looking up — equivalently, the corner whose two
+outgoing edges run along `+direction` (the run) and `+perp` (the width),
+where `perp = cross(direction, vz(1))`. The full stair occupies
+`[base_point, base_point + perp * width]` across the run.
+
+This matches a right-handed top-down sketch: place a pin at `base_point`
+on paper, point an arrow along `direction`, and the stair body is on the
+right side of that arrow. Railings (when `with_railings` is set) are placed
+at the two long edges — one at `base_point`, the other at
+`base_point + perp * width` — and inherit their slope from the stair run.
+
+See also: [[b_stair]], [[stair_family]], [[Railing]].
+
+`with_railings` toggles automatic railing generation; one railing is emitted
+on each long edge of the stair, sloped to match the run. Manual `railing(...)`
+calls remain available for cases where the auto-railings are insufficient
+(e.g. a railing on only one side, or extended past the stair landing).
+=#
 @deffamily(stair_family, Family,
   width::Real=1.0,
   riser_height::Real=0.18,
   tread_depth::Real=0.28,
   thickness::Real=0.15,
   has_risers::Bool=true,
+  with_railings::Bool=false,
+  railing_family::RailingFamily=default_railing_family(),
   tread_material::Material=material_concrete,
   riser_material::Material=material_concrete,
   stringer_material::Material=material_concrete)
@@ -1010,8 +1033,38 @@ used_materials(f::StairFamily) = (f.tread_material, f.riser_material, f.stringer
   top_level::Level=upper_level(convert(Level, bottom_level)),
   family::StairFamily=default_stair_family())
 
+#=
+Auto-railing geometry must match the stair body exactly. Both consume the
+same `perp = cross(direction, vz(1))` so the two long edges of the stair
+become the two railing centerlines; the railing slope rises with the run.
+The path is supplied in coordinates relative to `bottom_level` — `b_railing`
+adds the level base internally, so we never duplicate `level_height` here.
+
+`n_steps * tread_depth` is the actual horizontal stair run (the stair
+occupies one tread-depth less than the user-visible footprint of any
+landing they put on top); the railing tracks the stair, not the landing.
+=#
 realize(b::Backend, s::Stair) =
-  b_stair(b, s.base_point, s.direction, s.bottom_level, s.top_level, s.family)
+  let stair_refs = b_stair(b, s.base_point, s.direction, s.bottom_level, s.top_level, s.family)
+    s.family.with_railings ?
+      let bottom_h = level_height(b, s.bottom_level),
+          top_h = level_height(b, s.top_level),
+          total_h = top_h - bottom_h,
+          n_steps = Int(round(total_h / s.family.riser_height)),
+          run = n_steps * s.family.tread_depth,
+          dir = unitized(s.direction),
+          perp = cross(dir, vz(1)),
+          bp = in_world(s.base_point),
+          bp_top = bp + dir * run + vz(total_h),
+          left = open_polygonal_path([bp, bp_top]),
+          right = open_polygonal_path([bp + perp * s.family.width,
+                                       bp_top + perp * s.family.width])
+        vcat(stair_refs,
+             b_railing(b, left,  s.bottom_level, nothing, s.family.railing_family),
+             b_railing(b, right, s.bottom_level, nothing, s.family.railing_family))
+      end :
+      stair_refs
+  end
 
 # Spiral Stair
 

@@ -5,12 +5,16 @@ Hub — the arc-shaped BIG/Goody Clancy building whose "domino effect" copper
 facade won the UNESCO Prix Versailles 2020 — using KhepriBase's
 **Space-first Level-1 API**.
 
-A rendered stand-in of the composed plan:
+The finished three-storey result:
 
-![Isenberg bottom-up](../assets/tutorials/isenberg-bottom_up.png) The same building is constructed by
-progressively declaring every room as a first-class `Space`, composing
-them into a `Layout`, and letting `build(layout)` emit walls, doors,
-windows, and slabs.
+![Isenberg bottom-up](../assets/tutorials/isenberg-bottom_up.png)
+
+The same building is constructed by progressively declaring every
+room as a first-class `Space`, composing them into a `Layout`, and
+letting `build(layout)` emit walls, doors, windows, and slabs. The
+sections below introduce one piece at a time; each code block is
+followed by the rendering it produces, so you can see the geometry
+land in place stage by stage.
 
 The companion tutorial,
 [Isenberg Top-Down](isemberg_top_down.md), builds the exact same
@@ -72,10 +76,157 @@ r_corridor_in   = r_mid - corridor_span / 2
 r_corridor_out  = r_mid + corridor_span / 2
 ```
 
-## The floor-plate function
+We'll also want an empty `Layout` to keep adding spaces to as we go.
+Set one up with the wall and slab families the building uses
+throughout:
 
-Each upper floor has the same room layout. Pull it into a function
-that mutates a `Layout` in place, so we can call it once per storey:
+```julia
+plan = floor_plan(
+  height = floor_h,
+  wall_family = wall_family(thickness = 0.2),
+  slab_family = slab_family(thickness = 0.4))
+```
+
+## Phase 1 — One polar sector
+
+The smallest unit of geometry in the building is a single annular
+wedge: a piece of the floor bounded by two concentric arcs and two
+radial edges. `polar_sector_path` returns its boundary as a
+`ClosedPath`, and `add_space` parks it on the layout as a named
+`Space`. Calling `build(plan)` at this point emits the four walls and
+one slab the wedge needs to stand up:
+
+```julia
+dθ = (arc_end - arc_start) / n_rooms
+
+add_space(plan, "wedge",
+  polar_sector_path(center, r_inner, r_corridor_in,
+                    arc_start, arc_start + dθ;
+                    n_arc = n_arc);
+  kind = :office)
+
+build(plan)
+```
+
+![Phase 1 — one wedge](../assets/tutorials/isenberg-bottom_up-step1_wedge.png)
+
+A single inner-band wedge appears at the eastern edge of the
+courtyard. It carries two curved walls (inner and outer arcs) and
+two straight radial walls, with a slab below.
+
+## Phase 2 — Inner band of rooms
+
+Repeat the same `add_space` call across the full `0..3π/2` sweep
+and the wedge becomes a fan of `n_rooms` cells along the inner ring.
+The radial walls between adjacent wedges are shared edges, so the
+wall-graph chain resolver merges each pair of opposing radial walls
+into one wall when `build` runs:
+
+```julia
+inner_rooms = [
+  add_space(plan, "inner_$i",
+    polar_sector_path(center, r_inner, r_corridor_in,
+                      arc_start + (i - 1) * dθ,
+                      arc_start +  i      * dθ;
+                      n_arc = n_arc);
+    kind = :office)
+  for i in 1:n_rooms]
+
+build(plan)
+```
+
+![Phase 2 — inner band](../assets/tutorials/isenberg-bottom_up-step2_inner_band.png)
+
+Eighteen inner offices wrap three-quarters of the way around the
+courtyard. There is no corridor yet — this is just the inner ring.
+
+## Phase 3 — The corridor band
+
+Add one continuous arc-shaped `Space` between the inner ring and
+the outer radius. It uses `n_arc * n_rooms` samples across its full
+sweep so the long arc stays as smooth as the room arcs it sits next
+to:
+
+```julia
+corridor = add_space(plan, "corridor",
+  polar_sector_path(center, r_corridor_in, r_corridor_out,
+                    arc_start, arc_end;
+                    n_arc = n_arc * n_rooms);
+  kind = :corridor)
+
+build(plan)
+```
+
+![Phase 3 — corridor band](../assets/tutorials/isenberg-bottom_up-step3_corridor.png)
+
+A single curved corridor wraps around the inner ring of offices.
+Where the corridor meets each inner room, the shared inner-arc
+edge becomes one merged wall.
+
+## Phase 4 — Outer band of rooms
+
+The same comprehension as Phase 2, but on the outer side of the
+corridor. The result is a classic double-loaded plan: rooms on
+either side of a continuous spine:
+
+```julia
+outer_rooms = [
+  add_space(plan, "outer_$i",
+    polar_sector_path(center, r_corridor_out, r_outer,
+                      arc_start + (i - 1) * dθ,
+                      arc_start +  i      * dθ;
+                      n_arc = n_arc);
+    kind = :office)
+  for i in 1:n_rooms]
+
+build(plan)
+```
+
+![Phase 4 — outer band](../assets/tutorials/isenberg-bottom_up-step4_outer_band.png)
+
+The outer ring fills in. The plan now reads as inner-corridor-outer
+across every angular wedge, with shared radial walls between
+neighbouring rooms.
+
+## Phase 5 — Doors and windows
+
+Walls so far are unbroken. Two `add_door` loops cut a door from
+each room onto the corridor (Khepri picks the midpoint of the
+shared edge by default), and one `add_window` loop punches an
+exterior window through the outer facade of every outer room:
+
+```julia
+for r in inner_rooms
+  add_door(plan, r, corridor)
+end
+for r in outer_rooms
+  add_door(plan, r, corridor)
+end
+
+for (i, r) in enumerate(outer_rooms)
+  θ_mid = arc_start + (i - 0.5) * dθ
+  add_window(plan, r, :exterior,
+             loc = center + vpol(r_outer, θ_mid),
+             family = window_family(width = 1.4, height = 1.5))
+end
+
+build(plan)
+```
+
+![Phase 5 — doors and windows](../assets/tutorials/isenberg-bottom_up-step5_openings.png)
+
+Door openings appear in the radial walls between rooms and the
+corridor, and a band of identical windows ribbons the outer facade.
+This is the complete generic upper-floor pattern.
+
+## Phase 6 — Ground floor with lobby
+
+The ground floor reuses the same pattern, but only across the
+**semicircular** portion (`0..π`). The projection wedge
+(`π..3π/2`) is left as one large entrance hall with a front door on
+its outer facade and three big atrium windows. We collect Phases
+2–5 (semicircular only) into a function so we can reuse it for the
+upper floors later, then add the lobby pieces:
 
 ```julia
 function add_upper_floor!(plan, theta_start, theta_end, n_rooms;
@@ -84,73 +235,37 @@ function add_upper_floor!(plan, theta_start, theta_end, n_rooms;
                           r_corridor_out=r_corridor_out,
                           n_arc=n_arc)
   dθ = (theta_end - theta_start) / n_rooms
-
-  # Inner band of rooms
   inner_rooms = [
-    add_space(plan,
-              "inner_$i",
-              polar_sector_path(center, r_inner, r_corridor_in,
-                                theta_start + (i - 1) * dθ,
-                                theta_start +  i      * dθ;
-                                n_arc=n_arc);
-              kind = :office)
+    add_space(plan, "inner_$i",
+      polar_sector_path(center, r_inner, r_corridor_in,
+                        theta_start + (i - 1) * dθ,
+                        theta_start +  i      * dθ;
+                        n_arc=n_arc);
+      kind = :office)
     for i in 1:n_rooms]
-
-  # One continuous corridor for the whole sweep
   corridor = add_space(plan, "corridor",
     polar_sector_path(center, r_corridor_in, r_corridor_out,
                       theta_start, theta_end; n_arc=n_arc * n_rooms);
     kind = :corridor)
-
-  # Outer band of rooms
   outer_rooms = [
-    add_space(plan,
-              "outer_$i",
-              polar_sector_path(center, r_corridor_out, r_outer,
-                                theta_start + (i - 1) * dθ,
-                                theta_start +  i      * dθ;
-                                n_arc=n_arc);
-              kind = :office)
+    add_space(plan, "outer_$i",
+      polar_sector_path(center, r_corridor_out, r_outer,
+                        theta_start + (i - 1) * dθ,
+                        theta_start +  i      * dθ;
+                        n_arc=n_arc);
+      kind = :office)
     for i in 1:n_rooms]
-
-  # Doors: every room onto the corridor
-  for r in inner_rooms
-    add_door(plan, r, corridor)
-  end
-  for r in outer_rooms
-    add_door(plan, r, corridor)
-  end
-
-  # One exterior window per outer room, centred on its outer facade
+  for r in inner_rooms;  add_door(plan, r, corridor); end
+  for r in outer_rooms;  add_door(plan, r, corridor); end
   for (i, r) in enumerate(outer_rooms)
     θ_mid = theta_start + (i - 0.5) * dθ
     add_window(plan, r, :exterior,
                loc = center + vpol(r_outer, θ_mid),
                family = window_family(width=1.4, height=1.5))
   end
-
   (inner_rooms, corridor, outer_rooms)
 end
-```
 
-Two things to notice:
-
-- Corner `n_arc` scaling. The individual room arcs are discretised
-  with `n_arc = 10` per room; the corridor uses `n_arc * n_rooms`
-  samples across its full sweep so the single long arc stays smooth.
-- Each `add_space` call *creates* one `Space` on the layout and
-  returns it — we can feed those handles straight into `add_door` /
-  `add_window`.
-
-## The ground floor: open lobby
-
-On the ground floor, the projection zone (`π..3π/2`) is one large
-entrance hall; only the semicircular half gets the upper-floor room
-layout. We reuse the function with `theta_end = projection`, then
-drop a single lobby space into the remaining wedge and add the
-front door on the outer facade.
-
-```julia
 function add_ground_floor!(plan)
   inner_rooms, corridor, outer_rooms =
     add_upper_floor!(plan, arc_start, projection, n_rooms)
@@ -174,13 +289,32 @@ function add_ground_floor!(plan)
   end
   (inner_rooms, corridor, outer_rooms, lobby)
 end
+
+add_ground_floor!(plan)
+build(plan)
 ```
 
-## Assembling the building
+![Phase 6 — ground floor with lobby](../assets/tutorials/isenberg-bottom_up-step6_ground_floor.png)
 
-`floor_plan` creates a single-storey `Layout`; `add_storey!` stacks
-additional storeys on top. We call `add_ground_floor!` for storey 1
-and `add_upper_floor!` for each storey above it.
+Half the building is rooms-and-corridor; the projection wedge is
+one continuous lobby with a wide front door and three tall atrium
+windows facing south.
+
+Two things to notice in `add_upper_floor!`:
+
+- **`n_arc` scaling.** The individual room arcs are discretised
+  with `n_arc` per room; the corridor uses `n_arc * n_rooms`
+  samples across its full sweep so the single long arc stays smooth.
+- **Spaces are handles.** Each `add_space` call *creates* one
+  `Space` on the layout and returns it — we feed those handles
+  straight into `add_door` / `add_window`.
+
+## Phase 7 — Stack three storeys
+
+`add_storey!` stacks an additional storey on top of the layout's
+current top. Loop over the upper-floor count, calling
+`add_upper_floor!` with the **full** sweep each time, and finish
+with `build`:
 
 ```julia
 plan = floor_plan(
@@ -194,16 +328,16 @@ for _ in 2:n_floors
   add_storey!(plan; height = floor_h)
   add_upper_floor!(plan, arc_start, arc_end, n_rooms)
 end
-```
 
-At this point `plan` is a multi-storey `Layout` with `(2 n_rooms + 1)
-× (n_floors - 1) + (2 n_rooms + 2)` spaces — one corridor per floor,
-one inner and outer room per angular wedge per floor, plus the
-ground-floor lobby and its front door.
-
-```julia
 walls, doors, windows, slabs = build(plan)
 ```
+
+![Phase 7 — three storeys](../assets/tutorials/isenberg-bottom_up-step7_three_storeys.png)
+
+The complete three-storey building. At this point `plan` is a
+multi-storey `Layout` with `(2 n_rooms + 1) × (n_floors - 1) + (2
+n_rooms + 2)` spaces — one corridor per floor, one inner and outer
+room per angular wedge per floor, plus the ground-floor lobby.
 
 `build` compiles every storey through the wall-graph chain resolver
 (so shared curved edges are merged into single walls with mitred

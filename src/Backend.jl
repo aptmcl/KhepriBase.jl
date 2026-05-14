@@ -1667,6 +1667,24 @@ b_ramp(b::Backend, path, bottom_level, top_level, family) =
       bmat, tmat, smat)
   end
 
+#=
+`base_point` is the bottom-left corner when looking up the stair (along
+`+direction`); `perp = cross(direction, vz(1))` points to the user's
+right. The stair body occupies `[base_point, base_point + perp * width]`
+along its width, so a top-down sketch reads naturally: a pin at
+`base_point` with an arrow along `direction` places the stair on the
+right side of the arrow.
+
+Auto-railings on the proxy `realize` re-derive `perp` with the same
+formula; the two long edges of the stair must coincide with the two
+railing centerlines. If you change the convention here, change it in
+`realize(::Backend, ::Stair)` (BIM.jl) and in every backend's
+`b_stair` override (currently `KhepriIFC`, `KhepriRevit`, `KhepriThreejs`)
+at the same commit, otherwise stair faces and railing posts will drift
+apart.
+
+See also: [[realize(::Backend, ::Stair)]], [[stair_family]].
+=#
 b_stair(b::Backend, base_point, direction, bottom_level, top_level, family) =
   let bottom_h = level_height(b, bottom_level),
       top_h = level_height(b, top_level),
@@ -1676,7 +1694,7 @@ b_stair(b::Backend, base_point, direction, bottom_level, top_level, family) =
       tread_d = family.tread_depth,
       w = family.width,
       dir = unitized(direction),
-      perp = cross(vz(1), dir),
+      perp = cross(dir, vz(1)),
       tmat = material_ref(b, family.tread_material),
       rmat = material_ref(b, family.riser_material),
       # TODO: generate stringer geometry using family.stringer_material

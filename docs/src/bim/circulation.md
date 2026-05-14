@@ -25,11 +25,15 @@ stair(base_point::Loc=u0(),
 | `tread_depth` | `0.28` | Depth of each tread |
 | `thickness` | `0.15` | Stringer/slab thickness under treads |
 | `has_risers` | `true` | Whether to generate riser faces |
+| `with_railings` | `false` | If `true`, the `stair(...)` call emits a railing on each long edge, sloped to match the run |
+| `railing_family` | `default_railing_family()` | Family used for the auto-railings when `with_railings=true` |
 | `tread_material` | `material_concrete` | Tread surface material |
 | `riser_material` | `material_concrete` | Riser face material |
 | `stringer_material` | `material_concrete` | Structural support material |
 
 The number of risers is `ceil(Int, height / riser_height)` where `height = top_level.height - bottom_level.height`.
+
+`base_point` is the bottom-left corner when looking up the run (i.e. along `+direction`); the stair body extends to the right of that arrow, occupying `[base_point, base_point + perp * width]` where `perp = cross(direction, vz(1))`. Auto-railings use the same `perp` so they line up exactly with the two long edges.
 
 ### Examples
 
@@ -58,6 +62,10 @@ stair(xy(0, 0), vy(1), ground, first_floor, wide_stair)
 # Open-riser stair
 open_stair = stair_family(has_risers=false)
 stair(xy(0, 0), vy(1), ground, first_floor, open_stair)
+
+# Auto-railed stair (single call emits stair + two sloped side rails)
+railed_stair = stair_family(width=1.2, with_railings=true)
+stair(xy(0, 0), vy(1), ground, first_floor, railed_stair)
 ```
 
 ## Spiral Stair
@@ -197,6 +205,8 @@ ramp(open_polygonal_path([xy(0, 0), xy(0, 6), xy(3, 6)]),
 ## Railing
 
 A railing is a safety barrier along a path. It consists of a swept rail profile and evenly spaced posts. Railings can optionally be attached to a host element (e.g., a stair or slab).
+
+For railings that flank a stair, prefer setting `with_railings=true` on the `stair_family`: the stair generates a railing on each of its long edges automatically, with the correct slope and endpoints. Manual `railing(...)` calls are still the right tool for balconies, mezzanines, roof perimeters, asymmetric/single-side stair rails, or any path that doesn't follow a stair run.
 
 ### Signature
 

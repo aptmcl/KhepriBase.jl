@@ -50,8 +50,14 @@ small_window = window_family(width=0.8, height=1.0)
 col_family = column_family(
   profile=rectangular_profile(0.3, 0.3))
 
-# Stair with wider treads
-office_stair = stair_family(width=1.2, riser_height=0.175, tread_depth=0.28)
+# Stair with wider treads. `with_railings=true` is the high-level way to
+# request a railing on each side of the stair: the stair body and the two
+# railings are generated together by a single `stair(...)` call, with the
+# railing paths and slope derived from the run, so they always stay
+# aligned with the treads — no manual `railing(...)` calls needed.
+office_stair = stair_family(
+  width=1.2, riser_height=0.18, tread_depth=0.25,
+  with_railings=true)
 ```
 
 ## Step 3: Ground Floor Structure
@@ -81,26 +87,32 @@ exterior = wall(
 
 ### Doors and Windows on Exterior Walls
 
+Openings on a closed-path wall are placed by **arc-length** along the path. Starting at `xy(0, 0)` the loop walks south (paths 0–16), east (16–28), north (28–44), and west (44–56), so to clear the structural columns at world `x = 8` (south/north walls) and `y = 6` (east/west walls) we pick path positions that skip those grid lines.
+
 ```julia
-# Front facade (south wall, along y=0)
-add_door(exterior, xy(2, 0), main_door)       # main entrance
+# Front facade (south wall, y=0). Main entrance at x=2, windows at x=5,
+# x=11, x=14 — all clear of the central column at (8, 0.15) and the
+# interior partition wall meeting the exterior at x=8.
+add_door(exterior, xy(2, 0), main_door)
 add_window(exterior, xy(5, 1.0), tall_window)
-add_window(exterior, xy(8, 1.0), tall_window)
 add_window(exterior, xy(11, 1.0), tall_window)
+add_window(exterior, xy(14, 1.0), tall_window)
 
-# Right facade (east wall, along x=16 from corner, continues from path length 16)
-add_window(exterior, xy(18, 1.0), tall_window)   # 2m from corner on east wall
-add_window(exterior, xy(21, 1.0), tall_window)
-add_window(exterior, xy(24, 1.0), tall_window)
+# Right facade (east wall, x=16). Windows at y=3 and y=9 — between the
+# corridor-wall column at (15.85, 6) and the corner columns.
+add_window(exterior, xy(19, 1.0), tall_window)   # y = 19 - 16 = 3
+add_window(exterior, xy(25, 1.0), tall_window)   # y = 25 - 16 = 9
 
-# Back facade (north wall)
-add_window(exterior, xy(30, 1.0), tall_window)
-add_window(exterior, xy(33, 1.0), tall_window)
-add_window(exterior, xy(36, 1.0), tall_window)
+# Back facade (north wall, y=12). Path indexing on the closed loop is
+# right-to-left here, so x = 44 - path. Skip x=8 to clear the column
+# at (8, 11.85).
+add_window(exterior, xy(30, 1.0), tall_window)   # x = 44 - 30 = 14
+add_window(exterior, xy(33, 1.0), tall_window)   # x = 44 - 33 = 11
+add_window(exterior, xy(39, 1.0), tall_window)   # x = 44 - 39 = 5
 
-# Left facade (west wall)
-add_window(exterior, xy(42, 1.0), tall_window)
-add_window(exterior, xy(45, 1.0), tall_window)
+# Left facade (west wall, x=0). Mirrors the east facade; y = 56 - path.
+add_window(exterior, xy(47, 1.0), tall_window)   # y = 56 - 47 = 9
+add_window(exterior, xy(53, 1.0), tall_window)   # y = 56 - 53 = 3
 ```
 
 ![+ exterior doors & windows](../assets/tutorials/building-03_openings.png)
@@ -139,13 +151,12 @@ end
 
 ### Stairwell
 
-```julia
-# Stair in the northeast corner
-stair(xy(13, 8), vy(1), ground, first_floor, office_stair)
+`base_point` is the bottom-left corner when looking up the run (i.e. along `+direction`); with `direction = vy(1)` the stair body extends to the `+x` side of `base_point`. We place it in the north half of the building, between the corridor wall (`y = 6`) and the back exterior wall (`y = 12`), so it never escapes the footprint. The corresponding floor opening goes in with the first-floor slab in the next step.
 
-# Railings along the stair
-railing(open_polygonal_path([xy(13, 8), xyz(13, 13.5, 3.5)]), ground)
-railing(open_polygonal_path([xy(14.2, 8), xyz(14.2, 13.5, 3.5)]), ground)
+Because the family was created with `with_railings=true`, the two side railings are emitted by the same `stair(...)` call and inherit the slope of the run — no separate `railing(...)` calls.
+
+```julia
+stair(xy(13, 6.5), vy(1), ground, first_floor, office_stair)
 ```
 
 ![+ stairwell](../assets/tutorials/building-06_stairwell.png)
@@ -154,9 +165,15 @@ railing(open_polygonal_path([xy(14.2, 8), xyz(14.2, 13.5, 3.5)]), ground)
 
 ### Floor Slab and Ceiling Below
 
+The first-floor slab needs an opening over the stair, otherwise the stair would emerge into solid concrete. A `Region` constructed with an outer boundary plus one inner path produces a slab with a hole; we use the stair's own footprint (with a small margin) as the inner path, and apply the same shape to the ceiling so the ground-floor view up through the stairwell stays open as well.
+
 ```julia
-slab(building_region, first_floor)
-ceiling(building_region, first_floor)
+# Stair occupies x ∈ [13, 14.2], y ∈ [6.5, 11.25]; widen the opening
+# slightly on all sides so the slab edge clears the railing posts.
+stairwell_opening = rectangular_path(xy(12.9, 6.4), 1.4, 4.85)
+
+slab(region(building_region, stairwell_opening), first_floor)
+ceiling(region(building_region, stairwell_opening), first_floor)
 ```
 
 ![+ first-floor slab](../assets/tutorials/building-07_first_floor.png)
@@ -172,21 +189,21 @@ exterior_1f = wall(
     xy(0, 0), xy(16, 0), xy(16, 12), xy(0, 12)]),
   first_floor, roof_level, ext_wall)
 
-# Windows on all facades (same pattern as ground floor)
+# Windows on all facades (same path positions as the ground floor, which
+# already avoid the column grid).
 add_window(exterior_1f, xy(5, 1.0), tall_window)
-add_window(exterior_1f, xy(8, 1.0), tall_window)
 add_window(exterior_1f, xy(11, 1.0), tall_window)
+add_window(exterior_1f, xy(14, 1.0), tall_window)
 
-add_window(exterior_1f, xy(18, 1.0), tall_window)
-add_window(exterior_1f, xy(21, 1.0), tall_window)
-add_window(exterior_1f, xy(24, 1.0), tall_window)
+add_window(exterior_1f, xy(19, 1.0), tall_window)
+add_window(exterior_1f, xy(25, 1.0), tall_window)
 
 add_window(exterior_1f, xy(30, 1.0), tall_window)
 add_window(exterior_1f, xy(33, 1.0), tall_window)
-add_window(exterior_1f, xy(36, 1.0), tall_window)
+add_window(exterior_1f, xy(39, 1.0), tall_window)
 
-add_window(exterior_1f, xy(42, 1.0), tall_window)
-add_window(exterior_1f, xy(45, 1.0), tall_window)
+add_window(exterior_1f, xy(47, 1.0), tall_window)
+add_window(exterior_1f, xy(53, 1.0), tall_window)
 
 # Interior partitions
 corridor_1f = wall(
@@ -298,11 +315,11 @@ This building uses the following BIM elements:
 | `roof` | 1 | Building roof |
 | `ceiling` | 1 | Below first floor slab |
 | `wall` | 6+ | Exterior and interior walls |
-| `door` | 5+ | Entrance and office doors |
-| `window` | 22+ | Facade glazing |
+| `door` | 5 | Main entrance + office doors on both corridors |
+| `window` | 20 | Facade glazing, placed to clear column grid |
 | `column` | 18 | Structural grid |
-| `stair` | 1 | Vertical circulation |
-| `railing` | 6+ | Stair, balcony, and roof |
+| `stair` | 1 | Vertical circulation, auto-railed |
+| `railing` | 5 | 2 auto-railings (stair) + 2 balcony + 1 roof perimeter |
 | `table_and_chairs` | 2 | Reception and conference |
 | `table` / `chair` | 8 | Office workstations |
 | `pointlight` | 12+ | Interior lighting |

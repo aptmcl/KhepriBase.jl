@@ -25,8 +25,22 @@ function _build_office(up_to_step::Int)
   office_door = door_family(width=0.9, height=2.1)
   tall_window = window_family(width=1.4, height=1.6)
   col_family  = column_family(profile=rectangular_profile(0.3, 0.3))
-  office_stair = stair_family(width=1.2, riser_height=0.175, tread_depth=0.28)
+  # `with_railings=true` lets a single `stair(...)` call emit the body and
+  # the two side rails; tread_depth shortened to 0.25 so the 19-step run
+  # (4.75 m) fits between the corridor wall and the back exterior wall.
+  office_stair = stair_family(
+    width=1.2, riser_height=0.18, tread_depth=0.25,
+    with_railings=true)
   building_region = rectangular_path(xy(0, 0), 16, 12)
+  # Stair occupies x ∈ [13, 14.2], y ∈ [6.5, 11.25]; opening widens this
+  # slightly on all sides so the slab edge clears the railing posts.
+  stairwell_opening = rectangular_path(xy(12.9, 6.4), 1.4, 4.85)
+  # Path positions on the perimeter loop (south 0–16, east 16–28,
+  # north 28–44, west 44–56). Chosen to skip world x=8 (south/north walls)
+  # and world y=6 (east/west walls) so window openings never overlap the
+  # column grid at (8, _) and (_, 6) or the partition meeting the
+  # exterior at x=8.
+  window_paths = (5, 11, 14, 19, 25, 30, 33, 39, 47, 53)
 
   # Step 1: ground slab
   slab(building_region, ground)
@@ -41,7 +55,7 @@ function _build_office(up_to_step::Int)
 
   # Step 3: doors + windows on exterior
   add_door(exterior, xy(2, 0), main_door)
-  for xc in (5, 8, 11, 18, 21, 24, 30, 33, 36, 42, 45)
+  for xc in window_paths
     add_window(exterior, xy(xc, 1.0), tall_window)
   end
   up_to_step <= 3 && return
@@ -62,14 +76,14 @@ function _build_office(up_to_step::Int)
   end
   up_to_step <= 5 && return
 
-  # Step 6: stairwell
-  stair(xy(13, 8), vy(1), ground, first_floor, office_stair)
-  railing(open_polygonal_path([xy(13, 8), xyz(13, 13.5, 3.5)]), ground)
-  railing(open_polygonal_path([xy(14.2, 8), xyz(14.2, 13.5, 3.5)]), ground)
+  # Step 6: stairwell — auto-railings come from `with_railings=true`.
+  stair(xy(13, 6.5), vy(1), ground, first_floor, office_stair)
   up_to_step <= 6 && return
 
-  # Step 7: first-floor slab
-  slab(building_region, first_floor)
+  # Step 7: first-floor slab + ceiling, with a hole at the stairwell so
+  # the stair has somewhere to emerge.
+  slab(region(building_region, stairwell_opening), first_floor)
+  ceiling(region(building_region, stairwell_opening), first_floor)
   up_to_step <= 7 && return
 
   # Step 8: first-floor exterior + partitions + columns
@@ -77,7 +91,7 @@ function _build_office(up_to_step::Int)
     closed_polygonal_path([
       xy(0, 0), xy(16, 0), xy(16, 12), xy(0, 12)]),
     first_floor, roof_level, ext_wall)
-  for xc in (5, 8, 11, 18, 21, 24, 30, 33, 36, 42, 45)
+  for xc in window_paths
     add_window(exterior_1f, xy(xc, 1.0), tall_window)
   end
   corridor_1f = wall(

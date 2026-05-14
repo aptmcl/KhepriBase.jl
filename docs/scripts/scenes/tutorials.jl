@@ -322,23 +322,302 @@ register_scene(
 # Isenberg - same building bottom-up vs top-down
 # ==================================================================
 
+#=
+The bottom-up tutorial composes the building one named Space at a
+time, with `polar_sector_path` as the only geometric primitive.  The
+seven scenes below mirror the seven code chunks in the tutorial,
+each rendering reveals exactly what the next chunk adds:
+
+  step1  one polar sector                  the building block
+  step2  inner band of n_rooms wedges      a fan around the courtyard
+  step3  + the corridor arc                a continuous curved corridor
+  step4  + outer band of n_rooms wedges    full double-loaded layout
+  step5  + doors and exterior windows      visible openings
+  step6  ground floor with lobby           projection wedge as one open hall
+  step7  three storeys (full building)     the hero shot
+
+Phases 1-6 share one isometric view targeted at floor level so the
+reader watches geometry land in the same frame.  Phase 7 widens out
+so the third storey stays in the picture.
+
+The 270° sweep covers +x → +y → -x → -y; the missing wedge (south-east)
+is where we put the camera, looking toward the courtyard.
+
+Parameters are inlined in every closure rather than shared at module
+scope so each scene is self-contained — copy-paste a single closure
+into the REPL and it produces exactly the rendering shown in the
+tutorial section it illustrates.  The values match the tutorial's
+own `Parameters` block: r_inner=10, r_outer=25, n_rooms=18, etc.
+=#
+
+# Building footprint: outer radius 25, sweep 270°, so the plan
+# spans roughly 50 × 50 m around the courtyard with the missing
+# wedge in the south-east.  At r = 30 the camera ends up ~60 m
+# from a ~50 m-diagonal subject, which crops the corners with
+# Blender's default 50mm lens; r = 50/55 gives ~100/110 m of
+# camera distance and leaves comfortable margin on all sides
+# while still keeping the same isometric vantage point.
+const _ISENBERG_BU_VIEW_FLOOR = iso_view(0, 0, 1.5, 45)
+const _ISENBERG_BU_VIEW_BLDG  = iso_view(0, 0, 4.5, 50)
+
+# Shared closure body.  Returns the upper-floor function bound to the
+# parameters in `params`, with three flags that progressively turn on
+# the corridor, outer band, and openings.  Each step scene calls this
+# with a different combination of flags.
+_isenberg_bu_add_upper_floor!(plan, params, theta_start, theta_end;
+                              with_corridor, with_outer, with_openings) = begin
+  dθ = (theta_end - theta_start) / params.n_rooms
+
+  inner_rooms = [
+    add_space(plan, "inner_$i",
+      polar_sector_path(params.center, params.r_inner, params.r_corr_in,
+                        theta_start + (i - 1) * dθ,
+                        theta_start +  i      * dθ;
+                        n_arc = params.n_arc);
+      kind = :office)
+    for i in 1:params.n_rooms]
+
+  corridor = with_corridor ?
+    add_space(plan, "corridor",
+      polar_sector_path(params.center, params.r_corr_in, params.r_corr_out,
+                        theta_start, theta_end;
+                        n_arc = params.n_arc * params.n_rooms);
+      kind = :corridor) : nothing
+
+  outer_rooms = with_outer ? [
+    add_space(plan, "outer_$i",
+      polar_sector_path(params.center, params.r_corr_out, params.r_outer,
+                        theta_start + (i - 1) * dθ,
+                        theta_start +  i      * dθ;
+                        n_arc = params.n_arc);
+      kind = :office)
+    for i in 1:params.n_rooms] : []
+
+  if with_openings && corridor !== nothing
+    for r in inner_rooms
+      add_door(plan, r, corridor)
+    end
+    for r in outer_rooms
+      add_door(plan, r, corridor)
+    end
+    for (i, r) in enumerate(outer_rooms)
+      θ_mid = theta_start + (i - 0.5) * dθ
+      add_window(plan, r, :exterior,
+        loc = params.center + vpol(params.r_outer, θ_mid),
+        family = window_family(width = 1.4, height = 1.5))
+    end
+  end
+
+  (inner_rooms, corridor, outer_rooms)
+end
+
+# Default parameter bundle; matches the tutorial's `Parameters` block.
+#
+# `n_arc` is forced > 0 here even though the tutorial documents
+# `n_arc = 0` (arc-native) as the production default.  Arc-native
+# `polar_sector_path` returns a `ClosedPathSequence` whose `ArcPath`
+# components reach KhepriBlender's wall and slab realizers via
+# `b_wall_no_openings` / `b_slab`, where the discretised offsets and
+# face polylines don't agree on vertex counts and the curved walls
+# render as degenerate strips while the slabs render as flat fans.
+# Polygonal discretisation (`n_arc = 12`) sidesteps that and produces
+# a visually smooth result at this size.  The tutorial text still
+# documents `n_arc = 0` as the production default — BIM backends like
+# AutoCAD/Revit emit native curved walls from arc-native paths.
+_isenberg_bu_params() = (
+  center        = u0(),
+  r_inner       = 10.0,
+  r_outer       = 25.0,
+  arc_start     = 0.0,
+  projection    = π,
+  arc_end       = 3π/2,
+  n_rooms       = 18,
+  corridor_span = 2.0,
+  floor_h       = 3.0,
+  n_arc         = 12,
+  r_corr_in     = (10.0 + 25.0)/2 - 2.0/2,
+  r_corr_out    = (10.0 + 25.0)/2 + 2.0/2,
+)
+
+# ---- Phase 1: one polar sector ----
+register_scene(
+  id = "tutorials_isenberg_bottom_up_step1_wedge",
+  section = "tutorials",
+  filename = "isenberg-bottom_up-step1_wedge.png",
+  backend = :blender,
+  view = _ISENBERG_BU_VIEW_FLOOR,
+  build = () -> begin
+    p = _isenberg_bu_params()
+    dθ = (p.arc_end - p.arc_start) / p.n_rooms
+    plan = floor_plan(height = p.floor_h,
+                      wall_family = wall_family(thickness = 0.2),
+                      slab_family = slab_family(thickness = 0.4))
+    add_space(plan, "wedge",
+      polar_sector_path(p.center, p.r_inner, p.r_corr_in,
+                        p.arc_start, p.arc_start + dθ;
+                        n_arc = p.n_arc);
+      kind = :office)
+    build(plan)
+  end,
+)
+
+# ---- Phase 2: inner band of n_rooms wedges ----
+register_scene(
+  id = "tutorials_isenberg_bottom_up_step2_inner_band",
+  section = "tutorials",
+  filename = "isenberg-bottom_up-step2_inner_band.png",
+  backend = :blender,
+  view = _ISENBERG_BU_VIEW_FLOOR,
+  build = () -> begin
+    p = _isenberg_bu_params()
+    plan = floor_plan(height = p.floor_h,
+                      wall_family = wall_family(thickness = 0.2),
+                      slab_family = slab_family(thickness = 0.4))
+    _isenberg_bu_add_upper_floor!(plan, p, p.arc_start, p.arc_end;
+      with_corridor = false, with_outer = false, with_openings = false)
+    build(plan)
+  end,
+)
+
+# ---- Phase 3: + corridor band ----
+register_scene(
+  id = "tutorials_isenberg_bottom_up_step3_corridor",
+  section = "tutorials",
+  filename = "isenberg-bottom_up-step3_corridor.png",
+  backend = :blender,
+  view = _ISENBERG_BU_VIEW_FLOOR,
+  build = () -> begin
+    p = _isenberg_bu_params()
+    plan = floor_plan(height = p.floor_h,
+                      wall_family = wall_family(thickness = 0.2),
+                      slab_family = slab_family(thickness = 0.4))
+    _isenberg_bu_add_upper_floor!(plan, p, p.arc_start, p.arc_end;
+      with_corridor = true, with_outer = false, with_openings = false)
+    build(plan)
+  end,
+)
+
+# ---- Phase 4: + outer band of rooms ----
+register_scene(
+  id = "tutorials_isenberg_bottom_up_step4_outer_band",
+  section = "tutorials",
+  filename = "isenberg-bottom_up-step4_outer_band.png",
+  backend = :blender,
+  view = _ISENBERG_BU_VIEW_FLOOR,
+  build = () -> begin
+    p = _isenberg_bu_params()
+    plan = floor_plan(height = p.floor_h,
+                      wall_family = wall_family(thickness = 0.2),
+                      slab_family = slab_family(thickness = 0.4))
+    _isenberg_bu_add_upper_floor!(plan, p, p.arc_start, p.arc_end;
+      with_corridor = true, with_outer = true, with_openings = false)
+    build(plan)
+  end,
+)
+
+# ---- Phase 5: + doors and exterior windows ----
+register_scene(
+  id = "tutorials_isenberg_bottom_up_step5_openings",
+  section = "tutorials",
+  filename = "isenberg-bottom_up-step5_openings.png",
+  backend = :blender,
+  view = _ISENBERG_BU_VIEW_FLOOR,
+  build = () -> begin
+    p = _isenberg_bu_params()
+    plan = floor_plan(height = p.floor_h,
+                      wall_family = wall_family(thickness = 0.2),
+                      slab_family = slab_family(thickness = 0.4))
+    _isenberg_bu_add_upper_floor!(plan, p, p.arc_start, p.arc_end;
+      with_corridor = true, with_outer = true, with_openings = true)
+    build(plan)
+  end,
+)
+
+# ---- Phase 6: ground floor with lobby ----
+register_scene(
+  id = "tutorials_isenberg_bottom_up_step6_ground_floor",
+  section = "tutorials",
+  filename = "isenberg-bottom_up-step6_ground_floor.png",
+  backend = :blender,
+  view = _ISENBERG_BU_VIEW_FLOOR,
+  build = () -> begin
+    p = _isenberg_bu_params()
+    plan = floor_plan(height = p.floor_h,
+                      wall_family = wall_family(thickness = 0.2),
+                      slab_family = slab_family(thickness = 0.4))
+    # Semicircular half: full upper-floor pattern with openings
+    _isenberg_bu_add_upper_floor!(plan, p, p.arc_start, p.projection;
+      with_corridor = true, with_outer = true, with_openings = true)
+    # Projection wedge: one big lobby
+    lobby = add_space(plan, "lobby",
+      polar_sector_path(p.center, p.r_inner, p.r_outer,
+                        p.projection, p.arc_end;
+                        n_arc = p.n_arc * 6);
+      kind = :lobby)
+    θ_door = (p.projection + p.arc_end) / 2
+    add_door(plan, lobby, :exterior,
+             loc = p.center + vpol(p.r_outer, θ_door))
+    for t in (0.25, 0.5, 0.75)
+      θ = p.projection + t * (p.arc_end - p.projection)
+      add_window(plan, lobby, :exterior,
+                 loc = p.center + vpol(p.r_outer, θ),
+                 family = window_family(width = 1.8, height = 2.4))
+    end
+    build(plan)
+  end,
+)
+
+# ---- Phase 7: three storeys (the hero shot) ----
+_isenberg_bu_full_building = () -> begin
+  p = _isenberg_bu_params()
+  n_floors = 3
+  plan = floor_plan(height = p.floor_h,
+                    wall_family = wall_family(thickness = 0.2),
+                    slab_family = slab_family(thickness = 0.4))
+  # Ground floor
+  _isenberg_bu_add_upper_floor!(plan, p, p.arc_start, p.projection;
+    with_corridor = true, with_outer = true, with_openings = true)
+  lobby = add_space(plan, "lobby",
+    polar_sector_path(p.center, p.r_inner, p.r_outer,
+                      p.projection, p.arc_end;
+                      n_arc = p.n_arc * 6);
+    kind = :lobby)
+  θ_door = (p.projection + p.arc_end) / 2
+  add_door(plan, lobby, :exterior,
+           loc = p.center + vpol(p.r_outer, θ_door))
+  for t in (0.25, 0.5, 0.75)
+    θ = p.projection + t * (p.arc_end - p.projection)
+    add_window(plan, lobby, :exterior,
+               loc = p.center + vpol(p.r_outer, θ),
+               family = window_family(width = 1.8, height = 2.4))
+  end
+  # Upper floors
+  for _ in 2:n_floors
+    add_storey!(plan; height = p.floor_h)
+    _isenberg_bu_add_upper_floor!(plan, p, p.arc_start, p.arc_end;
+      with_corridor = true, with_outer = true, with_openings = true)
+  end
+  build(plan)
+end
+
+register_scene(
+  id = "tutorials_isenberg_bottom_up_step7_three_storeys",
+  section = "tutorials",
+  filename = "isenberg-bottom_up-step7_three_storeys.png",
+  backend = :blender,
+  view = _ISENBERG_BU_VIEW_BLDG,
+  build = _isenberg_bu_full_building,
+)
+
+# Hero shot at the top of the tutorial: same as step 7, kept under the
+# legacy filename so existing references in the built docs still resolve.
 register_scene(
   id = "tutorials_isenberg_bottom_up",
   section = "tutorials",
   filename = "isenberg-bottom_up.png",
   backend = :blender,
-  view = iso_view(6, 5, 1.5, 13),
-  build = () -> begin
-    # Simple stand-in: 3 offices in a row, corridor, 3 offices
-    ground = (room(:o1, :office, 4.0, 4.0) |
-              room(:o2, :office, 4.0, 4.0) |
-              room(:o3, :office, 4.0, 4.0)) /
-             room(:corridor, :corridor, 12.0, 2.0) /
-             (room(:o4, :office, 4.0, 4.0) |
-              room(:o5, :office, 4.0, 4.0) |
-              room(:o6, :office, 4.0, 4.0))
-    build(layout(ground))
-  end,
+  view = _ISENBERG_BU_VIEW_BLDG,
+  build = _isenberg_bu_full_building,
 )
 
 register_scene(

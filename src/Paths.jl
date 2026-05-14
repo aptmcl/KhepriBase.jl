@@ -1284,6 +1284,8 @@ path_vertices_on(path::Path, p) =
 export path_on
 path_on(path::PointPath, p) =
   point_path(on_cs(path.location, p))
+path_on(path::ArcPath, p) =
+  arc_path(on_cs(path.center, p), path.radius, path.start_angle, path.amplitude)
 path_on(path::CircularPath, p) =
   circular_path(on_cs(path.center, p), path.radius)
 path_on(path::EllipticPath, p) =
