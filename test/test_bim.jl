@@ -6,6 +6,16 @@ using KhepriBase
 # Include the mock backend
 include("TestMockBackend.jl")
 
+if !@isdefined(TestTruss)
+  KhepriBase.@defbackend TestTruss TestTruss begin
+    id_type = Any
+    void_ref = -1
+    realized::Parameter{Bool} = Parameter(false)
+    truss_nodes::Vector{TrussNode} = TrussNode[]
+    truss_bars::Vector{TrussBar} = TrussBar[]
+  end
+end
+
 @testset "BIM" begin
 
   @testset "Level" begin
@@ -451,6 +461,26 @@ include("TestMockBackend.jl")
           @test triangles > 0
           @test triangles < 1800
         end
+      end
+    end
+  end
+
+  @testset "Truss bar merging" begin
+    @testset "coincident bar error mentions the existing bar" begin
+      b = TestTruss()
+      first_bar = truss_bar(xy(0, 0), xy(1, 0))
+      duplicate_bar = truss_bar(xy(1, 0), xy(0, 0))
+      @test KhepriBase.maybe_merged_bar(b, first_bar) === first_bar
+      with(merge_coincident_truss_bars, false) do
+        err = try
+          KhepriBase.maybe_merged_bar(b, duplicate_bar)
+          nothing
+        catch e
+          e
+        end
+        @test err isa ErrorException
+        @test occursin("Coincident bars", sprint(showerror, err))
+        @test !occursin("UndefVarError", sprint(showerror, err))
       end
     end
   end

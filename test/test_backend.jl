@@ -6,6 +6,13 @@ using KhepriBase
 # Include the mock backend
 include("TestMockBackend.jl")
 
+if !@isdefined(TestSocketBackendKey)
+  abstract type TestSocketBackendKey end
+end
+
+KhepriBase.retry_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, Int}) = nothing
+KhepriBase.failed_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, Int}) = nothing
+
 @testset "Backend" begin
 
   @testset "Backend basic operations" begin
@@ -75,6 +82,17 @@ include("TestMockBackend.jl")
         @test ref > 0
         @test length(b.arcs) == 1
         @test b.arcs[1].amplitude ≈ π/2 atol=1e-10
+      end
+    end
+
+    @testset "default b_arc samples negative amplitudes" begin
+      with_mock_backend() do b
+        invoke(b_arc, Tuple{Backend, Any, Any, Any, Any, Any}, b, u0(), 5, 0, 2π, nothing)
+        positive_samples = length(b.lines[end].vertices)
+        invoke(b_arc, Tuple{Backend, Any, Any, Any, Any, Any}, b, u0(), 5, 0, -2π, nothing)
+        negative_samples = length(b.lines[end].vertices)
+        @test positive_samples == negative_samples
+        @test negative_samples > 2
       end
     end
 
@@ -373,6 +391,16 @@ include("TestMockBackend.jl")
       b = mock_backend()
       @test current_transaction(b)() isa AutoCommitTransaction
     end
+
+    @testset "with_transaction without explicit backend" begin
+      with_mock_backend() do b
+        with_transaction() do
+          sphere(u0(), 1)
+          @test isempty(b.spheres)
+        end
+        @test length(b.spheres) == 1
+      end
+    end
   end
 
   @testset "Backend exception handling" begin
@@ -383,6 +411,43 @@ include("TestMockBackend.jl")
       str = String(take!(io))
       @test occursin("test_op", str)
       @test occursin("MockBackend", str)
+    end
+  end
+
+  @testset "Backend fallbacks" begin
+    @testset "b_set_ground accepts material refs" begin
+      with_mock_backend() do b
+        mat = KhepriBase.material_ref(b, material_basic)
+        refs = KhepriBase.b_set_ground(b, 0, mat)
+        @test length(refs) == 16
+        @test length(b.triangles) == 16
+      end
+    end
+  end
+
+  @testset "Remote backend connection failures" begin
+    b = KhepriBase.SocketBackend{TestSocketBackendKey, Int}("NoServer", 9, NamedTuple())
+    err = try
+      KhepriBase.start_connection(b)
+      nothing
+    catch e
+      e
+    end
+    @test err !== nothing
+  end
+
+  @testset "Resource folder ordering" begin
+    original_folders = copy(KhepriBase.resources_folder)
+    try
+      empty!(KhepriBase.resources_folder)
+      append!(KhepriBase.resources_folder, ["first", "second"])
+      KhepriBase.add_resource_folder!("third")
+      @test KhepriBase.resources_folder == ["third", "first", "second"]
+      KhepriBase.add_resource_folder!("first")
+      @test KhepriBase.resources_folder == ["first", "third", "second"]
+    finally
+      empty!(KhepriBase.resources_folder)
+      append!(KhepriBase.resources_folder, original_folders)
     end
   end
 

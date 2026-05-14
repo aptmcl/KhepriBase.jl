@@ -1384,11 +1384,12 @@ maybe_merged_bar(b::Backend, s::TrussBar) =
   let tol = truss_node_coincidence_tolerance(),
       p0 = s.p0,
       p1 = s.p1
-    for b in b.truss_bars
-      if (distance(b.p0, p0) < tol && distance(b.p1, p1) < tol) ||
-         (distance(b.p0, p1) < tol && distance(b.p1, p0) < tol)
-        merge_coincident_truss_bars() || error("Coincident bars $(s) and $(n) at $(p0) and $(p1)")
-        return b
+    for existing_bar in b.truss_bars
+      if (distance(existing_bar.p0, p0) < tol && distance(existing_bar.p1, p1) < tol) ||
+         (distance(existing_bar.p0, p1) < tol && distance(existing_bar.p1, p0) < tol)
+        merge_coincident_truss_bars() ||
+          error("Coincident bars $(s) and $(existing_bar) at $(p0) and $(p1)")
+        return existing_bar
       end
     end
     b.realized(false)

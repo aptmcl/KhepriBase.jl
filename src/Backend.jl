@@ -357,7 +357,7 @@ b_arc(b::Backend, c, r, α, Δα, mat) =
   abs(Δα)*r < coincidence_tolerance() ?
     void_ref(b) :
     let pts = [c + vpol(r, a, c.cs)
-               for a in division(α, α + Δα, max(ceil(Int, Δα*32/2/π), 2), true)]
+               for a in division(α, α + Δα, max(ceil(Int, abs(Δα)*32/2/π), 2), true)]
       # `false, false` is the proxy default for spline end tangents; backends'
       # b_spline overrides test `v == false` to mean "no tangent specified".
       b_spline(b, pts, false, false, mat)
@@ -2804,7 +2804,7 @@ b_zoom_extents(::FrontendView, b) =
 
 public b_set_ground
 b_set_ground(b::Backend, level, mat) =
-  b_surface_regular_polygon(b, 16, z(level), 10000, 0, true, material_ref(b, mat))
+  b_surface_regular_polygon(b, 16, z(level), 10000, 0, true, mat)
 
 b_realistic_sky(b::Backend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
   b_realistic_sky(b, sun_pos(date, meridian, latitude, longitude)..., turbidity, sun)

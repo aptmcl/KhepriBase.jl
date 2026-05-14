@@ -49,7 +49,7 @@ ensure_ref(b::Backend{K,T}, rs::Vector{T1}) where {K,T,T1<:T} =
     NativeRef{K,T}(rs[1]) :
     NativeRefs{K,T}(rs)
 ensure_ref(b::Backend{K,T}, rs::Vector{Vector{T1}}) where {K,T,T1<:T} =
-  ensure_ref(b, reduce(vcat, rs))
+  ensure_ref(b, collect(Iterators.flatten(rs)))
 ensure_ref(b::Backend{K,T}, r::GenericRef{K,T}) where {K,T} = r
 ensure_ref(b::Backend{K,T}, r::Any) where {K,T} =
   LocalRef{K,T}(r)
@@ -70,7 +70,13 @@ ref_values(b::Backend{K,T}, r::NativeRef{K,T}) where {K,T} = T[r.value]
 ref_values(b::Backend{K,T}, r::NativeRefs{K,T}) where {K,T} = r.values
 ref_values(b::Backend{K,T}, r::LocalRef{K,T}) where {K,T} = T[r.value]
 ref_values(b::Backend, s::Proxy) = ref_values(b, ref(b, s))
-ref_values(b::Backend{K,T}, ss::Proxies) where {K,T} = mapreduce(s->ref_values(b, ref(b, s)), vcat, ss, init=T[])
+ref_values(b::Backend{K,T}, ss::Proxies) where {K,T} =
+  let refs = T[]
+    for s in ss
+      append!(refs, ref_values(b, ref(b, s)))
+    end
+    refs
+  end
 
 # currying
 map_ref(f::Function, b::Backend{K,T}) where {K,T} = r -> map_ref(f, b, r)
@@ -214,28 +220,13 @@ Even if a backend is eager, it might be necessary to temporarily delay the
 realization of shapes, particularly, when the construction is incremental.
 In that case, we collect all created shapes and then realize them at the end.
 =#
-# THIS IS OBSOLETE!!!
-with_transaction(fn) = 
-  let all_bs = current_backends(),
-      recur(bs) =
-        if isempty(bs)
-          fn()
-          for b in all_bs
-            for s in b.delayed_realizations()
-              maybe_realize(b, s)
-            end
-          end
-        else
-          let b = first(bs)
-            with(b.delayed_realizations, []) do
-              with(b.delaying_realize, true) do
-                recur(rest(bs))
-              end
-            end
-          end
-        end
-    recur(all_bs)
-  end
+with_transaction(fn) =
+  with_transaction(fn, current_backends())
+
+with_transaction(fn, bs::Backends) =
+  isempty(bs) ?
+    fn() :
+    with_transaction(() -> with_transaction(fn, Base.tail(bs)), first(bs))
 
 maybe_realize(s) =
   for b in current_backends()
@@ -370,6 +361,7 @@ excluded_modules = Parameter([Base, Base.CoreLogging, KhepriBase])
 # and a dict from file locations to shapes
 shape_to_file_locations = IdDict()
 file_location_to_shapes = Dict()
+const trace_lock = ReentrantLock()
 
 public traceability, trace_depth,
        excluded_modules, clear_trace!,
@@ -377,9 +369,19 @@ public traceability, trace_depth,
        shape_to_file_locations, file_location_to_shapes,
        highlight_source_shapes
 
-shape_source(s) = get(shape_to_file_locations, s, [])
-source_shapes(file::Symbol, line) = get(file_location_to_shapes, (file, line), Shape[])
+shape_source(s) =
+  lock(trace_lock) do
+    copy(get(shape_to_file_locations, s, []))
+  end
+source_shapes(file::Symbol, line) =
+  lock(trace_lock) do
+    copy(get(file_location_to_shapes, (file, line), Shape[]))
+  end
 source_shapes(file::String, line) = source_shapes(Symbol(file), line)
+traced_shapes() =
+  lock(trace_lock) do
+    collect(keys(shape_to_file_locations))
+  end
 highlight_source_shapes(file, line) =
   let shapes = source_shapes(file, line)
     unhighlight_all_shapes()
@@ -410,7 +412,7 @@ select_shape_sources_string() = begin
 end
 
 clear_trace!() =
-  begin
+  lock(trace_lock) do
     empty!(shape_to_file_locations)
     empty!(file_location_to_shapes)
   end
@@ -436,9 +438,11 @@ interesting_locations(frames) =
 trace!(s) =
   let frames = stacktrace(),
       locations = interesting_locations(frames)
-    shape_to_file_locations[s] = locations
-    for location in locations
-      file_location_to_shapes[location] = Shape[get(file_location_to_shapes, location, [])..., s]
+    lock(trace_lock) do
+      shape_to_file_locations[s] = locations
+      for location in locations
+        push!(get!(file_location_to_shapes, location, Shape[]), s)
+      end
     end
     s
   end
@@ -480,8 +484,7 @@ b_delete_all_annotations(b::Backend) =
 
 b_delete_all_shapes(b::Backend) =
   let refs = shape_refs_storage(b)
-    empty!(KhepriBase.shape_to_file_locations)
-    empty!(KhepriBase.file_location_to_shapes)
+    clear_trace!()
     b_delete_all_annotations(b)
     b_delete_all_shape_refs(b)
     empty!(refs)
@@ -1890,12 +1893,19 @@ end
 @defcbs highlight_shape(s::Shape)
 @defcbs unhighlight_shape(s::Shape)
 b_highlight_shapes(b::Backend{K, T}, ss::Shapes) where {K, T} =
-  let refs = reduce(vcat, [ref_values(b, s) for s in ss if realized(b, s)], init=T[])
+  let refs = realized_ref_values(b, ss)
     b_highlight_refs(b, refs)
   end
 b_unhighlight_shapes(b::Backend{K, T}, ss::Shapes) where {K, T} =
-  let refs = reduce(vcat, [ref_values(b, s) for s in ss if realized(b, s)], init=T[])
+  let refs = realized_ref_values(b, ss)
     b_unhighlight_refs(b, refs)
+  end
+realized_ref_values(b::Backend{K, T}, ss::Shapes) where {K, T} =
+  let refs = T[]
+    for s in ss
+      realized(b, s) && append!(refs, ref_values(b, s))
+    end
+    refs
   end
 b_highlight_shape(b::Backend, s::Shape) =
   b_highlight_shapes(b, [s])
@@ -1990,7 +2000,7 @@ select_many_with_prompt(prompt::String, b::Backend, f::Function) =
 maybe_existing_shape_from_ref(b::Backend, r) = begin
   # If we were collecting shapes, we could check the collection
   # if traceability was on, we can search for the exact shape
-  for (s, fl) in KhepriBase.shape_to_file_locations
+  for s in traced_shapes()
     if ref_value(b, s) == r # Found it!
       return s
     end

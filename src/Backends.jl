@@ -204,7 +204,8 @@ socket-backend connection attempt into a MethodError — the backend then logs
 "Couldn't connect" despite the backend process listening normally.
 =#
 start_connection(b::SocketBackend) =
-  let attempts = 10
+  let attempts = 10,
+      last_error = Ref{Any}(nothing)
     for i in 1:attempts
       try
         let conn = Sockets.connect(b.port)
@@ -212,13 +213,17 @@ start_connection(b::SocketBackend) =
           return conn
         end
       catch e
+        last_error[] = e
         if i == attempts
-		      failed_connecting(b)
+          failed_connecting(b)
         else
           retry_connecting(b)
         end
       end
     end
+    isnothing(last_error[]) ?
+      error("Could not connect to $(b.name).") :
+      throw(last_error[])
   end
 
 # To simplify remote calls
@@ -379,7 +384,7 @@ end
 public register_http_handler
 register_http_handler(c::WebSocketServer, target, handler) =
   let request_str = "/api/"*randstring()
-    HTTP.register!(c.router, "GET", target, req -> (handler(request_parameters(req)...); HTTP.Response(200, "0")))
+    HTTP.register!(c.router, "GET", request_str, req -> (handler(request_parameters(req)...); HTTP.Response(200, "0")))
     request_str
   end
 
@@ -475,7 +480,7 @@ const resources_folder_lock = ReentrantLock()
 
 add_resource_folder!(path) =
   lock(resources_folder_lock) do
-    pushfirst!(filter!(==(path), resources_folder), path)
+    pushfirst!(filter!(!=(path), resources_folder), path)
   end
 
 http_response_with_resource_file(filename) =
