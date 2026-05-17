@@ -14,14 +14,15 @@ between the broad `Path` abstraction and the open/closed families:
 Path (abstract)
 ├── ContourPath{false}
 │   └── OpenPath -- has distinct start and end
+│       ├── LinePath
 │       ├── ArcPath
+│       ├── EllipticArcPath
 │       ├── OpenPolygonalPath
 │       ├── OpenSplinePath / OpenInterpolatingSplinePath
 │       ├── OpenBezierPath
 │       ├── OpenBSplinePath
 │       ├── OpenNurbsPath -- rational B-spline
-│       ├── SegmentPath{false}
-│       └── OpenPathSequence
+│       └── CompositePath{false}
 ├── ContourPath{true}
 │   └── ClosedPath -- forms a loop
 │       ├── CircularPath
@@ -32,8 +33,7 @@ Path (abstract)
 │       ├── ClosedBezierPath
 │       ├── ClosedBSplinePath
 │       ├── ClosedNurbsPath -- rational B-spline
-│       ├── SegmentPath{true}
-│       └── ClosedPathSequence
+│       └── CompositePath{true}
 ├── EmptyPath, PointPath
 └── PathOps -- legacy line/arc operation record
 ```
@@ -103,15 +103,15 @@ the same degree/knot/domain model plus weights.
 
 ```julia
 # Connected sequence (end of each sub-path meets start of next)
-open_path_sequence(arc_path(u0(), 5, 0, pi/2),
+composite_path(arc_path(u0(), 5, 0, pi/2),
   open_polygonal_path([xy(0, 5), xy(-3, 5)]))
-closed_path_sequence(arc_path(u0(), 5, 0, pi),
-  open_polygonal_path([xy(-5, 0), xy(5, 0)]))
+composite_path(arc_path(u0(), 5, 0, pi),
+  open_polygonal_path([xy(-5, 0), xy(5, 0)]); closed=true)
 path_sequence(...)  # auto-detects open vs closed
 
 path_set(circular_path(u0(), 3), circular_path(xy(10, 0), 2))  # independent paths
-open_path_ops(u0(), LineOp(vx(5)), ArcOp(2, 0, pi/2), LineOp(vy(3)))  # builds a SegmentPath
-segment_path(u0(), [LineSegment(u0(), ux())])  # explicit segment contour
+open_path_ops(u0(), LineOp(vx(5)), ArcOp(2, 0, pi/2), LineOp(vy(3)))  # builds a CompositePath
+composite_path(line_path(u0(), ux()), arc_path(u0(), 1, 0, pi/2))      # explicit composite contour
 ```
 
 ## Querying Paths
@@ -146,13 +146,13 @@ indexing as shorthand: `path[3.0]` is equivalent to `location_at_length(path, 3.
 ```julia
 path_vertices(path)   # legacy helper: vertices or polygonal approximation
 path_points(path, mode=:control)      # authored control points
-path_points(path, mode=:breakpoints)  # exact segment endpoints
+path_points(path, mode=:breakpoints)  # exact piece endpoints
 path_points(path, mode=:sample)       # tessellated display/backend points
-path_segments(path)   # exact LineSegment / ArcSegment / BezierSegment / BSplineSegment pieces
+path_pieces(path)     # exact LinePath / ArcPath / BezierPath / BSplinePath pieces
 path_frames(path)     # oriented frames at each vertex, useful for sweeps and placement
 ```
 
-Prefer `path_segments` when you need topology or exact curve type information.
+Prefer `path_pieces` when you need topology or exact curve type information.
 Prefer `path_points(..., mode=:sample)` when you explicitly need a polygonal
 approximation for a backend or numerical operation.
 
