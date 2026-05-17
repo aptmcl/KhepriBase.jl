@@ -66,8 +66,8 @@ nonzero_offset(path::CircularPath, d::Real; join::Symbol=:miter, cap::Symbol=:bu
   circular_path(path.center, path.radius - d)
 nonzero_offset(path::ArcPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
   arc_path(path.center, path.radius - d, path.start_angle, path.amplitude)
-nonzero_offset(path::ClosedPathSequence, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
-  ClosedPathSequence([nonzero_offset(path, d; join=join, cap=cap, miter_limit=miter_limit) for path in path.paths])
+nonzero_offset(path::CompositePath{true}, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
+  CompositePath{true}(OpenPath[nonzero_offset(piece, d; join=join, cap=cap, miter_limit=miter_limit) for piece in path.pieces])
 
 _offset_edges(ps::Locs, d::Real, closed::Bool) =
   let n = length(ps),
@@ -136,7 +136,7 @@ end
 
 function _offset_round_join_segment(vertex, p0, p1, d)
   amp = _signed_angle_between(p0 - vertex, p1 - vertex)
-  ArcSegment(vertex, abs(d), pol_phi(p0 - vertex), amp)
+  arc_path(vertex, abs(d), pol_phi(p0 - vertex), amp)
 end
 
 function _offset_round_path(ps::Locs, d::Real, closed::Bool; cap::Symbol=:butt)
@@ -144,30 +144,30 @@ function _offset_round_path(ps::Locs, d::Real, closed::Bool; cap::Symbol=:butt)
   isempty(edges) && return open_polygonal_path(ps)
   if closed
     start = edges[1].a
-    segments = PathSegment[]
+    pieces = OpenPath[]
     for i in eachindex(edges)
       edge = edges[i]
       next = edges[mod1(i + 1, length(edges))]
       vertex = ps[mod1(i + 1, length(ps))]
-      !coincident_path_location(edge.a, edge.b) && push!(segments, LineSegment(edge.a, edge.b))
+      !coincident_path_location(edge.a, edge.b) && push!(pieces, line_path(edge.a, edge.b))
       !coincident_path_location(edge.b, next.a) &&
-        push!(segments, _offset_round_join_segment(vertex, edge.b, next.a, d))
+        push!(pieces, _offset_round_join_segment(vertex, edge.b, next.a, d))
     end
-    segment_path(start, segments; closed=true)
+    composite_path(pieces; closed=true)
   else
     start = _offset_start_point(edges[1], cap, d)
-    segments = PathSegment[]
+    pieces = OpenPath[]
     first_line_start = start
     for i in eachindex(edges)
       edge = edges[i]
       line_start = i == 1 ? first_line_start : edge.a
       line_end = i == length(edges) ? _offset_end_point(edge, cap, d) : edge.b
-      !coincident_path_location(line_start, line_end) && push!(segments, LineSegment(line_start, line_end))
+      !coincident_path_location(line_start, line_end) && push!(pieces, line_path(line_start, line_end))
       if i < length(edges) && !coincident_path_location(edge.b, edges[i + 1].a)
-        push!(segments, _offset_round_join_segment(ps[i + 1], edge.b, edges[i + 1].a, d))
+        push!(pieces, _offset_round_join_segment(ps[i + 1], edge.b, edges[i + 1].a, d))
       end
     end
-    segment_path(start, segments; closed=false)
+    composite_path(pieces; closed=false)
   end
 end
 

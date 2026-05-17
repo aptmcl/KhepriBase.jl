@@ -337,8 +337,8 @@ b_interpolating_spline_curve(b::Backend, ps, v0, v1, closed::Bool, mat) =
 b_bezier_curve(b::Backend, path::BezierPath, mat) =
   sampled_curve(b, path, mat)
 
-b_bezier_curve(b::Backend, segments::Vector{BezierSegment}, closed::Bool, mat) =
-  b_bezier_curve(b, bezier_path(segments; closed=closed), mat)
+b_bezier_curve(b::Backend, spans::Vector{BezierSpan}, closed::Bool, mat) =
+  b_bezier_curve(b, bezier_path(spans; closed=closed), mat)
 
 b_bspline_curve(b::Backend, path::BSplinePath{Closed,false}, mat) where {Closed} =
   b_nurbs_curve(b, path.control_points, path.degree, path.knots,
@@ -359,8 +359,8 @@ b_nurbs_curve(b::Backend, path::NurbsPath, mat) =
   b_nurbs_curve(b, path.control_points, path.degree, path.knots,
                 path.weights, is_closed_path(path), mat)
 
-b_polycurve(b::Backend, segments::Vector{PathSegment}, closed::Bool, mat) =
-  b_stroke_unite(b, [b_stroke(b, seg, mat) for seg in segments], mat)
+b_polycurve(b::Backend, pieces::Vector{<:OpenPath}, closed::Bool, mat) =
+  b_stroke_unite(b, [b_stroke(b, piece, mat) for piece in pieces], mat)
 
 function b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat)
   degree = max(Int(order) - 1, 1)
@@ -1076,8 +1076,8 @@ b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
            b_surface(b, path_on(profile, cb), bmat),
            b_surface(b, translate(path_on(profile, cb), v), tmat)))
   end
-b_extruded_curve(b::Backend, profile::PathSequence, v, cb, mat) =
-  vcat([b_extruded_curve(b, subprofile, v, cb, mat) for subprofile in profile.paths]...)
+b_extruded_curve(b::Backend, profile::CompositePath, v, cb, mat) =
+  vcat([b_extruded_curve(b, subprofile, v, cb, mat) for subprofile in profile.pieces]...)
 b_extruded_curve(b::Backend, profile::Path, v, cb, mat) =
   b_extruded_curve(b, convert(OpenPolygonalPath, profile), v, cb, mat)
 
@@ -1331,20 +1331,16 @@ b_stroke(b::Backend, path::OpenNurbsPath, mat) =
   b_nurbs_curve(b, path, mat)
 b_stroke(b::Backend, path::ClosedNurbsPath, mat) =
   b_nurbs_curve(b, path, mat)
-b_stroke(b::Backend, seg::LineSegment, mat) =
-  b_line(b, [seg.p0, seg.p1], mat)
-b_stroke(b::Backend, seg::ArcSegment, mat) =
-  b_arc(b, seg.center, seg.radius, seg.start_angle, seg.amplitude, mat)
-b_stroke(b::Backend, seg::EllipseSegment, mat) =
-  abs(seg.amplitude) >= 2π - coincidence_tolerance() ?
-    b_ellipse(b, seg.center, seg.r1, seg.r2, mat) :
-    b_elliptic_arc(b, seg.center, seg.r1, seg.r2, seg.start_angle, seg.amplitude, mat)
-b_stroke(b::Backend, seg::PathSegment, mat) =
-  b_stroke(b, segment_path(seg), mat)
-b_stroke(b::Backend, path::SegmentPath, mat) =
-  b_polycurve(b, path.segments, is_closed_path(path), mat)
+b_stroke(b::Backend, path::LinePath, mat) =
+  b_line(b, [path.p0, path.p1], mat)
+b_stroke(b::Backend, path::EllipticArcPath, mat) =
+  abs(path.amplitude) >= 2π - coincidence_tolerance() ?
+    b_ellipse(b, path.center, path.r1, path.r2, mat) :
+    b_elliptic_arc(b, path.center, path.r1, path.r2, path.start_angle, path.amplitude, mat)
+b_stroke(b::Backend, path::CompositePath, mat) =
+  b_polycurve(b, path.pieces, is_closed_path(path), mat)
 b_stroke(b::Backend, path::ContourPath, mat) =
-  b_stroke_unite(b, [b_stroke(b, seg, mat) for seg in path_segments(path)], mat)
+  b_stroke_unite(b, [b_stroke(b, piece, mat) for piece in path_pieces(path)], mat)
 b_stroke(b::Backend, path::Region, mat) =
   [b_stroke(b, path, mat) for path in path.paths]
 b_stroke(b::Backend, path::Mesh, mat) =
@@ -1354,7 +1350,7 @@ b_stroke(b::Backend, path::Mesh, mat) =
     end
   end
 #=
-PathSequence stroke must return a single ref so downstream consumers (e.g.
+CompositePath stroke must return a single ref so downstream consumers (e.g.
 sweep, which feeds the stroked path to the backend's sweep operator) can
 treat the sequence as one curve. The earlier for-loop discarded each
 sub-stroke's ref and returned `nothing`, which broke any caller that
@@ -1369,9 +1365,6 @@ for backends whose union covers both regimes — file-output backends, OBJ
 exporters, etc.) but is overridden by CAD backends that expose a dedicated
 curve-join primitive (AutoCAD: JoinCurves).
 =#
-b_stroke(b::Backend, path::PathSequence, mat) =
-  b_stroke_unite(b, [b_stroke(b, p, mat) for p in path.paths], mat)
-
 #=
 Join a set of curve refs produced by `b_stroke` into a single curve ref.
 Default is `b_unite_refs`; CAD backends that distinguish curve-join from
@@ -2983,9 +2976,9 @@ backend_fill(b, path) =
 backend_frame_at(b, c, t) = throw(UndefinedBackendException())
 backend_fill_curves(b, ids) = throw(UndefinedBackendException())
 
-#@bdef fill(path::ClosedPathSequence)
-backend_fill(b::Backend, path::ClosedPathSequence) =
-  backend_fill_curves(b, map(path->backend_stroke(b, path), path.paths))
+#@bdef fill(path::CompositePath)
+backend_fill(b::Backend, path::CompositePath{true}) =
+  backend_fill_curves(b, map(path->backend_stroke(b, path), path.pieces))
 
 
 @bdef ground(level::Loc, color::RGB)
@@ -3223,8 +3216,8 @@ b_right_cuboid(b::Backend, cb, width, height, h, mat) =
   b_box(b, add_xy(cb, -width/2, -height/2), width, height, h, mat)
 
 
-backend_stroke(b::Backend, path::Union{OpenPathSequence,ClosedPathSequence}) =
-  backend_stroke_unite(b, map(path->backend_stroke(b, path), path.paths))
+backend_stroke(b::Backend, path::CompositePath) =
+  backend_stroke_unite(b, map(path->backend_stroke(b, path), path.pieces))
 backend_stroke(b::Backend, path::PathOps) =
   begin
       start, curr, refs = path.start, path.start, new_refs(b)

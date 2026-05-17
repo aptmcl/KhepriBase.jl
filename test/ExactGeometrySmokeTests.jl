@@ -59,9 +59,9 @@ function _multi_segment_bezier()
   p1 = xyz(1, 2.5, 0.1)
   p2 = xyz(2, 2, 0)
   p3 = xyz(3, 1.5, 0.1)
-  bezier_path(BezierSegment[BezierSegment([p0, p0 + vx(0.4), p1 - vx(0.4), p1]),
-                            BezierSegment([p1, p1 + vx(0.4), p2 - vx(0.4), p2]),
-                            BezierSegment([p2, p2 + vx(0.4), p3 - vx(0.4), p3])])
+  bezier_path(BezierSpan[BezierSpan([p0, p0 + vx(0.4), p1 - vx(0.4), p1]),
+                            BezierSpan([p1, p1 + vx(0.4), p2 - vx(0.4), p2]),
+                            BezierSpan([p2, p2 + vx(0.4), p3 - vx(0.4), p3])])
 end
 
 function _surface_cases()

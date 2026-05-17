@@ -267,7 +267,7 @@ stress_extrusion(b, reset!, verify) =
       (-0.05, 0.05, -0.05, 0.05, 0.0, 5.0),
       verify)
 
-    # Path-sequence profile — exercises the b_stroke(::PathSequence) path.
+    # Composite profile — exercises the b_stroke(::CompositePath) path.
     run_one_test(b, slot, "extrude_closed_path_sequence",
       () -> extrusion(closed_path_sequence(
               arc_path(u0(), 3.0, 0.0, π),

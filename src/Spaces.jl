@@ -396,7 +396,7 @@ Used anywhere a `Space` lives on a curved floor plate: arc-shaped
 buildings, radial room layouts, courtyard-around-a-centre plans.
 
 Default behaviour (`n_arc = 0`) is **arc-native**: the returned
-path is a `ClosedPathSequence` of
+path is a closed `CompositePath` of
 `[inner_radial, outer_arc, outer_radial, inner_arc_reversed]`, so
 the outer and inner boundaries stay true circular arcs. Downstream,
 BIM backends that natively draw curved walls (AutoCAD, Revit) emit
@@ -412,7 +412,7 @@ curves, or for comparing against the legacy output.
 See also: `closed_polygonal_path`, `closed_path_sequence`,
 `arc_path`, `division`, `vpol`.
 =#
-"Boundary of a polar sector between radii `(r_inner, r_outer)` and angles `(theta_start, theta_end)` around `center`. Returns a `ClosedPathSequence` of lines + arcs by default, or a `ClosedPolygonalPath` when `n_arc > 0`."
+"Boundary of a polar sector between radii `(r_inner, r_outer)` and angles `(theta_start, theta_end)` around `center`. Returns a closed `CompositePath` of lines + arcs by default, or a `ClosedPolygonalPath` when `n_arc > 0`."
 function polar_sector_path(center::Loc, r_inner::Real, r_outer::Real,
                            theta_start::Real, theta_end::Real;
                            n_arc::Integer=0)
@@ -590,14 +590,14 @@ ArcEdge(arc::ArcPath) = ArcEdge(arc, path_start(arc), path_end(arc))
 # and arcs). Polygonal boundaries yield pure line edges; path
 # sequences yield the mix that was originally authored.
 boundary_components(path::Path) =
-  reduce(vcat, (_segment_to_edges(seg) for seg in path_segments(path)); init=Any[])
+  reduce(vcat, (_piece_to_edges(piece) for piece in path_pieces(path)); init=Any[])
 
-_segment_to_edges(seg::LineSegment) =
-  [LineEdge(seg.p0, seg.p1)]
-_segment_to_edges(seg::ArcSegment) =
-  [ArcEdge(arc_path(seg.center, seg.radius, seg.start_angle, seg.amplitude))]
-_segment_to_edges(seg::PathSegment) =
-  _path_to_edges(convert(OpenPolygonalPath, segment_path(seg)))
+_piece_to_edges(path::LinePath) =
+  [LineEdge(path.p0, path.p1)]
+_piece_to_edges(path::ArcPath) =
+  [ArcEdge(path)]
+_piece_to_edges(path::OpenPath) =
+  _path_to_edges(convert(OpenPolygonalPath, path))
 
 _path_to_edges(p::OpenPolygonalPath) =
   let vs = p.vertices

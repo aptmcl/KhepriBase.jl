@@ -136,28 +136,28 @@ using KhepriBase
     end
   end
 
-  @testset "Path segment API" begin
+  @testset "Path piece API" begin
     poly = open_polygonal_path([xy(0, 0), xy(2, 0), xy(2, 2)])
-    segs = path_segments(poly)
-    @test length(segs) == 2
-    @test all(s -> s isa LineSegment, segs)
+    pieces = path_pieces(poly)
+    @test length(pieces) == 2
+    @test all(s -> s isa LinePath, pieces)
     @test path_points(poly, mode=:control) == poly.vertices
     @test path_points(poly, mode=:breakpoints) == poly.vertices
 
     arc = arc_path(u0(), 2, 0, π/2)
-    arc_segs = path_segments(arc)
-    @test length(arc_segs) == 1
-    @test arc_segs[1] isa ArcSegment
-    @test arc_segs[1].radius == 2
+    arc_pieces = path_pieces(arc)
+    @test length(arc_pieces) == 1
+    @test arc_pieces[1] isa ArcPath
+    @test arc_pieces[1].radius == 2
 
     seq = path_sequence(arc, open_polygonal_path([path_end(arc), xy(0, 3)]))
-    seq_segs = path_segments(seq)
-    @test length(seq_segs) == 2
-    @test seq_segs[1] isa ArcSegment
-    @test seq_segs[2] isa LineSegment
-    unified = segment_path(xy(0, 0), [LineSegment(xy(0, 0), xy(1, 0)),
-                                      LineSegment(xy(1, 0), xy(1, 1))])
-    @test unified isa SegmentPath{false}
+    seq_pieces = path_pieces(seq)
+    @test length(seq_pieces) == 2
+    @test seq_pieces[1] isa ArcPath
+    @test seq_pieces[2] isa LinePath
+    unified = composite_path([line_path(xy(0, 0), xy(1, 0)),
+                              line_path(xy(1, 0), xy(1, 1))])
+    @test unified isa CompositePath{false}
     @test unified isa OpenPath
     @test path_vertices(unified) == [xy(0, 0), xy(1, 0), xy(1, 1)]
     tangent = in_world(vz(1, location_at_length(unified, 0.5).cs))
@@ -165,10 +165,10 @@ using KhepriBase
     @test tangent.y ≈ 0 atol=1e-10
     @test path_start(reverse(unified)) == path_end(unified)
 
-    closed_unified = segment_path(xy(0, 0), [LineSegment(xy(0, 0), xy(1, 0)),
-                                             LineSegment(xy(1, 0), xy(0, 0))];
-                                  closed=true)
-    @test closed_unified isa SegmentPath{true}
+    closed_unified = composite_path([line_path(xy(0, 0), xy(1, 0)),
+                                     line_path(xy(1, 0), xy(0, 0))];
+                                    closed=true)
+    @test closed_unified isa CompositePath{true}
     @test closed_unified isa ClosedPath
     @test is_closed_path(closed_unified)
     @test_throws ArgumentError path_sequence(open_polygonal_path([xy(0, 0), xy(1, 0)]),
@@ -498,7 +498,7 @@ using KhepriBase
   @testset "PathOps" begin
     @testset "LineOp" begin
       p = open_path_ops(u0(), LineOp(vxy(5, 0)))
-      @test p isa SegmentPath{false}
+      @test p isa CompositePath{false}
       @test path_length(p) ≈ 5 atol=1e-10
 
       loc = in_world(location_at_length(p, 2.5))
@@ -517,8 +517,8 @@ using KhepriBase
     end
   end
 
-  @testset "PathSequence" begin
-    @testset "OpenPathSequence" begin
+  @testset "CompositePath" begin
+    @testset "open composite" begin
       p1 = open_polygonal_path([xy(0, 0), xy(1, 0)])
       p2 = open_polygonal_path([xy(1, 0), xy(1, 1)])
       seq = open_path_sequence(p1, p2)
@@ -526,7 +526,7 @@ using KhepriBase
       @test path_length(seq) ≈ 2 atol=1e-10
     end
 
-    @testset "ClosedPathSequence" begin
+    @testset "closed composite" begin
       p1 = open_polygonal_path([xy(0, 0), xy(1, 0)])
       p2 = open_polygonal_path([xy(1, 0), xy(1, 1)])
       p3 = open_polygonal_path([xy(1, 1), xy(0, 0)])
@@ -698,15 +698,15 @@ using KhepriBase
 
   @testset "join_paths arc combinations" begin
     # Regression: windows on arc walls foldr-join into this pattern.
-    # Without a join_paths(ArcPath, OpenPathSequence) method this would
+    # Without a join_paths(ArcPath, CompositePath) method this would
     # raise MethodError.
     arc = arc_path(u0(), 5, 0, π/2)
     seq = path_sequence(
       open_polygonal_path([path_end(arc), path_end(arc) + vz(1)]),
       open_polygonal_path([path_end(arc) + vz(1), path_start(arc) + vz(1)]))
     joined = join_paths(arc, seq)
-    @test joined isa KhepriBase.OpenPathSequence
-    @test length(joined.paths) == 3
+    @test joined isa CompositePath{false}
+    @test length(joined.pieces) == 3
   end
 
   # The arc-wall door/window frame split in src/BIM.jl reads the wall

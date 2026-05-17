@@ -39,8 +39,8 @@ KhepriBase.b_bspline_curve(b::RecordingExactBackend, path::KhepriBase.BSplinePat
   recording_ref!(b, :bspline_curve, path)
 KhepriBase.b_nurbs_curve(b::RecordingExactBackend, path::KhepriBase.NurbsPath, mat) =
   recording_ref!(b, :nurbs_curve, path)
-KhepriBase.b_polycurve(b::RecordingExactBackend, segments::Vector{KhepriBase.PathSegment}, closed::Bool, mat) =
-  recording_ref!(b, :polycurve, (segments, closed))
+KhepriBase.b_polycurve(b::RecordingExactBackend, pieces::Vector{<:KhepriBase.OpenPath}, closed::Bool, mat) =
+  recording_ref!(b, :polycurve, (pieces, closed))
 KhepriBase.b_bezier_surface(b::RecordingExactBackend, surface::KhepriBase.BezierSurface, mat) =
   recording_ref!(b, :bezier_surface, surface)
 KhepriBase.b_bspline_surface(b::RecordingExactBackend, surface::KhepriBase.BSplineSurface{U,V,false}, mat) where {U,V} =
@@ -208,10 +208,9 @@ KhepriBase.failed_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, In
       KhepriBase.b_stroke(b, nurbs_path([xy(0, 0), xy(1, 1), xy(2, 0)]; degree=2), nothing)
       @test b.calls[end][1] == :nurbs_curve
 
-      p = segment_path(
-        xy(0, 0),
-        LineSegment(xy(0, 0), xy(1, 0)),
-        ArcSegment(xy(0, 0), 1.0, 0.0, pi / 2))
+      p = composite_path(
+        line_path(xy(0, 0), xy(1, 0)),
+        arc_path(xy(0, 0), 1.0, 0.0, pi / 2))
       KhepriBase.b_stroke(b, p, nothing)
       @test b.calls[end][1] == :polycurve
       @test b.calls[end][2][2] == false

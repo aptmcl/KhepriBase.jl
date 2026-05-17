@@ -761,7 +761,7 @@ averaged-tangent frames at the corners, which `rotation_minimizing_frames`
 then smooths into the continuous profile orientation you'd expect.
 
 For an `ArcPath` subpath (curved walls), that approach breaks down:
-the composite path becomes an `OpenPathSequence` mixing poly jambs with
+the composite path becomes a `CompositePath` mixing poly jambs with
 an arc head, `path_frames` falls back to `path_interpolated_frames`,
 and — crucially — the RMF seed is the first frame of the right jamb,
 whose orientation is picked by `cs_from_o_vz((0, 0, -1))`. That seed

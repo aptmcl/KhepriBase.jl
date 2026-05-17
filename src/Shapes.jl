@@ -1222,7 +1222,7 @@ shape_path(s::SurfaceRectangle) = rectangular_path(s.corner, s.dx, s.dy)
 shape_path(s::SurfacePolygon) = closed_polygonal_path(s.vertices)
 shape_path(s::SurfaceRegularPolygon) = closed_polygonal_path(regular_polygon_vertices(s.edges, s.center, s.radius, s.angle, s.inscribed))
 shape_path(s::SurfaceRing) = circular_path(s.center, s.outer_radius)
-shape_path(s::Surface) = length(s.frontier) == 1 ? shape_path(s.frontier[1]) : ClosedPathSequence([shape_path(e) for e in s.frontier])
+shape_path(s::Surface) = length(s.frontier) == 1 ? shape_path(s.frontier[1]) : closed_path_sequence(shape_path.(s.frontier)...)
 
 ## shape_region takes a 2D shape and computes an equivalent region
 shape_region(s::Shape2D) = region(shape_path(s))
