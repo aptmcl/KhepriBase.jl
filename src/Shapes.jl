@@ -241,9 +241,10 @@ maybe_realize(s) =
 Backends might need to immediately realize a shape while supporting further modifications
 e.g., using boolean operations. Others, however, cannot do that and can only realize
 shapes when they have complete information about them.
-We are going to implement these two strategies using transactions. The first strategy 
+We are going to implement these two strategies using transactions. The first strategy
 corresponds to an auto-commit transaction, while the second corresponds to a manual commit transaction.
 =#
+public Transaction, AutoCommitTransaction, ManualCommitTransaction
 abstract type Transaction end
 struct AutoCommitTransaction <: Transaction end
 struct ManualCommitTransaction <: Transaction
@@ -1593,12 +1594,12 @@ proceed.
 flatten_paths(p::PathSet) = mapreduce(flatten_paths, vcat, p.paths; init=Path[])
 flatten_paths(p::Path) = Path[p]
 
-shape_path(s::UnitedSurfaces) =
-  path_set(flatten_paths(shape_path(s.source))..., flatten_paths(shape_path(s.mask))...)
-shape_path(s::SubtractedSurfaces) =
-  path_set(flatten_paths(shape_path(s.source))..., flatten_paths(shape_path(s.mask))...)
-shape_path(s::IntersectedSurfaces) =
-  path_set(flatten_paths(shape_path(s.source))..., flatten_paths(shape_path(s.mask))...)
+unsupported_surface_csg_path(op) =
+  throw(ArgumentError("Cannot derive a single boundary path for a 2D surface $(op) on this backend. Use a backend with native 2D CSG support or convert the result to explicit regions before realization."))
+
+shape_path(s::UnitedSurfaces) = unsupported_surface_csg_path("union")
+shape_path(s::SubtractedSurfaces) = unsupported_surface_csg_path("subtraction")
+shape_path(s::IntersectedSurfaces) = unsupported_surface_csg_path("intersection")
 
 #=
 Effective dimension of a shape for boolean dispatch. Unwraps transformation

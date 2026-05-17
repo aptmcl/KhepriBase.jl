@@ -983,7 +983,12 @@ Base.isequal(v::Vec, w::Vec) =
 angle_between(v1, v2) =
   let v1 = in_world(v1),
       v2 = in_world(v2)
-    acos(dot(v1, v2)/(norm(v1)*norm(v2)))
+    let n1 = norm(v1),
+        n2 = norm(v2)
+      n1 >= zero_vector_tolerance() || throw(ArgumentError("Cannot compute angle with zero-length first vector"))
+      n2 >= zero_vector_tolerance() || throw(ArgumentError("Cannot compute angle with zero-length second vector"))
+      acos(clamp(dot(v1, v2)/(n1*n2), -1, 1))
+    end
   end
 
 perpendicular_point(p, n, q) =

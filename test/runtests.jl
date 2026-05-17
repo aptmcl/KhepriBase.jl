@@ -29,6 +29,7 @@ using Test
     include("test_paths.jl")
     include("test_geometry.jl")
     include("test_tolerances.jl")
+    include("test_review_fixes.jl")
   end
 
   # Phase 3: Shape System tests

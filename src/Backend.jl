@@ -262,8 +262,22 @@ const b_closed_line = b_polygon
 b_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
   b_polygon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), mat)
 
-b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat) =
-  # Sample the curve at many points for a visually smooth polyline
+function b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat)
+  degree = max(Int(order) - 1, 1)
+  path = try
+    nurbs_path(Loc[cps...]; degree=degree, periodic=closed,
+               knots=knots, weights=weights)
+  catch
+    nothing
+  end
+  if !isnothing(path)
+    poly = convert(closed ? ClosedPolygonalPath : OpenPolygonalPath, path)
+    return closed ?
+      b_polygon(b, poly.vertices, mat) :
+      b_line(b, poly.vertices, mat)
+  end
+  # Legacy spline fallback: older callers pass interpolation points plus
+  # backend-specific coefficient/knot data that is not a full NURBS vector.
   let ci = curve_interpolator(ps, closed),
       n = max(length(ps) * 16, 64),
       sampled = [location_at(ci, t) for t in division(0, 1, n, !closed)]
@@ -271,6 +285,7 @@ b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat) =
       b_polygon(b, sampled, mat) :
       b_line(b, sampled, mat)
   end
+end
 
 b_spline(b::Backend, ps, mat) =
   b_spline(b, ps, false, false, mat)
@@ -654,7 +669,7 @@ public b_generic_pyramid_frustum, b_generic_pyramid, b_generic_prism,
        b_generic_pyramid_frustum_with_holes, b_generic_prism_with_holes,
        b_pyramid_frustum, b_pyramid, b_prism,
        b_regular_pyramid_frustum, b_regular_pyramid, b_regular_prism,
-       b_cylinder,
+       b_cylinder, b_cylinder_surfaces,
        b_cuboid,
        b_box,
        b_sphere,
@@ -743,6 +758,17 @@ b_cylinder(b::Backend, cb, r, h, bmat, tmat, smat) =
       true,
       vz(h, cb.cs),
       bmat, tmat, smat)
+  end
+
+b_cylinder_surfaces(b::Backend, cb, r, h, bmat, tmat, smat) =
+  let n = tessellation_divisions(b),
+      bs = regular_polygon_vertices(n, cb, r, 0, true),
+      ts = translate(bs, vz(h, cb.cs)),
+      refs = new_refs(b)
+    collect_ref!(refs, b_quad_strip_closed(b, bs, ts, true, smat))
+    isnothing(bmat) || collect_ref!(refs, b_surface_polygon(b, reverse(bs), bmat))
+    isnothing(tmat) || collect_ref!(refs, b_surface_polygon(b, ts, tmat))
+    refs
   end
 
 b_cuboid(b::Backend, pb0, pb1, pb2, pb3, pt0, pt1, pt2, pt3, mat) =
@@ -838,7 +864,7 @@ b_surface(b::Backend, frontier::Shapes, mat) =
 b_path_frustum(b::Backend, bpath, tpath, bmat, tmat, smat) =
   let blength = path_length(bpath),
     tlength = path_length(tpath),
-    n = max(length(path_vertices(bpath)), length(path_vertices(bpath))),
+    n = max(length(path_vertices(bpath)), length(path_vertices(tpath))),
     bs = division(bpath, n),
     ts = division(tpath, n)
     # We should rotate one of the vertices array to minimize the distance
@@ -871,7 +897,6 @@ b_extruded_curve(b::Backend, path::ClosedPolygonalPath, v, cb, mat) =
 
 b_extruded_curve(b::Backend, profile::CircularPath, v, cb, mat) =
   v.cs === cb.cs && iszero(v.x) && iszero(v.y) ?
-    # HACK: This is wrong. It should be an open cylinder
     b_cylinder(b, add_xy(cb, profile.center.x, profile.center.y), profile.radius, v.z, nothing, nothing, mat) :
   b_generic_prism(b,
     path_vertices_on(profile, cb),
@@ -1136,6 +1161,12 @@ b_stroke(b::Backend, path::OpenSplinePath, mat) =
   b_spline(b, path.vertices, path.v0, path.v1, mat)
 b_stroke(b::Backend, path::ClosedSplinePath, mat) =
   b_closed_spline(b, path.vertices, mat)
+b_stroke(b::Backend, path::OpenNurbsPath, mat) =
+  b_nurbs_curve(b, path.control_points, path.degree + 1, path.control_points,
+                path.knots, path.weights, false, mat)
+b_stroke(b::Backend, path::ClosedNurbsPath, mat) =
+  b_nurbs_curve(b, path.control_points, path.degree + 1, path.control_points,
+                path.knots, path.weights, true, mat)
 b_stroke(b::Backend, path::Region, mat) =
   [b_stroke(b, path, mat) for path in path.paths]
 b_stroke(b::Backend, path::Mesh, mat) =
@@ -1179,6 +1210,8 @@ b_fill(b::Backend, path::ClosedPolygonalPath, mat) =
   b_surface_polygon(b, path.vertices, mat)
 b_fill(b::Backend, path::ClosedSplinePath, mat) =
   b_surface_closed_spline(b, path.vertices, mat)
+b_fill(b::Backend, path::ClosedNurbsPath, mat) =
+  b_surface_polygon(b, path_vertices(path), mat)
 b_fill(b::Backend, path::Region, mat) =
   b_surface(b, path, mat)
 b_fill(b::Backend, path::Mesh, mat) =
@@ -1667,6 +1700,10 @@ b_ramp(b::Backend, path, bottom_level, top_level, family) =
       bmat, tmat, smat)
   end
 
+public stair_step_count
+stair_step_count(total_h, riser_height) =
+  Int(round(total_h / riser_height))
+
 #=
 `base_point` is the bottom-left corner when looking up the stair (along
 `+direction`); `perp = cross(direction, vz(1))` points to the user's
@@ -1689,7 +1726,7 @@ b_stair(b::Backend, base_point, direction, bottom_level, top_level, family) =
   let bottom_h = level_height(b, bottom_level),
       top_h = level_height(b, top_level),
       total_h = top_h - bottom_h,
-      n_steps = Int(round(total_h / family.riser_height)),
+      n_steps = stair_step_count(total_h, family.riser_height),
       riser_h = total_h / n_steps,
       tread_d = family.tread_depth,
       w = family.width,
@@ -1721,7 +1758,7 @@ b_spiral_stair(b::Backend, center, radius, start_angle, included_angle,
   let bottom_h = level_height(b, bottom_level),
       top_h = level_height(b, top_level),
       total_h = top_h - bottom_h,
-      n_steps = Int(round(total_h / family.riser_height)),
+      n_steps = stair_step_count(total_h, family.riser_height),
       riser_h = total_h / n_steps,
       sign = clockwise ? -1 : 1,
       angle_step = sign * included_angle / n_steps,

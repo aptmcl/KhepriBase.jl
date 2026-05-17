@@ -66,6 +66,9 @@ struct MockCylinder
   center::Loc
   radius::Real
   height::Real
+  bottom_material
+  top_material
+  side_material
 end
 
 # Mock backend structure
@@ -234,7 +237,7 @@ b_box(b::MockBackend, c, dx, dy, dz, mat) = begin
 end
 
 b_cylinder(b::MockBackend, cb, r, h, bmat, tmat, smat) = begin
-  push!(b.cylinders, MockCylinder(cb, r, h))
+  push!(b.cylinders, MockCylinder(cb, r, h, bmat, tmat, smat))
   next_ref!(b)
 end
 

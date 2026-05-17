@@ -483,18 +483,46 @@ add_resource_folder!(path) =
     pushfirst!(filter!(!=(path), resources_folder), path)
   end
 
+function resource_relative_path(filename)
+  filename isa AbstractString || return nothing
+  isempty(filename) && return nothing
+  occursin('\0', filename) && return nothing
+  decoded = try
+    HTTP.URIs.unescapeuri(replace(filename, '\\' => '/'))
+  catch
+    return nothing
+  end
+  any(==(".."), splitpath(decoded)) && return nothing
+  rel = normpath(decoded)
+  (isempty(rel) || rel == "." || isabspath(rel)) && return nothing
+  any(==(".."), splitpath(rel)) && return nothing
+  rel
+end
+
+function resource_file_in_root(root, rel)
+  root_abs = abspath(root)
+  candidate = abspath(joinpath(root_abs, rel))
+  from_root = relpath(candidate, root_abs)
+  (from_root == ".." || startswith(from_root, string("..", Base.Filesystem.path_separator)) || isabspath(from_root)) &&
+    return nothing
+  candidate
+end
+
 http_response_with_resource_file(filename) =
-  let folders = lock(resources_folder_lock) do
+  let rel = resource_relative_path(filename)
+    rel === nothing && return HTTP.Response(400, "Invalid resource path")
+    let folders = lock(resources_folder_lock) do
                   copy(resources_folder)
                 end
-    for res_path in folders
-      let full_path = joinpath(res_path, filename)
-        if isfile(full_path)
-          return http_response_with_file(full_path)
+      for res_path in folders
+        let full_path = resource_file_in_root(res_path, rel)
+          if full_path !== nothing && isfile(full_path)
+            return http_response_with_file(full_path)
+          end
         end
       end
+      HTTP.Response(404, "File not found: $rel")
     end
-    HTTP.Response(404, "File not found: $filename")
   end
 
 #=

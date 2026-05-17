@@ -28,6 +28,13 @@ export empty_path,
        closed_spline_path,
        SplinePath,
        spline_path,
+       OpenNurbsPath,
+       open_nurbs_path,
+       ClosedNurbsPath,
+       closed_nurbs_path,
+       NurbsPath,
+       nurbs_path,
+       control_point_curve_path,
        PathSet,
        path_set,
        OpenPathSequence,
@@ -40,6 +47,12 @@ export empty_path,
        stroke,
        fill,
        path_length,
+       length_at_parameter,
+       parameter_at_length,
+       divide_path_parameters_by_count,
+       divide_path_by_count,
+       divide_curve_parameters,
+       divide_curve,
        location_at,
        location_at_length,
        path_start,
@@ -152,6 +165,10 @@ sweep-style frame placement).
 "Polyline segments per 2π of parameter span when flattening smooth curves to polylines. [count]"
 const path_smoothness_segments = Parameter(64)
 export path_smoothness_segments
+
+"Absolute tolerance used by numerical path-length integration and inverse arc-length lookup. [metres]"
+const curve_length_tolerance = Parameter(1e-8)
+export curve_length_tolerance
 
 
 
@@ -397,6 +414,215 @@ path_end(path::ClosedSplinePath) = path.vertices[1]
 convert(::Type{ClosedSplinePath}, path::Path) =
   closed_spline_path(path_vertices(path))
 
+# NURBS paths
+
+struct OpenNurbsPath <: OpenPath
+    control_points::Vector{Loc}
+    degree::Int
+    knots::Vector{Float64}
+    weights::Vector{Float64}
+    domain::Tuple{Float64,Float64}
+end
+
+struct ClosedNurbsPath <: ClosedPath
+    control_points::Vector{Loc}
+    degree::Int
+    knots::Vector{Float64}
+    weights::Vector{Float64}
+    domain::Tuple{Float64,Float64}
+end
+
+NurbsPath = Union{OpenNurbsPath, ClosedNurbsPath}
+
+function default_nurbs_knots(n::Integer, degree::Integer, periodic::Bool)
+  n > degree || throw(ArgumentError("A NURBS path needs at least degree + 1 control points."))
+  if periodic
+    collect(0.0:Float64(n + degree))
+  else
+    interior = n - degree - 1
+    vcat(fill(0.0, degree + 1),
+         [i / (interior + 1) for i in 1:interior],
+         fill(1.0, degree + 1))
+  end
+end
+
+function normalize_nurbs_knots(knots, n::Integer, degree::Integer)
+  ks = Float64.(collect(knots))
+  expected = n + degree + 1
+  if length(ks) == expected
+    ks
+  elseif length(ks) == expected - 2
+    # Rhino exposes the knot vector without the two superfluous end knots.
+    [ks[1], ks..., ks[end]]
+  else
+    throw(ArgumentError("Expected $(expected) NURBS knots ($(expected - 2) for Rhino-style knots), got $(length(ks))."))
+  end
+end
+
+nurbs_domain(knots, degree, n) =
+  (Float64(knots[degree + 1]), Float64(knots[n + 1]))
+
+function nurbs_path(control_points::Locs; degree::Integer=3, periodic::Bool=false,
+                    knots=nothing, weights=nothing, domain=nothing)
+  degree = Int(degree)
+  degree >= 1 || throw(ArgumentError("NURBS degree must be at least 1."))
+  cps = Loc[control_points...]
+  length(cps) > degree || throw(ArgumentError("A degree $degree NURBS path needs at least $(degree + 1) control points."))
+  ws = weights === nothing ? fill(1.0, length(cps)) : Float64.(collect(weights))
+  length(ws) == length(cps) || throw(ArgumentError("NURBS weights must match the control point count."))
+
+  if periodic && knots === nothing
+    cps = [cps; cps[1:degree]]
+    ws = [ws; ws[1:degree]]
+  end
+
+  ks = knots === nothing ?
+    default_nurbs_knots(length(cps), degree, periodic) :
+    normalize_nurbs_knots(knots, length(cps), degree)
+  all(ks[i] <= ks[i + 1] for i in 1:length(ks)-1) ||
+    throw(ArgumentError("NURBS knots must be nondecreasing."))
+
+  dom = domain === nothing ?
+    nurbs_domain(ks, degree, length(cps)) :
+    (Float64(domain[1]), Float64(domain[2]))
+  dom[1] < dom[2] || throw(ArgumentError("NURBS domain must be increasing."))
+
+  periodic ?
+    ClosedNurbsPath(cps, degree, ks, ws, dom) :
+    OpenNurbsPath(cps, degree, ks, ws, dom)
+end
+
+open_nurbs_path(control_points::Locs=[u0(), x(), xy(), y()]; degree::Integer=3,
+                knots=nothing, weights=nothing, domain=nothing) =
+  nurbs_path(control_points; degree=degree, periodic=false,
+             knots=knots, weights=weights, domain=domain)
+
+closed_nurbs_path(control_points::Locs=[u0(), x(), xy(), y()]; degree::Integer=3,
+                  knots=nothing, weights=nothing, domain=nothing) =
+  nurbs_path(control_points; degree=degree, periodic=true,
+             knots=knots, weights=weights, domain=domain)
+
+control_point_curve_path(control_points::Locs, degree::Integer=3, periodic::Bool=false) =
+  nurbs_path(control_points; degree=degree, periodic=periodic)
+
+path_domain(path::NurbsPath) = path.domain
+
+function nurbs_parameter(path::NurbsPath, t::Real)
+  t0, t1 = path_domain(path)
+  if is_closed_path(path)
+    t == t1 && return t1
+    period = t1 - t0
+    t0 + mod(t - t0, period)
+  else
+    clamp(Float64(t), t0, t1)
+  end
+end
+
+function nurbs_find_span(knots, degree, t, n)
+  t <= knots[degree + 1] && return degree + 1
+  t >= knots[n + 1] && return n
+  low = degree + 1
+  high = n + 1
+  mid = div(low + high, 2)
+  while t < knots[mid] || t >= knots[mid + 1]
+    if t < knots[mid]
+      high = mid
+    else
+      low = mid
+    end
+    mid = div(low + high, 2)
+  end
+  mid
+end
+
+function nurbs_basis_functions(span, t, degree, knots)
+  ns = zeros(Float64, degree + 1)
+  left = zeros(Float64, degree)
+  right = zeros(Float64, degree)
+  ns[1] = 1.0
+  for j in 1:degree
+    left[j] = t - knots[span + 1 - j]
+    right[j] = knots[span + j] - t
+    saved = 0.0
+    for r in 0:j-1
+      denom = right[r + 1] + left[j - r]
+      temp = iszero(denom) ? 0.0 : ns[r + 1] / denom
+      ns[r + 1] = saved + right[r + 1] * temp
+      saved = left[j - r] * temp
+    end
+    ns[j + 1] = saved
+  end
+  ns
+end
+
+function nurbs_location_raw(path::NurbsPath, t::Real)
+  t = nurbs_parameter(path, t)
+  cps = path.control_points
+  degree = path.degree
+  span = nurbs_find_span(path.knots, degree, t, length(cps))
+  ns = nurbs_basis_functions(span, t, degree, path.knots)
+  x = 0.0
+  y = 0.0
+  z = 0.0
+  denom = 0.0
+  for j in 0:degree
+    i = span - degree + j
+    w = path.weights[i]
+    coeff = ns[j + 1] * w
+    p = raw_point(cps[i])
+    x += coeff * p[1]
+    y += coeff * p[2]
+    z += coeff * p[3]
+    denom += coeff
+  end
+  abs(denom) > eps(Float64) ||
+    throw(DomainError(t, "NURBS evaluation produced a zero denominator."))
+  (x / denom, y / denom, z / denom)
+end
+
+nurbs_location(path::NurbsPath, t::Real) =
+  let p = nurbs_location_raw(path, t)
+    xyz(p[1], p[2], p[3], world_cs)
+  end
+
+function nurbs_tangent(path::NurbsPath, t::Real)
+  t0, t1 = path_domain(path)
+  h = max((t1 - t0) * 1e-6, sqrt(eps(Float64)))
+  ta = is_closed_path(path) ? t - h : max(t0, t - h)
+  tb = is_closed_path(path) ? t + h : min(t1, t + h)
+  tb == ta && return vz(1, world_cs)
+  pa = nurbs_location_raw(path, ta)
+  pb = nurbs_location_raw(path, tb)
+  vxyz((pb[1] - pa[1]) / (tb - ta),
+       (pb[2] - pa[2]) / (tb - ta),
+       (pb[3] - pa[3]) / (tb - ta),
+       world_cs)
+end
+
+location_at(path::NurbsPath, t::Real) =
+  let p = nurbs_location(path, t),
+      tangent = nurbs_tangent(path, t)
+    norm(tangent) <= zero_vector_tolerance() ? p : loc_from_o_vz(p, tangent)
+  end
+
+path_start(path::NurbsPath) = location_at(path, path_domain(path)[1])
+path_end(path::OpenNurbsPath) = location_at(path, path_domain(path)[2])
+path_end(path::ClosedNurbsPath) = path_start(path)
+
+translate(path::NurbsPath, v::Vec) =
+  nurbs_path(translate(path.control_points, v); degree=path.degree,
+             periodic=is_closed_path(path), knots=path.knots,
+             weights=path.weights, domain=path.domain)
+in_cs(path::NurbsPath, cs::CS) =
+  nurbs_path(in_cs(path.control_points, cs); degree=path.degree,
+             periodic=is_closed_path(path), knots=path.knots,
+             weights=path.weights, domain=path.domain)
+scale(path::NurbsPath, s::Real, p::Loc=u0()) =
+  s == 1 ? path :
+    nurbs_path([p + (q - p)*s for q in path.control_points]; degree=path.degree,
+               periodic=is_closed_path(path), knots=path.knots,
+               weights=path.weights, domain=path.domain)
+
 
 # There is a set of operations over Paths:
 # 1. translate a path a given vector
@@ -499,6 +725,8 @@ path_length(path::ClosedSplinePath) =
   let vs = convert(ClosedPolygonalPath, path).vertices
     path_length(vs) + distance(vs[end], vs[1])
   end
+path_length(path::NurbsPath) =
+  length_at_parameter(path, path_domain(path)[2])
 
 # Same delegation strategy for arc-length lookup. Without these, the
 # revolve fallback path (`b_revolved_curve`'s `path_frames` →
@@ -572,6 +800,134 @@ location_at_length(path::ClosedPolygonalPath, d::Real) =
       end
     end
   end
+location_at_length(path::NurbsPath, d::Real) =
+  location_at(path, parameter_at_length(path, d))
+
+function path_parameter_speed(path::Path, t::Real)
+  t0, t1 = path_domain(path)
+  lo, hi = min(t0, t1), max(t0, t1)
+  h = max((hi - lo) * 1e-6, sqrt(eps(Float64)))
+  ta = clamp(Float64(t) - h, lo, hi)
+  tb = clamp(Float64(t) + h, lo, hi)
+  tb == ta && return 0.0
+  pa = in_world(location_at(path, ta))
+  pb = in_world(location_at(path, tb))
+  distance(pa, pb) / (tb - ta)
+end
+
+simpson_estimate(f, a, b, fa, fm, fb) =
+  (b - a) * (fa + 4fm + fb) / 6
+
+function adaptive_simpson(f, a, b, atol, whole, fa, fm, fb, depth)
+  c = (a + b) / 2
+  lm = (a + c) / 2
+  rm = (c + b) / 2
+  flm = f(lm)
+  frm = f(rm)
+  left = simpson_estimate(f, a, c, fa, flm, fm)
+  right = simpson_estimate(f, c, b, fm, frm, fb)
+  delta = left + right - whole
+  depth <= 0 || abs(delta) <= 15atol ?
+    left + right + delta / 15 :
+    adaptive_simpson(f, a, c, atol / 2, left, fa, flm, fm, depth - 1) +
+    adaptive_simpson(f, c, b, atol / 2, right, fm, frm, fb, depth - 1)
+end
+
+function integrate_path_parameter_length(path::Path, a::Real, b::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance())
+  a == b && return 0.0
+  lo, hi = minmax(Float64(a), Float64(b))
+  f = t -> path_parameter_speed(path, t)
+  fa = f(lo)
+  fb = f(hi)
+  fm = f((lo + hi) / 2)
+  whole = simpson_estimate(f, lo, hi, fa, fm, fb)
+  tol = max(atol, abs(whole) * rtol)
+  adaptive_simpson(f, lo, hi, tol, whole, fa, fm, fb, 16)
+end
+
+function length_at_parameter(path::Path, t::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance())
+  t0, t1 = path_domain(path)
+  t = clamp(Float64(t), min(t0, t1), max(t0, t1))
+  integrate_path_parameter_length(path, t0, t; atol=atol, rtol=rtol)
+end
+
+function length_at_parameter(path::NurbsPath, t::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance())
+  if path.degree == 1 && all(w -> isapprox(w, path.weights[1]; atol=eps(Float64)), path.weights)
+    t0, t1 = path_domain(path)
+    t = clamp(Float64(t), t0, t1)
+    len = 0.0
+    for span in path.degree + 1:length(path.control_points)
+      a = path.knots[span]
+      b = path.knots[span + 1]
+      b > a || continue
+      p0 = path.control_points[span - path.degree]
+      p1 = path.control_points[span - path.degree + 1]
+      seg_len = distance(p0, p1)
+      if t >= b
+        len += seg_len
+      elseif t > a
+        len += seg_len * (t - a) / (b - a)
+        break
+      end
+    end
+    len
+  else
+    t0, t1 = path_domain(path)
+    t = clamp(Float64(t), min(t0, t1), max(t0, t1))
+    integrate_path_parameter_length(path, t0, t; atol=atol, rtol=rtol)
+  end
+end
+
+length_at_parameter(path::Union{RectangularPath,PolygonalPath}, t::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance()) =
+  clamp(Float64(t), 0.0, path_length(path))
+length_at_parameter(path::CircularPath, t::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance()) =
+  path.radius * clamp(Float64(t), 0.0, 2π)
+length_at_parameter(path::ArcPath, t::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance()) =
+  path.radius * min(abs(Float64(t)), abs(path.amplitude))
+
+parameter_at_length(path::Union{RectangularPath,PolygonalPath}, d::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance()) =
+  clamp(Float64(d), 0.0, path_length(path))
+parameter_at_length(path::CircularPath, d::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance()) =
+  clamp(Float64(d), 0.0, path_length(path)) / path.radius
+parameter_at_length(path::ArcPath, d::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance()) =
+  sign(path.amplitude) * clamp(Float64(d), 0.0, path_length(path)) / path.radius
+
+function parameter_at_length(path::Path, d::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance())
+  total = path_length(path)
+  target = clamp(Float64(d), 0.0, total)
+  t0, t1 = path_domain(path)
+  target <= atol && return t0
+  total - target <= atol && return t1
+  lo, hi = Float64(t0), Float64(t1)
+  for _ in 1:64
+    mid = (lo + hi) / 2
+    if length_at_parameter(path, mid; atol=atol, rtol=rtol) < target
+      lo = mid
+    else
+      hi = mid
+    end
+  end
+  (lo + hi) / 2
+end
+
+function divide_path_parameters_by_count(path::Path, count::Integer; include_ends::Bool=true)
+  count = Int(count)
+  count <= 0 && return Float64[]
+  total = path_length(path)
+  lengths = collect(range(0.0, total; length=count + 1))
+  !include_ends && (lengths = lengths[2:end-1])
+  [parameter_at_length(path, d) for d in lengths]
+end
+
+divide_path_by_count(path::Path, count::Integer; include_ends::Bool=true) =
+  [location_at(path, t) for t in divide_path_parameters_by_count(path, count; include_ends=include_ends)]
+
+curve_path(curve::Path) = curve
+curve_path(curve) = shape_path(curve)
+divide_curve_parameters(curve, count::Integer, include_ends::Bool=true) =
+  divide_path_parameters_by_count(curve_path(curve), count; include_ends=include_ends)
+divide_curve(curve, count::Integer, include_ends::Bool=true) =
+  divide_path_by_count(curve_path(curve), count; include_ends=include_ends)
 
 subpath_starting_at(path::Path, d::Real) = subpath(path, d, path_length(path))
 subpath_ending_at(path::Path, d::Real) = subpath(path, 0, d)
@@ -668,6 +1024,7 @@ join_paths(p1::ArcPath, p2::OpenPathSequence) =
 
 path_sequence(paths...) =
   let paths = ensure_connected_paths([paths...])
+    isempty(paths) ? empty_path() :
     coincident_path_location(path_start(paths[1]), path_end(paths[end])) ?
       ClosedPathSequence(paths) :
       OpenPathSequence(paths)
@@ -699,6 +1056,15 @@ meta_program(p::OpenSplinePath) =
 
 meta_program(p::ClosedSplinePath) =
   Expr(:call, :closed_spline_path, Expr(:vect, map(meta_program, p.vertices)...))
+
+meta_program(p::NurbsPath) =
+  Expr(:call, :nurbs_path,
+       Expr(:vect, map(meta_program, p.control_points)...),
+       Expr(:kw, :degree, p.degree),
+       Expr(:kw, :periodic, is_closed_path(p)),
+       Expr(:kw, :knots, p.knots),
+       Expr(:kw, :weights, p.weights),
+       Expr(:kw, :domain, p.domain))
 
 meta_program(p::OpenPathSequence) =
   Expr(:call, :open_path_sequence, map(meta_program, p.paths)...)
@@ -1076,6 +1442,20 @@ convert(::Type{OpenPolygonalPath}, path::ClosedSplinePath) =
   let p = convert(ClosedPolygonalPath, path)
     open_polygonal_path(vcat(p.vertices, [p.vertices[1]]))
   end
+convert(::Type{OpenPolygonalPath}, path::OpenNurbsPath) =
+  let (t0, t1) = path_domain(path),
+      n = max(path_smoothness_segments(), length(path.control_points) * 8)
+    open_polygonal_path(uniform_path_frames(path, t0, t1, n))
+  end
+convert(::Type{ClosedPolygonalPath}, path::ClosedNurbsPath) =
+  let (t0, t1) = path_domain(path),
+      n = max(path_smoothness_segments(), length(path.control_points) * 8)
+    closed_polygonal_path(uniform_path_frames(path, t0, t1, n)[1:end-1])
+  end
+convert(::Type{OpenPolygonalPath}, path::ClosedNurbsPath) =
+  let p = convert(ClosedPolygonalPath, path)
+    open_polygonal_path(vcat(p.vertices, [p.vertices[1]]))
+  end
 
 #=
 PathOps stores a start location plus a sequence of LineOp/ArcOp/etc.
@@ -1235,7 +1615,7 @@ closed_path_for_height(path, h) =
 # In practice, it means that it does not have "corners"
 is_smooth_path(path::Path) = false
 is_smooth_path(pts::Locs) = false
-is_smooth_path(path::Union{ArcPath,CircularPath,SplinePath}) = true
+is_smooth_path(path::Union{ArcPath,CircularPath,SplinePath,NurbsPath}) = true
 
 ##Profiles are just predefined paths used for sections, usually centered at the origin
 export rectangular_profile,
@@ -1302,6 +1682,10 @@ path_on(path::ClosedPolygonalPath, p) =
   closed_polygonal_path(on_cs(path_vertices(path), p))
 path_on(path::OpenSplinePath, p) =
   open_spline_path(on_cs(path_vertices(path), p))
+path_on(path::NurbsPath, p) =
+  nurbs_path(on_cs(path.control_points, p); degree=path.degree,
+             periodic=is_closed_path(path), knots=path.knots,
+             weights=path.weights, domain=path.domain)
 path_on(path::Region, p) =
   region([path_on(path, p) for path in path.paths]...)
 path_on(path::ClosedPathSequence, p) =
@@ -1496,4 +1880,3 @@ write_obj(io::IO, ptss::AbstractMatrix{<:Loc}, closed_u, closed_v, smooth_u, smo
       end
     end
   end
-  

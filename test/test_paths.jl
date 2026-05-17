@@ -100,6 +100,18 @@ using KhepriBase
       @test is_closed_path(p)
       @test is_smooth_path(p)
     end
+
+    @testset "NurbsPath" begin
+      p = nurbs_path([xy(0, 0), xy(10, 0)], degree=1)
+      @test p isa OpenNurbsPath
+      @test !is_closed_path(p)
+      @test is_smooth_path(p)
+      @test p.degree == 1
+
+      cp = control_point_curve_path([xy(0, 0), xy(1, 0), xy(1, 1)], 2, true)
+      @test cp isa ClosedNurbsPath
+      @test is_closed_path(cp)
+    end
   end
 
   @testset "path_length" begin
@@ -151,6 +163,11 @@ using KhepriBase
       p = polygonal_path([x(0), x(10)])
       @test path_domain(p) == (0, 10)
     end
+
+    @testset "NurbsPath domain" begin
+      p = nurbs_path([xy(0, 0), xy(10, 0), xy(10, 10)], degree=1)
+      @test path_domain(p) == (0, 1)
+    end
   end
 
   @testset "location_at" begin
@@ -192,6 +209,17 @@ using KhepriBase
       loc_quarter = in_world(location_at(p, π/2))
       @test loc_quarter.x ≈ 0 atol=1e-10
       @test loc_quarter.y ≈ 1 atol=1e-10
+    end
+
+    @testset "NurbsPath degree 1" begin
+      p = nurbs_path([xy(0, 0), xy(10, 0), xy(10, 10)], degree=1)
+      loc_first_segment = in_world(location_at(p, 0.25))
+      @test loc_first_segment.x ≈ 5 atol=1e-10
+      @test loc_first_segment.y ≈ 0 atol=1e-10
+
+      loc_second_segment = in_world(location_at(p, 0.75))
+      @test loc_second_segment.x ≈ 10 atol=1e-10
+      @test loc_second_segment.y ≈ 5 atol=1e-10
     end
   end
 
@@ -240,6 +268,35 @@ using KhepriBase
       loc7 = in_world(location_at_length(p, 7))
       @test loc7.x ≈ 3 atol=1e-10
       @test loc7.y ≈ 4 atol=1e-10
+    end
+
+    @testset "NurbsPath arc-length lookup and division" begin
+      p = nurbs_path([xy(0, 0), xy(10, 0), xy(10, 10)], degree=1)
+      @test path_length(p) ≈ 20 atol=1e-6
+
+      mid = in_world(location_at_length(p, 10))
+      @test mid.x ≈ 10 atol=1e-6
+      @test mid.y ≈ 0 atol=1e-6
+
+      params = divide_path_parameters_by_count(circular_path(u0(), 2), 4)
+      @test params ≈ [0, π/2, π, 3π/2, 2π] atol=1e-10
+
+      pts = divide_path_by_count(p, 2)
+      @test length(pts) == 3
+      corner = in_world(pts[2])
+      @test corner.x ≈ 10 atol=1e-6
+      @test corner.y ≈ 0 atol=1e-6
+
+      interior = divide_path_parameters_by_count(p, 2; include_ends=false)
+      @test length(interior) == 1
+      @test interior[1] ≈ 0.5 atol=1e-6
+
+      q = nurbs_path([xy(0, 0), xy(10, 10), xy(20, 0)], degree=2)
+      q_params = divide_path_parameters_by_count(q, 4)
+      q_lengths = [length_at_parameter(q, t) for t in q_params]
+      step = path_length(q) / 4
+      @test all(isapprox(q_lengths[i + 1] - q_lengths[i], step; atol=1e-5)
+                for i in 1:4)
     end
   end
 
