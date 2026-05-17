@@ -111,6 +111,12 @@ tessellate_surface(s, u_count=8, v_count=8)
 trimmed_surface(region(rectangular_path(u0(), 10, 5)))
 ```
 
+Planar `TrimmedSurface` values use ordinary world-coordinate boundary paths.
+Non-planar trimmed surfaces use boundary paths in the base surface parameter
+space, so each trim vertex's x/y coordinates are interpreted as u/v. For
+planar trims, the parameter domain is the outer boundary's extent in the
+surface plane; for non-planar trims, the domain remains the base surface domain.
+
 ## Shape Catalog
 
 ### Shape0D -- Points and Text

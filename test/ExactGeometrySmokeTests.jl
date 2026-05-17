@@ -1,13 +1,19 @@
 module ExactGeometrySmokeTests
 
-using LinearAlgebra
 using Test
 using KhepriBase
 
 export run_exact_geometry_smoke_tests
 
 _smoke_mat(b) = KhepriBase.backend_name(b) == "Rhino" ? -1 : KhepriBase.void_ref(b)
-_raw_distance(p, q) = norm(p - q)
+_raw_coordinates(p::KhepriBase.Loc) = KhepriBase.raw_point(p)
+_raw_coordinates(p) = p
+
+function _raw_distance(p, q)
+  a = _raw_coordinates(p)
+  b = _raw_coordinates(q)
+  sqrt(sum(abs2(a[i] - b[i]) for i in eachindex(a)))
+end
 
 function _same_location(actual, expected; atol)
   @test _raw_distance(actual, expected) <= atol

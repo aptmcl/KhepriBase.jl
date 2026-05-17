@@ -295,7 +295,7 @@ Backends declare these direct mappings with `curve_geometry_capabilities` and
 | `BezierSurface` | `b_bezier_surface` | Tensor-product Bezier surface | Rhino, AutoCAD, FreeCAD |
 | `BSplineSurface{*,*,false}` | `b_bspline_surface` | Non-rational tensor-product B-spline surface | Rhino, AutoCAD, FreeCAD |
 | `NurbsSurface` | `b_nurbs_surface` | Rational tensor-product B-spline / NURBS surface | Rhino, AutoCAD, FreeCAD |
-| `TrimmedSurface` | `b_trimmed_surface` | Native trimmed face or trimmed surface | Fallback only, except planar trims through polygon-with-holes operations |
+| `TrimmedSurface` | `b_trimmed_surface` | Native trimmed face or trimmed surface | Planar trims use polygon-with-holes operations; non-planar trims tessellate from UV-space boundaries unless a backend provides a native override |
 
 ## Backend Coverage Summary
 

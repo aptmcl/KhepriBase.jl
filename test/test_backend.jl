@@ -269,6 +269,20 @@ KhepriBase.failed_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, In
       end
     end
 
+    @testset "b_surface_mesh accepts 0-based and 1-based faces" begin
+      verts = [xy(0, 0), xy(1, 0), xy(0, 1)]
+      with_mock_backend() do b
+        refs = KhepriBase.b_surface_mesh(b, verts, [[0, 1, 2]], nothing)
+        @test length(refs) == 1
+        @test length(b.triangles) == 1
+      end
+      with_mock_backend() do b
+        refs = KhepriBase.b_surface_mesh(b, verts, [[1, 2, 3]], nothing)
+        @test length(refs) == 1
+        @test length(b.triangles) == 1
+      end
+    end
+
     @testset "b_ngon (uses b_trig)" begin
       with_mock_backend() do b
         ps = [xy(cos(θ), sin(θ)) for θ in range(0, 2π, length=7)[1:6]]

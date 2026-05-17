@@ -15,6 +15,9 @@ export SurfaceGeometry,
        surface_points,
        surface_boundary,
        surface_trims,
+       surface_trim_uv_points,
+       surface_trim_points,
+       trimmed_surface_contains,
        normal_at,
        tessellate_surface
 
@@ -166,6 +169,32 @@ surface_boundary(r::Region) = outer_path(r)
 surface_trims(s::TrimmedSurface) = s.holes
 surface_trims(r::Region) = inner_paths(r)
 
+# For non-planar trimmed surfaces, trim paths live in the base surface's
+# parameter space: each path vertex's x/y coordinates are interpreted as u/v.
+surface_trim_uv_points(path::ClosedPath) =
+  [(Float64(raw_point(p)[1]), Float64(raw_point(p)[2])) for p in path_vertices(path)]
+
+surface_trim_uv_points(s::TrimmedSurface{PlaneSurface}, path::ClosedPath=s.outer) =
+  [(Float64(in_cs(p, s.base.frame.cs).x), Float64(in_cs(p, s.base.frame.cs).y))
+   for p in path_vertices(path)]
+
+surface_trim_uv_points(s::TrimmedSurface, path::ClosedPath=s.outer) =
+  surface_trim_uv_points(path)
+
+surface_trim_points(s::TrimmedSurface, path::ClosedPath=s.outer) =
+  s.base isa PlaneSurface ?
+    path_vertices(path) :
+    [surface_location(s.base, u, v) for (u, v) in surface_trim_uv_points(s, path)]
+
+function _trim_uv_bounds(points::Vector{Tuple{Float64,Float64}}, fallback)
+  isempty(points) && return fallback
+  us, vs = first.(points), last.(points)
+  (minimum(us), maximum(us), minimum(vs), maximum(vs))
+end
+
+surface_domain(s::TrimmedSurface{PlaneSurface}) =
+  _trim_uv_bounds(surface_trim_uv_points(s), surface_domain(s.base))
+
 surface_location(s::PlaneSurface, u::Real, v::Real) =
   s.frame + vx(u, s.frame.cs) + vy(v, s.frame.cs)
 
@@ -267,6 +296,48 @@ function sample_surface_points(s::SurfaceGeometry, u_count::Integer, v_count::In
   [surface_location(s, u, v) for u in us, v in vs]
 end
 
+function _point_on_uv_segment(u::Float64, v::Float64, a::Tuple{Float64,Float64}, b::Tuple{Float64,Float64}, tol::Float64)
+  ax, ay = a
+  bx, by = b
+  dx, dy = bx - ax, by - ay
+  len2 = dx * dx + dy * dy
+  if len2 <= tol * tol
+    return hypot(u - ax, v - ay) <= tol
+  end
+  t = ((u - ax) * dx + (v - ay) * dy) / len2
+  -tol <= t <= 1 + tol || return false
+  t = clamp(t, 0.0, 1.0)
+  hypot(u - (ax + t * dx), v - (ay + t * dy)) <= tol
+end
+
+function _point_in_uv_polygon(u::Float64, v::Float64, polygon::Vector{Tuple{Float64,Float64}})
+  length(polygon) >= 3 || return false
+  tol = coincidence_tolerance()
+  inside = false
+  previous = polygon[end]
+  for current in polygon
+    if _point_on_uv_segment(u, v, previous, current, tol)
+      return true
+    end
+    x0, y0 = previous
+    x1, y1 = current
+    if (y0 > v) != (y1 > v)
+      x_intersection = x0 + (v - y0) * (x1 - x0) / (y1 - y0)
+      u < x_intersection && (inside = !inside)
+    end
+    previous = current
+  end
+  inside
+end
+
+trimmed_surface_contains(s::TrimmedSurface, u::Real, v::Real) =
+  let u = Float64(u),
+      v = Float64(v),
+      outer = surface_trim_uv_points(s, s.outer)
+    _point_in_uv_polygon(u, v, outer) &&
+      !any(hole -> _point_in_uv_polygon(u, v, surface_trim_uv_points(s, hole)), s.holes)
+  end
+
 function tessellate_surface(s::SurfaceGeometry; u_count::Integer=path_smoothness_segments(), v_count::Integer=path_smoothness_segments())
   pts = sample_surface_points(s, u_count, v_count)
   nu, nv = size(pts)
@@ -278,8 +349,21 @@ end
 
 tessellate_surface(m::Mesh; kwargs...) = m
 
-function tessellate_surface(s::TrimmedSurface; kwargs...)
-  s.base isa PlaneSurface ||
-    throw(ArgumentError("Tessellating non-planar trimmed surfaces requires a trimming-aware mesher."))
-  tessellate_surface(s.base; kwargs...)
+function tessellate_surface(s::TrimmedSurface; u_count::Integer=path_smoothness_segments(), v_count::Integer=path_smoothness_segments())
+  u_count, v_count = max(Int(u_count), 1), max(Int(v_count), 1)
+  u0, u1, v0, v1 = surface_domain(s)
+  us = collect(range(u0, u1; length=u_count + 1))
+  vs = collect(range(v0, v1; length=v_count + 1))
+  pts = [surface_location(s.base, u, v) for u in us, v in vs]
+  nu, nv = size(pts)
+  idx(i, j) = (j - 1) * nu + (i - 1)
+  faces = Vector{Vector{Int}}()
+  for j in 1:nv-1, i in 1:nu-1
+    uc = (us[i] + us[i + 1]) / 2
+    vc = (vs[j] + vs[j + 1]) / 2
+    if trimmed_surface_contains(s, uc, vc)
+      push!(faces, [idx(i, j), idx(i + 1, j), idx(i + 1, j + 1), idx(i, j + 1)])
+    end
+  end
+  mesh(vec(pts), faces)
 end

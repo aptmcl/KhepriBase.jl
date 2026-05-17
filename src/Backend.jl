@@ -726,14 +726,17 @@ b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
   b_surface_grid(b, smooth_grid(ptss), closed_u, closed_v, true, true, mat)
 
 b_surface_mesh(b::Backend, vertices, faces, mat) =
-  map(faces) do face
-    if length(face) == 3
-      b_trig(b, vertices[face]..., mat)
+  let index_offset = any(face -> any(==(0), face), faces) ? 1 : 0
+    map(faces) do face
+      face_vertices = vertices[face .+ index_offset]
+      if length(face) == 3
+        b_trig(b, face_vertices..., mat)
       elseif length(face) == 4
-        b_quad(b, vertices[face]..., mat)
+        b_quad(b, face_vertices..., mat)
       else
-        b_surface_polygon(b, vertices[face], mat)
+        b_surface_polygon(b, face_vertices, mat)
       end
+    end
   end
 
 b_sampled_surface(b::Backend, surface::SurfaceGeometry, mat) =

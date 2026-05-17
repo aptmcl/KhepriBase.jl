@@ -94,7 +94,7 @@ left: `material_basic`, `_metal`, `_glass`, `_wood`, `_concrete`,
 | `surface_rectangle` | `surface_rectangle(corner::Loc=u0(), dx::Real=1, dy::Real=1; material)` | Filled rectangle. Also: `surface_rectangle(p, q)` (two-corner form). |
 | `surface` | `surface(frontier::Shapes1D=[circle()]; material)` | Surface bounded by one or more closed curves. Also: `surface(c0, cs...)`. |
 | `surface_grid` | `surface_grid(points::Matrix{<:Loc}, closed_u=false, closed_v=false, smooth_u=true, smooth_v=true; material)` | Parametric surface from a grid of points. Also accepts `Vector{Vector{Loc}}`. |
-| `surface_mesh` | `surface_mesh(vertices::Locs, faces::Vector{Vector{Int}}; material)` | Triangulated or polygonal mesh. Face indices are 1-based. |
+| `surface_mesh` | `surface_mesh(vertices::Locs, faces::Vector{Vector{Int}}; material)` | Triangulated or polygonal mesh. Face indices are 0-based by convention; 1-based OBJ-style faces are also accepted by backend mesh emission. |
 
 ### Parameter illustrations — 2D shapes
 
