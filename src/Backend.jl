@@ -20,6 +20,60 @@ abstract type Backend{K,T} end
 backend_name(b::Backend) = string(typeof(b))
 show(io::IO, b::Backend) = print(io, backend_name(b))
 
+public CurveGeometryCapabilities, SurfaceGeometryCapabilities,
+       curve_geometry_capabilities, surface_geometry_capabilities,
+       supports_exact_interpolating_spline_curves,
+       supports_exact_bezier_curves,
+       supports_exact_bspline_curves,
+       supports_exact_nurbs_curves,
+       supports_exact_polycurves,
+       supports_exact_bezier_surfaces,
+       supports_exact_bspline_surfaces,
+       supports_exact_nurbs_surfaces,
+       supports_exact_trimmed_surfaces
+
+struct CurveGeometryCapabilities{InterpolatingSpline,Bezier,BSpline,NURBS,Polycurve} end
+struct SurfaceGeometryCapabilities{Bezier,BSpline,NURBS,Trimmed} end
+
+curve_geometry_capabilities(::Type{<:Backend}) =
+  CurveGeometryCapabilities{false,false,false,false,false}()
+curve_geometry_capabilities(b::Backend) = curve_geometry_capabilities(typeof(b))
+
+surface_geometry_capabilities(::Type{<:Backend}) =
+  SurfaceGeometryCapabilities{false,false,false,false}()
+surface_geometry_capabilities(b::Backend) = surface_geometry_capabilities(typeof(b))
+
+supports_exact_interpolating_spline_curves(::CurveGeometryCapabilities{I,B,BS,N,P}) where {I,B,BS,N,P} = I
+supports_exact_bezier_curves(::CurveGeometryCapabilities{I,B,BS,N,P}) where {I,B,BS,N,P} = B
+supports_exact_bspline_curves(::CurveGeometryCapabilities{I,B,BS,N,P}) where {I,B,BS,N,P} = BS
+supports_exact_nurbs_curves(::CurveGeometryCapabilities{I,B,BS,N,P}) where {I,B,BS,N,P} = N
+supports_exact_polycurves(::CurveGeometryCapabilities{I,B,BS,N,P}) where {I,B,BS,N,P} = P
+
+supports_exact_interpolating_spline_curves(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_interpolating_spline_curves(curve_geometry_capabilities(b))
+supports_exact_bezier_curves(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_bezier_curves(curve_geometry_capabilities(b))
+supports_exact_bspline_curves(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_bspline_curves(curve_geometry_capabilities(b))
+supports_exact_nurbs_curves(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_nurbs_curves(curve_geometry_capabilities(b))
+supports_exact_polycurves(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_polycurves(curve_geometry_capabilities(b))
+
+supports_exact_bezier_surfaces(::SurfaceGeometryCapabilities{B,BS,N,T}) where {B,BS,N,T} = B
+supports_exact_bspline_surfaces(::SurfaceGeometryCapabilities{B,BS,N,T}) where {B,BS,N,T} = BS
+supports_exact_nurbs_surfaces(::SurfaceGeometryCapabilities{B,BS,N,T}) where {B,BS,N,T} = N
+supports_exact_trimmed_surfaces(::SurfaceGeometryCapabilities{B,BS,N,T}) where {B,BS,N,T} = T
+
+supports_exact_bezier_surfaces(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_bezier_surfaces(surface_geometry_capabilities(b))
+supports_exact_bspline_surfaces(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_bspline_surfaces(surface_geometry_capabilities(b))
+supports_exact_nurbs_surfaces(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_nurbs_surfaces(surface_geometry_capabilities(b))
+supports_exact_trimmed_surfaces(b::Union{Backend,Type{<:Backend}}) =
+  supports_exact_trimmed_surfaces(surface_geometry_capabilities(b))
+
 
 # Backends need to implement operations or an exception is triggered
 struct UnimplementedBackendOperationException <: Exception
@@ -246,7 +300,8 @@ collect_ref!(refs, r) = push!(refs, r)
 # Zeroth tier: curves. Not all backends support these.
 
 public b_point, b_line, b_closed_line, b_polygon, b_regular_polygon,
-       b_nurbs_curve,
+       b_interpolating_spline_curve, b_bezier_curve, b_bspline_curve,
+       b_nurbs_curve, b_polycurve,
        b_spline, b_closed_spline, b_circle, b_arc, b_ellipse, b_rectangle
 
 @bdef(b_point(p, mat))
@@ -262,6 +317,51 @@ const b_closed_line = b_polygon
 b_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
   b_polygon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), mat)
 
+function sampled_curve(b::Backend, path::Path, mat)
+  poly = convert(is_closed_path(path) ? ClosedPolygonalPath : OpenPolygonalPath, path)
+  is_closed_path(path) ?
+    b_polygon(b, poly.vertices, mat) :
+    b_line(b, poly.vertices, mat)
+end
+
+b_interpolating_spline_curve(b::Backend, path::InterpolatingSplinePath, mat) =
+  is_closed_path(path) ?
+    b_closed_spline(b, path.vertices, mat) :
+    b_spline(b, path.vertices, path.v0, path.v1, mat)
+
+b_interpolating_spline_curve(b::Backend, ps, v0, v1, closed::Bool, mat) =
+  closed ?
+    b_interpolating_spline_curve(b, closed_interpolating_spline_path(ps), mat) :
+    b_interpolating_spline_curve(b, open_interpolating_spline_path(ps, v0, v1), mat)
+
+b_bezier_curve(b::Backend, path::BezierPath, mat) =
+  sampled_curve(b, path, mat)
+
+b_bezier_curve(b::Backend, segments::Vector{BezierSegment}, closed::Bool, mat) =
+  b_bezier_curve(b, bezier_path(segments; closed=closed), mat)
+
+b_bspline_curve(b::Backend, path::BSplinePath{Closed,false}, mat) where {Closed} =
+  b_nurbs_curve(b, path.control_points, path.degree, path.knots,
+                bspline_backend_weights(path), is_closed_path(path), mat)
+
+b_bspline_curve(b::Backend, control_points, degree, knots, closed::Bool, mat) =
+  b_bspline_curve(b, bspline_path(Loc[control_points...];
+                                  degree=degree, knots=knots, periodic=closed),
+                  mat)
+
+function b_nurbs_curve(b::Backend, control_points, degree::Integer, knots, weights, closed::Bool, mat)
+  path = nurbs_path(Loc[control_points...]; degree=Int(degree), periodic=closed,
+                    knots=knots, weights=weights)
+  sampled_curve(b, path, mat)
+end
+
+b_nurbs_curve(b::Backend, path::NurbsPath, mat) =
+  b_nurbs_curve(b, path.control_points, path.degree, path.knots,
+                path.weights, is_closed_path(path), mat)
+
+b_polycurve(b::Backend, segments::Vector{PathSegment}, closed::Bool, mat) =
+  b_stroke_unite(b, [b_stroke(b, seg, mat) for seg in segments], mat)
+
 function b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat)
   degree = max(Int(order) - 1, 1)
   path = try
@@ -271,10 +371,7 @@ function b_nurbs_curve(b::Backend, ps, order, cps, knots, weights, closed, mat)
     nothing
   end
   if !isnothing(path)
-    poly = convert(closed ? ClosedPolygonalPath : OpenPolygonalPath, path)
-    return closed ?
-      b_polygon(b, poly.vertices, mat) :
-      b_line(b, poly.vertices, mat)
+    return b_nurbs_curve(b, path, mat)
   end
   # Legacy spline fallback: older callers pass interpolation points plus
   # backend-specific coefficient/knot data that is not a full NURBS vector.
@@ -477,7 +574,8 @@ b_strip(b::Backend, path1::Region, path2::Region, mat) =
 public b_surface_polygon, b_surface_polygon_with_holes,
        b_surface_regular_polygon, b_surface_rectangle,
        b_surface_circle, b_surface_ring, b_surface_arc, b_surface_ellipse, b_surface_closed_spline,
-       b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh
+       b_surface, b_surface_grid, b_smooth_surface_grid, b_surface_mesh,
+       b_sampled_surface, b_bezier_surface, b_bspline_surface, b_nurbs_surface, b_trimmed_surface
 
 # Ear clipping triangulation for simple (possibly concave) polygons.
 # Takes a vector of 3D coordinates (anything indexable with [1],[2],[3])
@@ -634,9 +732,53 @@ b_surface_mesh(b::Backend, vertices, faces, mat) =
       elseif length(face) == 4
         b_quad(b, vertices[face]..., mat)
       else
-      b_surface_polygon(b, vertices[face], mat)
+        b_surface_polygon(b, vertices[face], mat)
       end
-    end
+  end
+
+b_sampled_surface(b::Backend, surface::SurfaceGeometry, mat) =
+  let m = tessellate_surface(surface)
+    b_surface_mesh(b, m.vertices, m.faces, mat)
+  end
+
+b_bezier_surface(b::Backend, surface::BezierSurface, mat) =
+  b_sampled_surface(b, surface, mat)
+
+b_bezier_surface(b::Backend, control_points, closed_u::Bool, closed_v::Bool, mat) =
+  b_bezier_surface(b, bezier_surface(control_points; closed_u=closed_u, closed_v=closed_v), mat)
+
+b_bspline_surface(b::Backend, surface::BSplineSurface{ClosedU,ClosedV,false}, mat) where {ClosedU,ClosedV} =
+  b_sampled_surface(b, surface, mat)
+
+b_bspline_surface(b::Backend, control_points, degree_u, degree_v, knots_u, knots_v,
+                  closed_u::Bool, closed_v::Bool, mat) =
+  b_bspline_surface(
+    b,
+    bspline_surface(control_points; degree_u=degree_u, degree_v=degree_v,
+                    knots_u=knots_u, knots_v=knots_v,
+                    closed_u=closed_u, closed_v=closed_v),
+    mat)
+
+b_nurbs_surface(b::Backend, surface::BSplineSurface{ClosedU,ClosedV,true}, mat) where {ClosedU,ClosedV} =
+  b_sampled_surface(b, surface, mat)
+
+b_nurbs_surface(b::Backend, control_points, degree_u, degree_v, knots_u, knots_v, weights,
+                closed_u::Bool, closed_v::Bool, mat) =
+  b_nurbs_surface(
+    b,
+    nurbs_surface(control_points; degree_u=degree_u, degree_v=degree_v,
+                  knots_u=knots_u, knots_v=knots_v, weights=weights,
+                  closed_u=closed_u, closed_v=closed_v),
+    mat)
+
+b_trimmed_surface(b::Backend, surface::TrimmedSurface, mat) =
+  surface.base isa PlaneSurface ?
+    b_surface_polygon_with_holes(
+      b,
+      path_vertices(surface.outer),
+      [reverse(path_vertices(path)) for path in surface.holes],
+      mat) :
+    b_sampled_surface(b, surface, mat)
 
 # Parametric surface
 #=
@@ -855,17 +997,20 @@ b_surface(b::Backend, region::Region, mat) =
     BitVector([is_smooth_path(path) for path in region.paths]),
     mat)
 
-b_surface(b::Backend, surface::TrimmedSurface{PlaneSurface}, mat) =
-  b_surface_polygon_with_holes(
-    b,
-    path_vertices(surface.outer),
-    [reverse(path_vertices(path)) for path in surface.holes],
-    mat)
+b_surface(b::Backend, surface::BezierSurface, mat) =
+  b_bezier_surface(b, surface, mat)
+
+b_surface(b::Backend, surface::BSplineSurface{ClosedU,ClosedV,false}, mat) where {ClosedU,ClosedV} =
+  b_bspline_surface(b, surface, mat)
+
+b_surface(b::Backend, surface::BSplineSurface{ClosedU,ClosedV,true}, mat) where {ClosedU,ClosedV} =
+  b_nurbs_surface(b, surface, mat)
+
+b_surface(b::Backend, surface::TrimmedSurface, mat) =
+  b_trimmed_surface(b, surface, mat)
 
 b_surface(b::Backend, surface::SurfaceGeometry, mat) =
-  let m = tessellate_surface(surface)
-    b_surface_mesh(b, m.vertices, m.faces, mat)
-  end
+  b_sampled_surface(b, surface, mat)
 
 b_surface(b::Backend, frontier::Shapes, mat) =
   let path = foldr(join_paths, [convert(OpenPolygonalPath, shape_path(e)) for e in frontier])
@@ -1172,22 +1317,17 @@ b_stroke(b::Backend, path::OpenPolygonalPath, mat) =
 b_stroke(b::Backend, path::ClosedPolygonalPath, mat) =
   b_polygon(b, path.vertices, mat)
 b_stroke(b::Backend, path::OpenSplinePath, mat) =
-  b_spline(b, path.vertices, path.v0, path.v1, mat)
+  b_interpolating_spline_curve(b, path, mat)
 b_stroke(b::Backend, path::ClosedSplinePath, mat) =
-  b_closed_spline(b, path.vertices, mat)
+  b_interpolating_spline_curve(b, path, mat)
 b_stroke(b::Backend, path::BezierPath, mat) =
-  is_closed_path(path) ?
-    b_polygon(b, path_vertices(path), mat) :
-    b_line(b, path_vertices(path), mat)
+  b_bezier_curve(b, path, mat)
 b_stroke(b::Backend, path::BSplinePath{Closed,false}, mat) where {Closed} =
-  b_nurbs_curve(b, path.control_points, path.degree + 1, path.control_points,
-                path.knots, bspline_backend_weights(path), is_closed_path(path), mat)
+  b_bspline_curve(b, path, mat)
 b_stroke(b::Backend, path::OpenNurbsPath, mat) =
-  b_nurbs_curve(b, path.control_points, path.degree + 1, path.control_points,
-                path.knots, path.weights, false, mat)
+  b_nurbs_curve(b, path, mat)
 b_stroke(b::Backend, path::ClosedNurbsPath, mat) =
-  b_nurbs_curve(b, path.control_points, path.degree + 1, path.control_points,
-                path.knots, path.weights, true, mat)
+  b_nurbs_curve(b, path, mat)
 b_stroke(b::Backend, seg::LineSegment, mat) =
   b_line(b, [seg.p0, seg.p1], mat)
 b_stroke(b::Backend, seg::ArcSegment, mat) =
@@ -1198,6 +1338,8 @@ b_stroke(b::Backend, seg::EllipseSegment, mat) =
     b_elliptic_arc(b, seg.center, seg.r1, seg.r2, seg.start_angle, seg.amplitude, mat)
 b_stroke(b::Backend, seg::PathSegment, mat) =
   b_stroke(b, segment_path(seg), mat)
+b_stroke(b::Backend, path::SegmentPath, mat) =
+  b_polycurve(b, path.segments, is_closed_path(path), mat)
 b_stroke(b::Backend, path::ContourPath, mat) =
   b_stroke_unite(b, [b_stroke(b, seg, mat) for seg in path_segments(path)], mat)
 b_stroke(b::Backend, path::Region, mat) =

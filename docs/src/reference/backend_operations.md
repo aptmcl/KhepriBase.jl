@@ -28,7 +28,7 @@ Essential operations for backend functionality.
 | `b_all_shape_refs` | Get all shape references |
 | `b_delete_all_annotations` | Delete all annotations |
 
-### Tier 1: Basic Curves (17 operations)
+### Tier 1: Basic Curves
 2D and 3D curve primitives.
 
 | Operation | Description |
@@ -37,7 +37,11 @@ Essential operations for backend functionality.
 | `b_line` | Create a line from points |
 | `b_polygon` | Create a closed polygon |
 | `b_regular_polygon` | Create a regular n-gon |
+| `b_interpolating_spline_curve` | Create an interpolating spline while preserving fit-point semantics |
+| `b_bezier_curve` | Create a Bezier curve from Bezier segments |
+| `b_bspline_curve` | Create a non-rational B-spline curve from control data |
 | `b_nurbs_curve` | Create a NURBS curve |
+| `b_polycurve` | Create or join a mixed exact segment curve |
 | `b_spline` | Create a spline |
 | `b_closed_spline` | Create a closed spline |
 | `b_circle` | Create a circle |
@@ -51,7 +55,7 @@ Essential operations for backend functionality.
 | `b_quad_strip_closed` | Create a closed quad strip |
 | `b_closed_line` | Legacy alias for b_polygon |
 
-### Tier 2: Surfaces (12 operations)
+### Tier 2: Surfaces
 Surface primitives.
 
 | Operation | Description |
@@ -69,6 +73,11 @@ Surface primitives.
 | `b_surface_grid` | Grid surface |
 | `b_smooth_surface_grid` | Smooth grid surface |
 | `b_surface_mesh` | Mesh surface |
+| `b_sampled_surface` | Tessellated fallback for any surface geometry |
+| `b_bezier_surface` | Create a Bezier tensor-product surface |
+| `b_bspline_surface` | Create a non-rational B-spline tensor-product surface |
+| `b_nurbs_surface` | Create a rational B-spline / NURBS surface |
+| `b_trimmed_surface` | Create a surface with trim boundaries |
 
 ### Tier 3: Basic Solids (15 operations)
 3D solid primitives.
@@ -263,6 +272,30 @@ Light sources. Operations with default fallbacks degrade gracefully on backends 
 | `b_ieslight` | IES photometric light | `b_spotlight` (45°/60° angles) |
 
 ---
+
+## Exact Curve and Surface Hooks
+
+The spline and surface hierarchy now separates the geometric intent from the
+fallback representation sent to a backend. If a backend does not implement one
+of these hooks, KhepriBase keeps the model portable by sampling curves to
+polylines and surfaces to meshes. Interpolating splines keep their legacy
+fit-point semantics through `b_spline`/`b_closed_spline`, and planar trimmed
+surfaces still use polygon-with-holes fallbacks.
+
+Backends declare these direct mappings with `curve_geometry_capabilities` and
+`surface_geometry_capabilities`; user code can query the individual
+`supports_exact_*` helpers when exact native geometry matters.
+
+| Khepri geometry | Direct hook | Best native backend mapping | Implemented direct mappings |
+|-----------------|-------------|-----------------------------|-----------------------------|
+| `InterpolatingSplinePath` | `b_interpolating_spline_curve` | Fit/interpolated spline curve | Rhino and AutoCAD through existing interpolating spline operations |
+| `BezierPath` | `b_bezier_curve` | Bezier curve or Bezier-derived spline | Rhino, AutoCAD, FreeCAD |
+| `BSplinePath{*,false}` | `b_bspline_curve` | Non-rational B-spline with explicit degree and knots | Rhino, AutoCAD, FreeCAD |
+| `NurbsPath` | `b_nurbs_curve` | Rational B-spline / NURBS curve with explicit degree, knots, and weights | Rhino, AutoCAD, FreeCAD |
+| `BezierSurface` | `b_bezier_surface` | Tensor-product Bezier surface | Rhino, AutoCAD, FreeCAD |
+| `BSplineSurface{*,*,false}` | `b_bspline_surface` | Non-rational tensor-product B-spline surface | Rhino, AutoCAD, FreeCAD |
+| `NurbsSurface` | `b_nurbs_surface` | Rational tensor-product B-spline / NURBS surface | Rhino, AutoCAD, FreeCAD |
+| `TrimmedSurface` | `b_trimmed_surface` | Native trimmed face or trimmed surface | Fallback only, except planar trims through polygon-with-holes operations |
 
 ## Backend Coverage Summary
 

@@ -6,6 +6,50 @@ using KhepriBase
 # Include the mock backend
 include("TestMockBackend.jl")
 
+if !@isdefined(RecordingExactBackendKey)
+  struct RecordingExactBackendKey end
+end
+
+mutable struct RecordingExactBackend <: KhepriBase.Backend{RecordingExactBackendKey, Int}
+  calls::Vector{Tuple{Symbol, Any}}
+  next_id::Int
+end
+
+RecordingExactBackend() = RecordingExactBackend(Tuple{Symbol, Any}[], 1)
+
+function recording_ref!(b::RecordingExactBackend, tag::Symbol, payload)
+  push!(b.calls, (tag, payload))
+  ref = b.next_id
+  b.next_id += 1
+  ref
+end
+
+KhepriBase.void_ref(::RecordingExactBackend) = 0
+KhepriBase.new_refs(::RecordingExactBackend) = Int[]
+KhepriBase.backend_name(::RecordingExactBackend) = "RecordingExactBackend"
+KhepriBase.curve_geometry_capabilities(::Type{RecordingExactBackend}) =
+  KhepriBase.CurveGeometryCapabilities{true,true,true,true,true}()
+KhepriBase.surface_geometry_capabilities(::Type{RecordingExactBackend}) =
+  KhepriBase.SurfaceGeometryCapabilities{true,true,true,true}()
+KhepriBase.b_interpolating_spline_curve(b::RecordingExactBackend, path::KhepriBase.InterpolatingSplinePath, mat) =
+  recording_ref!(b, :interpolating_spline_curve, path)
+KhepriBase.b_bezier_curve(b::RecordingExactBackend, path::KhepriBase.BezierPath, mat) =
+  recording_ref!(b, :bezier_curve, path)
+KhepriBase.b_bspline_curve(b::RecordingExactBackend, path::KhepriBase.BSplinePath{Closed,false}, mat) where {Closed} =
+  recording_ref!(b, :bspline_curve, path)
+KhepriBase.b_nurbs_curve(b::RecordingExactBackend, path::KhepriBase.NurbsPath, mat) =
+  recording_ref!(b, :nurbs_curve, path)
+KhepriBase.b_polycurve(b::RecordingExactBackend, segments::Vector{KhepriBase.PathSegment}, closed::Bool, mat) =
+  recording_ref!(b, :polycurve, (segments, closed))
+KhepriBase.b_bezier_surface(b::RecordingExactBackend, surface::KhepriBase.BezierSurface, mat) =
+  recording_ref!(b, :bezier_surface, surface)
+KhepriBase.b_bspline_surface(b::RecordingExactBackend, surface::KhepriBase.BSplineSurface{U,V,false}, mat) where {U,V} =
+  recording_ref!(b, :bspline_surface, surface)
+KhepriBase.b_nurbs_surface(b::RecordingExactBackend, surface::KhepriBase.BSplineSurface{U,V,true}, mat) where {U,V} =
+  recording_ref!(b, :nurbs_surface, surface)
+KhepriBase.b_trimmed_surface(b::RecordingExactBackend, surface::KhepriBase.TrimmedSurface, mat) =
+  recording_ref!(b, :trimmed_surface, surface)
+
 if !@isdefined(TestSocketBackendKey)
   abstract type TestSocketBackendKey end
 end
@@ -35,6 +79,30 @@ KhepriBase.failed_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, In
       name = backend_name(b)
       @test occursin("MockBackend", name)
     end
+  end
+
+  @testset "Exact geometry capability traits" begin
+    b = mock_backend()
+    @test !KhepriBase.supports_exact_interpolating_spline_curves(typeof(b))
+    @test !KhepriBase.supports_exact_bezier_curves(b)
+    @test !KhepriBase.supports_exact_bspline_curves(b)
+    @test !KhepriBase.supports_exact_nurbs_curves(b)
+    @test !KhepriBase.supports_exact_polycurves(b)
+    @test !KhepriBase.supports_exact_bezier_surfaces(b)
+    @test !KhepriBase.supports_exact_bspline_surfaces(b)
+    @test !KhepriBase.supports_exact_nurbs_surfaces(b)
+    @test !KhepriBase.supports_exact_trimmed_surfaces(b)
+
+    rb = RecordingExactBackend()
+    @test KhepriBase.supports_exact_interpolating_spline_curves(rb)
+    @test KhepriBase.supports_exact_bezier_curves(rb)
+    @test KhepriBase.supports_exact_bspline_curves(rb)
+    @test KhepriBase.supports_exact_nurbs_curves(rb)
+    @test KhepriBase.supports_exact_polycurves(rb)
+    @test KhepriBase.supports_exact_bezier_surfaces(rb)
+    @test KhepriBase.supports_exact_bspline_surfaces(rb)
+    @test KhepriBase.supports_exact_nurbs_surfaces(rb)
+    @test KhepriBase.supports_exact_trimmed_surfaces(rb)
   end
 
   @testset "Tier 0: Curves" begin
@@ -121,6 +189,52 @@ KhepriBase.failed_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, In
         # Rectangle creates a closed polygon (line)
         @test length(b.lines) == 1
       end
+    end
+  end
+
+  @testset "Exact curve and surface dispatch" begin
+    @testset "curve hierarchy reaches exact hooks" begin
+      b = RecordingExactBackend()
+
+      KhepriBase.b_stroke(b, open_spline_path([xy(0, 0), xy(1, 1), xy(2, 0)]), nothing)
+      @test b.calls[end][1] == :interpolating_spline_curve
+
+      KhepriBase.b_stroke(b, open_bezier_path([xy(0, 0), xy(1, 1), xy(2, 0)]), nothing)
+      @test b.calls[end][1] == :bezier_curve
+
+      KhepriBase.b_stroke(b, bspline_path([xy(0, 0), xy(1, 1), xy(2, 0)]; degree=2), nothing)
+      @test b.calls[end][1] == :bspline_curve
+
+      KhepriBase.b_stroke(b, nurbs_path([xy(0, 0), xy(1, 1), xy(2, 0)]; degree=2), nothing)
+      @test b.calls[end][1] == :nurbs_curve
+
+      p = segment_path(
+        xy(0, 0),
+        LineSegment(xy(0, 0), xy(1, 0)),
+        ArcSegment(xy(0, 0), 1.0, 0.0, pi / 2))
+      KhepriBase.b_stroke(b, p, nothing)
+      @test b.calls[end][1] == :polycurve
+      @test b.calls[end][2][2] == false
+    end
+
+    @testset "surface hierarchy reaches exact hooks" begin
+      b = RecordingExactBackend()
+      cps = [xy(0, 0) xy(0, 1);
+             xy(1, 0) xy(1, 1)]
+
+      KhepriBase.b_surface(b, bezier_surface(cps), nothing)
+      @test b.calls[end][1] == :bezier_surface
+
+      KhepriBase.b_surface(b, bspline_surface(cps; degree_u=1, degree_v=1), nothing)
+      @test b.calls[end][1] == :bspline_surface
+
+      KhepriBase.b_surface(b, nurbs_surface(cps; degree_u=1, degree_v=1), nothing)
+      @test b.calls[end][1] == :nurbs_surface
+
+      r = region(rectangular_path(xy(0, 0), 4, 3),
+                 rectangular_path(xy(1, 1), 1, 1))
+      KhepriBase.b_surface(b, trimmed_surface(r), nothing)
+      @test b.calls[end][1] == :trimmed_surface
     end
   end
 

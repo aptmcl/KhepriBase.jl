@@ -44,6 +44,7 @@ makedocs(;
             "Building a Complete Building" => "tutorials/building_tutorial.md",
             "Space-First Layout Design" => "tutorials/spaces_tutorial.md",
             "Wall Graph Networks" => "tutorials/wall_graph_tutorial.md",
+            "Spline Curves and Surfaces" => "tutorials/spline_geometry.md",
             "Rendering & Animation" => "tutorials/rendering_tutorial.md",
             "Algorithmic Design" => "tutorials/algorithmic_tutorial.md",
             "Isenberg (Bottom-Up)" => "tutorials/isemberg_bottom_up.md",
