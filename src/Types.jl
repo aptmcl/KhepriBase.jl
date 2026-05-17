@@ -52,15 +52,17 @@ They belong to a hierarchy of geometry elements
 
 abstract type GeometryElement end
 abstract type Path <: GeometryElement end
-abstract type OpenPath <: Path end
-abstract type ClosedPath <: Path end
+abstract type ContourPath{Closed} <: Path end
+const OpenPath = ContourPath{false}
+const ClosedPath = ContourPath{true}
+abstract type SurfaceGeometry <: GeometryElement end
 
 #=
 Regions are areas delimited by paths. They are assumed to be planar and
 might contain holes.
 =#
 
-struct Region
+struct Region <: SurfaceGeometry
   paths::Vector{<:ClosedPath}
 end
 

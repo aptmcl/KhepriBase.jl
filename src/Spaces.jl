@@ -589,24 +589,20 @@ ArcEdge(arc::ArcPath) = ArcEdge(arc, path_start(arc), path_end(arc))
 # Decompose a boundary path into its individual components (lines
 # and arcs). Polygonal boundaries yield pure line edges; path
 # sequences yield the mix that was originally authored.
-boundary_components(path::ClosedPolygonalPath) =
-  let vs = path.vertices, n = length(vs)
-    [LineEdge(vs[i], vs[mod1(i + 1, n)]) for i in 1:n]
-  end
-
-boundary_components(path::ClosedPathSequence) =
-  reduce(vcat, (_path_to_edges(p) for p in path.paths); init=Any[])
-
 boundary_components(path::Path) =
-  boundary_components(convert(ClosedPolygonalPath, path))
+  reduce(vcat, (_segment_to_edges(seg) for seg in path_segments(path)); init=Any[])
+
+_segment_to_edges(seg::LineSegment) =
+  [LineEdge(seg.p0, seg.p1)]
+_segment_to_edges(seg::ArcSegment) =
+  [ArcEdge(arc_path(seg.center, seg.radius, seg.start_angle, seg.amplitude))]
+_segment_to_edges(seg::PathSegment) =
+  _path_to_edges(convert(OpenPolygonalPath, segment_path(seg)))
 
 _path_to_edges(p::OpenPolygonalPath) =
   let vs = p.vertices
     [LineEdge(vs[i], vs[i + 1]) for i in 1:length(vs) - 1]
   end
-_path_to_edges(p::ArcPath) = [ArcEdge(p)]
-_path_to_edges(p::Path) =
-  _path_to_edges(convert(OpenPolygonalPath, p))
 
 # Pair-wise overlap of two boundary edges. Returns a list of
 # `(kind, arc_or_nothing, p1, p2)` where `kind ∈ (:interior,)` for
@@ -626,9 +622,9 @@ _edge_overlap(a::LineEdge, b::LineEdge, tol) =
 _edge_overlap(a::ArcEdge, b::ArcEdge, tol) =
   let ov = cocircular_overlap(a.arc, b.arc, tol)
     isnothing(ov) ? nothing :
-      (location_at(a.arc, ov[1] - a.arc.start_angle),
-       location_at(a.arc, ov[2] - a.arc.start_angle),
-       arc_path(a.arc.center, a.arc.radius, ov[1], ov[2] - ov[1]))
+      (location_at(a.arc, ov[1] - arc_start_angle(a.arc)),
+       location_at(a.arc, ov[2] - arc_start_angle(a.arc)),
+       arc_path(path_center(a.arc), path_radius(a.arc), ov[1], ov[2] - ov[1]))
   end
 
 # Mixed line/arc pairs don't share a wall (at most a tangent point).
@@ -686,13 +682,13 @@ end
 
 function _emit_edge_segments(edge::ArcEdge, overlaps, space, tol)
   arc = edge.arc
-  θ_s = arc.start_angle
-  θ_e = arc.start_angle + arc.amplitude
+  θ_s = arc_start_angle(arc)
+  θ_e = arc_end_angle(arc)
   # Parameterise along the arc by angle, oriented `start → end`.
-  forward = arc.amplitude >= 0
+  forward = arc_amplitude(arc) >= 0
   lo = min(θ_s, θ_e); hi = max(θ_s, θ_e)
-  scored = [(min(ov[3].start_angle, ov[3].start_angle + ov[3].amplitude),
-             max(ov[3].start_angle, ov[3].start_angle + ov[3].amplitude),
+  scored = [(min(arc_start_angle(ov[3]), arc_end_angle(ov[3])),
+             max(arc_start_angle(ov[3]), arc_end_angle(ov[3])),
              ov[4])
             for ov in overlaps
             if !isnothing(ov[3])]
@@ -722,7 +718,7 @@ end
 # direction, and return (p1, p2, sub_arc).
 function _arc_subsegment(arc::ArcPath, θ_lo, θ_hi, forward)
   sa, amp = forward ? (θ_lo, θ_hi - θ_lo) : (θ_hi, -(θ_hi - θ_lo))
-  sub = arc_path(arc.center, arc.radius, sa, amp)
+  sub = arc_path(path_center(arc), path_radius(arc), sa, amp)
   (path_start(sub), path_end(sub), sub)
 end
 
@@ -764,10 +760,10 @@ via `arc_path(center, radius, θ_start, θ_end - θ_start)`.
 =#
 "Angular overlap of two co-circular `ArcPath`s, or `nothing`."
 function cocircular_overlap(a::ArcPath, b::ArcPath, tol=coincidence_tolerance())
-  distance(a.center, b.center) > tol && return nothing
-  abs(a.radius - b.radius) > tol && return nothing
-  a_lo, a_hi = minmax(a.start_angle, a.start_angle + a.amplitude)
-  b_lo, b_hi = minmax(b.start_angle, b.start_angle + b.amplitude)
+  distance(path_center(a), path_center(b)) > tol && return nothing
+  abs(path_radius(a) - path_radius(b)) > tol && return nothing
+  a_lo, a_hi = minmax(arc_start_angle(a), arc_end_angle(a))
+  b_lo, b_hi = minmax(arc_start_angle(b), arc_end_angle(b))
   # Align b's range into the same 2π-window as a (shift by integer
   # multiples of 2π). This lets us compare directly even when the
   # two arcs cross the 0/2π seam differently.

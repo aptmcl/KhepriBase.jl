@@ -76,6 +76,41 @@ Proxy (abstract)
 The predicates `is_curve(s)`, `is_surface(s)`, and `is_solid(s)` return `true` for
 `Shape1D`, `Shape2D`, and `Shape3D` respectively.
 
+## Geometry Data
+
+Shape proxies are not the only geometry representation. Khepri also has
+data-level geometry elements used by algorithms and backend fallbacks:
+
+```
+GeometryElement
+├── Path
+│   └── ContourPath{Closed}
+├── SurfaceGeometry
+│   ├── Region -- planar trimmed surface
+│   ├── Mesh
+│   ├── SurfacePatch{ClosedU,ClosedV}
+│   │   ├── PlaneSurface
+│   │   └── TensorProductSurface{ClosedU,ClosedV}
+│   │       ├── BezierSurface
+│   │       └── BSplineSurface{ClosedU,ClosedV,Rational}
+│   │           └── NurbsSurface -- rational B-spline surface
+│   └── TrimmedSurface
+```
+
+The distinction matters: a `Shape2D` is a lazy backend proxy, while a
+`SurfaceGeometry` is explicit geometry that can be queried, tessellated, or
+sent to a backend. NURBS surfaces are modeled as rational B-spline surfaces,
+matching the curve hierarchy.
+
+```julia
+s = bezier_surface([xy(0,0) xy(1,0); xy(0,1) xy(1,1)])
+location_at(s, 0.5, 0.5)
+normal_at(s, 0.5, 0.5)
+tessellate_surface(s, u_count=8, v_count=8)
+
+trimmed_surface(region(rectangular_path(u0(), 10, 5)))
+```
+
 ## Shape Catalog
 
 ### Shape0D -- Points and Text

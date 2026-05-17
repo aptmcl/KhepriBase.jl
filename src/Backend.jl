@@ -855,6 +855,18 @@ b_surface(b::Backend, region::Region, mat) =
     BitVector([is_smooth_path(path) for path in region.paths]),
     mat)
 
+b_surface(b::Backend, surface::TrimmedSurface{PlaneSurface}, mat) =
+  b_surface_polygon_with_holes(
+    b,
+    path_vertices(surface.outer),
+    [reverse(path_vertices(path)) for path in surface.holes],
+    mat)
+
+b_surface(b::Backend, surface::SurfaceGeometry, mat) =
+  let m = tessellate_surface(surface)
+    b_surface_mesh(b, m.vertices, m.faces, mat)
+  end
+
 b_surface(b::Backend, frontier::Shapes, mat) =
   let path = foldr(join_paths, [convert(OpenPolygonalPath, shape_path(e)) for e in frontier])
     and_delete_shapes(b_surface_polygon(b, path_vertices(path), mat), frontier)
@@ -1149,6 +1161,8 @@ b_slice_ref(b::Backend, r, p, v) =
 
 b_stroke(b::Backend, path::CircularPath, mat) =
   b_circle(b, path.center, path.radius, mat)
+b_stroke(b::Backend, path::EllipticPath, mat) =
+  b_ellipse(b, path.center, path.r1, path.r2, mat)
 b_stroke(b::Backend, path::RectangularPath, mat) =
   b_rectangle(b, path.corner, path.dx, path.dy, mat)
 b_stroke(b::Backend, path::ArcPath, mat) =
@@ -1161,12 +1175,31 @@ b_stroke(b::Backend, path::OpenSplinePath, mat) =
   b_spline(b, path.vertices, path.v0, path.v1, mat)
 b_stroke(b::Backend, path::ClosedSplinePath, mat) =
   b_closed_spline(b, path.vertices, mat)
+b_stroke(b::Backend, path::BezierPath, mat) =
+  is_closed_path(path) ?
+    b_polygon(b, path_vertices(path), mat) :
+    b_line(b, path_vertices(path), mat)
+b_stroke(b::Backend, path::BSplinePath{Closed,false}, mat) where {Closed} =
+  b_nurbs_curve(b, path.control_points, path.degree + 1, path.control_points,
+                path.knots, bspline_backend_weights(path), is_closed_path(path), mat)
 b_stroke(b::Backend, path::OpenNurbsPath, mat) =
   b_nurbs_curve(b, path.control_points, path.degree + 1, path.control_points,
                 path.knots, path.weights, false, mat)
 b_stroke(b::Backend, path::ClosedNurbsPath, mat) =
   b_nurbs_curve(b, path.control_points, path.degree + 1, path.control_points,
                 path.knots, path.weights, true, mat)
+b_stroke(b::Backend, seg::LineSegment, mat) =
+  b_line(b, [seg.p0, seg.p1], mat)
+b_stroke(b::Backend, seg::ArcSegment, mat) =
+  b_arc(b, seg.center, seg.radius, seg.start_angle, seg.amplitude, mat)
+b_stroke(b::Backend, seg::EllipseSegment, mat) =
+  abs(seg.amplitude) >= 2π - coincidence_tolerance() ?
+    b_ellipse(b, seg.center, seg.r1, seg.r2, mat) :
+    b_elliptic_arc(b, seg.center, seg.r1, seg.r2, seg.start_angle, seg.amplitude, mat)
+b_stroke(b::Backend, seg::PathSegment, mat) =
+  b_stroke(b, segment_path(seg), mat)
+b_stroke(b::Backend, path::ContourPath, mat) =
+  b_stroke_unite(b, [b_stroke(b, seg, mat) for seg in path_segments(path)], mat)
 b_stroke(b::Backend, path::Region, mat) =
   [b_stroke(b, path, mat) for path in path.paths]
 b_stroke(b::Backend, path::Mesh, mat) =
@@ -1212,10 +1245,14 @@ b_fill(b::Backend, path::ClosedSplinePath, mat) =
   b_surface_closed_spline(b, path.vertices, mat)
 b_fill(b::Backend, path::ClosedNurbsPath, mat) =
   b_surface_polygon(b, path_vertices(path), mat)
+b_fill(b::Backend, path::ClosedPath, mat) =
+  b_surface(b, path, mat)
 b_fill(b::Backend, path::Region, mat) =
   b_surface(b, path, mat)
 b_fill(b::Backend, path::Mesh, mat) =
   b_surface_mesh(b, path.vertices, path.faces, mat)
+b_fill(b::Backend, surface::SurfaceGeometry, mat) =
+  b_surface(b, surface, mat)
 
 public b_realize_path
 b_realize_path(b::Backend, path::Region, mat) =

@@ -2076,7 +2076,7 @@ stroke(path;
   end
 export fill
 public b_fill
-fill(path::Path;
+fill(path::GeometryElement;
     material::Material=default_surface_material(),
     backend::Backend=top_backend(),
     backends::Backends=(backend,)) =

@@ -65,6 +65,7 @@ using KhepriBase
       p = open_polygonal_path(verts)
       @test length(p.vertices) == 3
       @test !is_closed_path(p)
+      @test p isa KhepriBase.ContourPath{false}
     end
 
     @testset "ClosedPolygonalPath" begin
@@ -72,6 +73,7 @@ using KhepriBase
       p = closed_polygonal_path(verts)
       @test length(p.vertices) == 4
       @test is_closed_path(p)
+      @test p isa KhepriBase.ContourPath{true}
     end
 
     @testset "PolygonalPath auto-detection" begin
@@ -101,17 +103,76 @@ using KhepriBase
       @test is_smooth_path(p)
     end
 
-    @testset "NurbsPath" begin
+    @testset "Spline hierarchy" begin
+      p = open_spline_path([xy(0, 0), xy(1, 0.5), xy(2, 0)])
+      @test p isa OpenInterpolatingSplinePath
+      @test p isa SplinePath{false}
+      @test p isa InterpolatingSplinePath{false}
+
+      bez = bezier_path([xy(0, 0), xy(1, 1), xy(2, 0)])
+      @test bez isa OpenBezierPath
+      @test bez isa BezierPath{false}
+      @test path_start(bez) == xy(0, 0)
+      @test path_end(bez) == xy(2, 0)
+      @test in_world(location_at(bez, 0.5)).y ≈ 0.5 atol=1e-10
+
+      bs = bspline_path([xy(0, 0), xy(10, 0), xy(10, 10)], degree=1)
+      @test bs isa OpenBSplinePath
+      @test bs isa BSplinePath{false,false}
+      @test bs isa SplinePath{false}
+      @test in_world(location_at(bs, 0.25)).x ≈ 5 atol=1e-10
+
       p = nurbs_path([xy(0, 0), xy(10, 0)], degree=1)
       @test p isa OpenNurbsPath
+      @test p isa BSplinePath{false,true}
       @test !is_closed_path(p)
       @test is_smooth_path(p)
       @test p.degree == 1
 
       cp = control_point_curve_path([xy(0, 0), xy(1, 0), xy(1, 1)], 2, true)
-      @test cp isa ClosedNurbsPath
+      @test cp isa ClosedBSplinePath
+      @test cp isa BSplinePath{true,false}
       @test is_closed_path(cp)
     end
+  end
+
+  @testset "Path segment API" begin
+    poly = open_polygonal_path([xy(0, 0), xy(2, 0), xy(2, 2)])
+    segs = path_segments(poly)
+    @test length(segs) == 2
+    @test all(s -> s isa LineSegment, segs)
+    @test path_points(poly, mode=:control) == poly.vertices
+    @test path_points(poly, mode=:breakpoints) == poly.vertices
+
+    arc = arc_path(u0(), 2, 0, π/2)
+    arc_segs = path_segments(arc)
+    @test length(arc_segs) == 1
+    @test arc_segs[1] isa ArcSegment
+    @test arc_segs[1].radius == 2
+
+    seq = path_sequence(arc, open_polygonal_path([path_end(arc), xy(0, 3)]))
+    seq_segs = path_segments(seq)
+    @test length(seq_segs) == 2
+    @test seq_segs[1] isa ArcSegment
+    @test seq_segs[2] isa LineSegment
+    unified = segment_path(xy(0, 0), [LineSegment(xy(0, 0), xy(1, 0)),
+                                      LineSegment(xy(1, 0), xy(1, 1))])
+    @test unified isa SegmentPath{false}
+    @test unified isa OpenPath
+    @test path_vertices(unified) == [xy(0, 0), xy(1, 0), xy(1, 1)]
+    tangent = in_world(vz(1, location_at_length(unified, 0.5).cs))
+    @test tangent.x ≈ 1 atol=1e-10
+    @test tangent.y ≈ 0 atol=1e-10
+    @test path_start(reverse(unified)) == path_end(unified)
+
+    closed_unified = segment_path(xy(0, 0), [LineSegment(xy(0, 0), xy(1, 0)),
+                                             LineSegment(xy(1, 0), xy(0, 0))];
+                                  closed=true)
+    @test closed_unified isa SegmentPath{true}
+    @test closed_unified isa ClosedPath
+    @test is_closed_path(closed_unified)
+    @test_throws ArgumentError path_sequence(open_polygonal_path([xy(0, 0), xy(1, 0)]),
+                                             open_polygonal_path([xy(2, 0), xy(3, 0)]))
   end
 
   @testset "path_length" begin
@@ -437,9 +498,10 @@ using KhepriBase
   @testset "PathOps" begin
     @testset "LineOp" begin
       p = open_path_ops(u0(), LineOp(vxy(5, 0)))
+      @test p isa SegmentPath{false}
       @test path_length(p) ≈ 5 atol=1e-10
 
-      loc = location_at_length(p, 2.5)
+      loc = in_world(location_at_length(p, 2.5))
       @test loc.x ≈ 2.5 atol=1e-10
     end
 
@@ -478,6 +540,8 @@ using KhepriBase
     p2 = circular_path(xy(10, 0), 1)
     pset = path_set(p1, p2)
     @test length(pset.paths) == 2
+    @test pset isa KhepriBase.GeometryElement
+    @test !(pset isa Path)
   end
 
   @testset "Region" begin
@@ -689,6 +753,8 @@ using KhepriBase
     m = mesh(verts, faces)
     @test length(m.vertices) == 3
     @test length(m.faces) == 1
+    @test m isa KhepriBase.GeometryElement
+    @test !(m isa Path)
   end
 
   @testset "length_at_location" begin

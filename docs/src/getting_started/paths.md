@@ -7,35 +7,48 @@ trajectories, and visible strokes or fills. The path system lives in
 
 ## Type Hierarchy
 
-All paths descend from the abstract type `Path`, which branches into two families:
+Renderable single-contour paths descend from `ContourPath{Closed}`, which sits
+between the broad `Path` abstraction and the open/closed families:
 
 ```
 Path (abstract)
-├── OpenPath (abstract) -- has distinct start and end
-│   ├── ArcPath
-│   ├── OpenPolygonalPath
-│   ├── OpenSplinePath
-│   └── OpenPathSequence
-├── ClosedPath (abstract) -- forms a loop
-│   ├── CircularPath
-│   ├── EllipticPath
-│   ├── RectangularPath
-│   ├── ClosedPolygonalPath
-│   ├── ClosedSplinePath
-│   └── ClosedPathSequence
+├── ContourPath{false}
+│   └── OpenPath -- has distinct start and end
+│       ├── ArcPath
+│       ├── OpenPolygonalPath
+│       ├── OpenSplinePath / OpenInterpolatingSplinePath
+│       ├── OpenBezierPath
+│       ├── OpenBSplinePath
+│       ├── OpenNurbsPath -- rational B-spline
+│       ├── SegmentPath{false}
+│       └── OpenPathSequence
+├── ContourPath{true}
+│   └── ClosedPath -- forms a loop
+│       ├── CircularPath
+│       ├── EllipticPath
+│       ├── RectangularPath
+│       ├── ClosedPolygonalPath
+│       ├── ClosedSplinePath / ClosedInterpolatingSplinePath
+│       ├── ClosedBezierPath
+│       ├── ClosedBSplinePath
+│       ├── ClosedNurbsPath -- rational B-spline
+│       ├── SegmentPath{true}
+│       └── ClosedPathSequence
 ├── EmptyPath, PointPath
-├── PathOps -- line/arc operations from a start location
-├── PathSet -- collection of independent paths
-└── Mesh -- vertices + face indices
+└── PathOps -- legacy line/arc operation record
 ```
 
 The `OpenPath`/`ClosedPath` distinction matters for operations like `fill` (which
 requires a closed path) and `map_division` (which excludes the endpoint for closed
 paths to avoid duplication).
 
+`PathSet` and `Mesh` are geometry elements, but they are no longer `Path`
+subtypes: a path set is a collection of independent contours, and a mesh is a
+surface representation rather than a one-dimensional curve.
+
 ## Constructors
 
-All constructors use lowercase names and return immutable path structs.
+All constructors use lowercase names and return immutable path values.
 
 ### Arcs, Circles, and Ellipses
 
@@ -73,11 +86,18 @@ open_spline_path([xy(0,0), xy(3,2), xy(6,0), xy(9,2)])
 open_spline_path([xy(0,0), xy(3,2), xy(6,0)], vx(), vx())  # with tangents
 closed_spline_path([xy(0,0), xy(3,2), xy(6,0), xy(9,2)])
 spline_path([xy(0,0), xy(3,2), xy(6,0)])                    # auto-detect
+
+bezier_path([xy(0,0), xy(2,3), xy(5,0)])                    # Bezier control points
+bspline_path([xy(0,0), xy(2,3), xy(5,0), xy(7,2)])          # non-rational B-spline
+nurbs_path([xy(0,0), xy(2,3), xy(5,0), xy(7,2)];
+           weights=[1.0, 0.5, 0.5, 1.0])                   # rational B-spline
 ```
 
-Splines use parametric cubic interpolation (Dierckx) with domain `(0, 1)`.
-`location_at` returns an oriented frame whose tangent and normal come from the spline
-derivatives.
+`spline_path`, `open_spline_path`, and `closed_spline_path` are compatibility
+constructors for interpolating splines: the authored points lie on the curve.
+`BezierPath`, `BSplinePath`, and `NurbsPath` are control-point splines. A
+`NurbsPath` is represented as the rational case of `BSplinePath`, so it shares
+the same degree/knot/domain model plus weights.
 
 ### Path Sequences and Sets
 
@@ -90,7 +110,8 @@ closed_path_sequence(arc_path(u0(), 5, 0, pi),
 path_sequence(...)  # auto-detects open vs closed
 
 path_set(circular_path(u0(), 3), circular_path(xy(10, 0), 2))  # independent paths
-open_path_ops(u0(), LineOp(vx(5)), ArcOp(2, 0, pi/2), LineOp(vy(3)))  # from operations
+open_path_ops(u0(), LineOp(vx(5)), ArcOp(2, 0, pi/2), LineOp(vy(3)))  # builds a SegmentPath
+segment_path(u0(), [LineSegment(u0(), ux())])  # explicit segment contour
 ```
 
 ## Querying Paths
@@ -123,9 +144,17 @@ indexing as shorthand: `path[3.0]` is equivalent to `location_at_length(path, 3.
 ### Vertices and Frames
 
 ```julia
-path_vertices(path)   # control points (converts to polygonal approximation if needed)
+path_vertices(path)   # legacy helper: vertices or polygonal approximation
+path_points(path, mode=:control)      # authored control points
+path_points(path, mode=:breakpoints)  # exact segment endpoints
+path_points(path, mode=:sample)       # tessellated display/backend points
+path_segments(path)   # exact LineSegment / ArcSegment / BezierSegment / BSplineSegment pieces
 path_frames(path)     # oriented frames at each vertex, useful for sweeps and placement
 ```
+
+Prefer `path_segments` when you need topology or exact curve type information.
+Prefer `path_points(..., mode=:sample)` when you explicitly need a polygonal
+approximation for a backend or numerical operation.
 
 ## Subpaths, Joining, and Transformations
 
@@ -137,6 +166,7 @@ translate(path, vz(3))           # shift by vector
 scale(path, 2.0)                 # scale around origin
 scale(path, 0.5, xy(5, 0))  # scale around a point
 reverse(path)                    # reverse traversal direction
+offset(path, 0.2; join=:miter, cap=:butt)  # join: :miter/:bevel/:round, cap: :butt/:square/:round
 ```
 
 All transformations return a new path; the original is not modified. `join_paths` avoids

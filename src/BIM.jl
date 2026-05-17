@@ -780,11 +780,18 @@ See also: src/Paths.jl `Base.reverse(::ArcPath)`, which the head relies
 on for its reversed traversal.
 =#
 frame_refs(b::Backend, s::Union{Door, Window}, subpath::Path, height) =
-  b_sweep(b, frame_path(s, subpath, height),
-          s.family.frame.profile, 0, 1,
-          material_ref(b, s.family.frame.material))
+  let arc = single_arc_segment(subpath)
+    isnothing(arc) ?
+      b_sweep(b, frame_path(s, subpath, height),
+              s.family.frame.profile, 0, 1,
+              material_ref(b, s.family.frame.material)) :
+      frame_refs_arc(b, s, arc_path_from_segment(arc), height)
+  end
 
 frame_refs(b::Backend, s::Union{Door, Window}, subpath::ArcPath, height) =
+  frame_refs_arc(b, s, subpath, height)
+
+frame_refs_arc(b::Backend, s::Union{Door, Window}, subpath::ArcPath, height) =
   let profile = s.family.frame.profile,
       mat = material_ref(b, s.family.frame.material)
     vcat(arc_jamb_refs(b, subpath, :end,   height, profile, mat),

@@ -91,6 +91,19 @@ using KhepriBase
       p_offset = offset(p, 0)
       @test p_offset === p
     end
+
+    @testset "offset style validation" begin
+      p = open_polygonal_path([xy(0, 0), xy(1, 0), xy(1, 1)])
+      p_offset = offset(p, 1; join=:miter, cap=:butt)
+      @test p_offset isa OpenPolygonalPath
+      @test offset(p, 1; join=:bevel) isa OpenPolygonalPath
+      @test offset(p, 1; join=:round) isa KhepriBase.SegmentPath{false}
+      @test offset(p, 1; cap=:square).vertices[1].x < p_offset.vertices[1].x
+
+      c = circular_path(u0(), 5)
+      c_offset = offset(c, 1; join=:round, cap=:round)
+      @test c_offset.radius == 4
+    end
   end
 
   @testset "Segment intersection" begin

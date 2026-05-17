@@ -4,6 +4,27 @@ export empty_path,
        #closed_path,
        open_path_ops,
        closed_path_ops,
+       ContourPath,
+       SurfaceGeometry,
+       PathSegment,
+       SegmentPath,
+       LineSegment,
+       ArcSegment,
+       EllipseSegment,
+       InterpolatingSplineSegment,
+       SplineSegment,
+       BezierSegment,
+       BSplineSegment,
+       NurbsSegment,
+       segment_path,
+       path_segments,
+       path_points,
+       path_center,
+       path_radius,
+       path_radii,
+       arc_start_angle,
+       arc_amplitude,
+       arc_end_angle,
        LineOp,
        ArcOp,
        CloseOp,
@@ -22,12 +43,31 @@ export empty_path,
        closed_polygonal_path,
        PolygonalPath,
        polygonal_path,
-       OpenSplinePath,
-       open_spline_path,
-       ClosedSplinePath,
-       closed_spline_path,
        SplinePath,
+       InterpolatingSplinePath,
+       ControlSplinePath,
+       BezierPath,
+       BSplinePath,
+       OpenInterpolatingSplinePath,
+       OpenSplinePath,
+       open_interpolating_spline_path,
+       open_spline_path,
+       ClosedInterpolatingSplinePath,
+       ClosedSplinePath,
+       closed_interpolating_spline_path,
+       closed_spline_path,
+       interpolating_spline_path,
        spline_path,
+       OpenBezierPath,
+       open_bezier_path,
+       ClosedBezierPath,
+       closed_bezier_path,
+       bezier_path,
+       OpenBSplinePath,
+       open_bspline_path,
+       ClosedBSplinePath,
+       closed_bspline_path,
+       bspline_path,
        OpenNurbsPath,
        open_nurbs_path,
        ClosedNurbsPath,
@@ -171,6 +211,58 @@ const curve_length_tolerance = Parameter(1e-8)
 export curve_length_tolerance
 
 
+abstract type PathSegment end
+
+struct LineSegment <: PathSegment
+  p0::Loc
+  p1::Loc
+end
+
+struct ArcSegment <: PathSegment
+  center::Loc
+  radius::Real
+  start_angle::Real
+  amplitude::Real
+end
+
+struct EllipseSegment <: PathSegment
+  center::Loc
+  r1::Real
+  r2::Real
+  start_angle::Real
+  amplitude::Real
+end
+
+struct InterpolatingSplineSegment <: PathSegment
+  vertices::Locs
+  closed::Bool
+  v0::Union{Bool,Vec}
+  v1::Union{Bool,Vec}
+end
+
+const SplineSegment = InterpolatingSplineSegment
+
+struct BezierSegment <: PathSegment
+  control_points::Locs
+end
+
+struct BSplineSegment{Rational} <: PathSegment
+  control_points::Vector{Loc}
+  degree::Int
+  knots::Vector{Float64}
+  weights::Union{Nothing,Vector{Float64}}
+  domain::Tuple{Float64,Float64}
+  closed::Bool
+end
+
+const NurbsSegment = BSplineSegment{true}
+
+struct SegmentPath{Closed} <: ContourPath{Closed}
+  start::Loc
+  segments::Vector{PathSegment}
+end
+
+
 
 struct EmptyPath <: Path
 end
@@ -277,6 +369,19 @@ location_at(path::EllipticPath, ϕ::Real) =
                    vz(1, path.center.cs))
 planar_path_normal(path::EllipticPath) = uvz(path.center.cs)
 
+path_center(path::Union{ArcPath,CircularPath,EllipticPath}) = path.center
+path_center(seg::Union{ArcSegment,EllipseSegment}) = seg.center
+path_radius(path::Union{ArcPath,CircularPath}) = path.radius
+path_radius(seg::ArcSegment) = seg.radius
+path_radii(path::EllipticPath) = (path.r1, path.r2)
+path_radii(seg::EllipseSegment) = (seg.r1, seg.r2)
+arc_start_angle(path::ArcPath) = path.start_angle
+arc_start_angle(seg::ArcSegment) = seg.start_angle
+arc_amplitude(path::ArcPath) = path.amplitude
+arc_amplitude(seg::ArcSegment) = seg.amplitude
+arc_end_angle(path::ArcPath) = path.start_angle + path.amplitude
+arc_end_angle(seg::ArcSegment) = seg.start_angle + seg.amplitude
+
 ## Rectangular path
 struct RectangularPath <: ClosedPath
     corner::Loc
@@ -336,34 +441,48 @@ join_paths(p1::ArcPath, p2::OpenPolygonalPath) =
 
 # Splines
 
-struct OpenSplinePath <: OpenPath
+abstract type SplinePath{Closed} <: ContourPath{Closed} end
+abstract type InterpolatingSplinePath{Closed} <: SplinePath{Closed} end
+abstract type ControlSplinePath{Closed} <: SplinePath{Closed} end
+abstract type BezierPath{Closed} <: ControlSplinePath{Closed} end
+abstract type BSplinePath{Closed,Rational} <: ControlSplinePath{Closed} end
+
+struct OpenInterpolatingSplinePath <: InterpolatingSplinePath{false}
     vertices::Locs
     v0::Union{Bool,Vec}
     v1::Union{Bool,Vec}
     interpolator
-    OpenSplinePath(vs, v0, v1) = new(vs, v0, v1, curve_interpolator(vs, false))
+    OpenInterpolatingSplinePath(vs, v0, v1) = new(vs, v0, v1, curve_interpolator(vs, false))
 end
+const OpenSplinePath = OpenInterpolatingSplinePath
+open_interpolating_spline_path(vertices=[u0(), x(), xy(), y()], v0=false, v1=false) =
+  OpenInterpolatingSplinePath(vertices, v0, v1)
 open_spline_path(vertices=[u0(), x(), xy(), y()], v0=false, v1=false) =
-  OpenSplinePath(vertices, v0, v1)
+  open_interpolating_spline_path(vertices, v0, v1)
 
-struct ClosedSplinePath <: ClosedPath
+struct ClosedInterpolatingSplinePath <: InterpolatingSplinePath{true}
     vertices::Locs
     interpolator
-    ClosedSplinePath(vs) = new(vs, curve_interpolator(vs, true))
+    ClosedInterpolatingSplinePath(vs) = new(vs, curve_interpolator(vs, true))
 end
-closed_spline_path(vertices=[u0(), x(), xy(), y()]) =
+const ClosedSplinePath = ClosedInterpolatingSplinePath
+closed_interpolating_spline_path(vertices=[u0(), x(), xy(), y()]) =
   let vertices = ensure_no_repeated_locations(vertices)
-    ClosedSplinePath(vertices)
+    ClosedInterpolatingSplinePath(vertices)
   end
+closed_spline_path(vertices=[u0(), x(), xy(), y()]) =
+  closed_interpolating_spline_path(vertices)
 
-spline_path(vertices::Locs) =
+interpolating_spline_path(vertices::Locs) =
   coincident_path_location(vertices[1], vertices[end]) ?
-    closed_spline_path(vertices[1:end-1]) :
-    open_spline_path(vertices)
+    closed_interpolating_spline_path(vertices[1:end-1]) :
+    open_interpolating_spline_path(vertices)
+interpolating_spline_path(v::Loc, vs...) = interpolating_spline_path([v, vs...])
+spline_path(vertices::Locs) = interpolating_spline_path(vertices)
 spline_path(v::Loc, vs...) = spline_path([v, vs...])
 
 
-location_at(path::Union{OpenSplinePath,ClosedSplinePath}, ϕ::Real) =
+location_at(path::InterpolatingSplinePath, ϕ::Real) =
   location_at(path.interpolator, ϕ)
 location_at(interpolator::ParametricSpline, ϕ) =
   let f = interpolator(ϕ),
@@ -405,18 +524,118 @@ map_division(f::Function, path::ClosedSplinePath, n::Integer) =
          map(vy->vxyz(vy[1], vy[2], vy[3], world_cs), vts)))
   end
 
-SplinePath = Union{OpenSplinePath, ClosedSplinePath}
-
-path_start(path::SplinePath) = path.vertices[1]
+path_start(path::InterpolatingSplinePath) = path.vertices[1]
 path_end(path::OpenSplinePath) = path.vertices[end]
 path_end(path::ClosedSplinePath) = path.vertices[1]
 
 convert(::Type{ClosedSplinePath}, path::Path) =
   closed_spline_path(path_vertices(path))
 
-# NURBS paths
+# Bezier paths
 
-struct OpenNurbsPath <: OpenPath
+struct OpenBezierPath <: BezierPath{false}
+    segments::Vector{BezierSegment}
+end
+
+struct ClosedBezierPath <: BezierPath{true}
+    segments::Vector{BezierSegment}
+end
+
+_bezier_start(seg::BezierSegment) = seg.control_points[1]
+_bezier_end(seg::BezierSegment) = seg.control_points[end]
+
+function _validate_bezier_segments(segments::Vector{BezierSegment}, closed::Bool)
+  isempty(segments) && throw(ArgumentError("A Bezier path needs at least one segment."))
+  for seg in segments
+    length(seg.control_points) >= 2 ||
+      throw(ArgumentError("A Bezier segment needs at least two control points."))
+  end
+  for i in 1:max(length(segments) - 1, 0)
+    coincident_path_location(_bezier_end(segments[i]), _bezier_start(segments[i + 1])) ||
+      throw(ArgumentError("Bezier segments are disconnected at index $(i)."))
+  end
+  closed && !coincident_path_location(_bezier_end(segments[end]), _bezier_start(segments[1])) &&
+    throw(ArgumentError("A closed Bezier path must end where it starts."))
+  segments
+end
+
+open_bezier_path(segments::Vector{BezierSegment}) =
+  OpenBezierPath(_validate_bezier_segments(segments, false))
+open_bezier_path(segment::BezierSegment, segments::BezierSegment...) =
+  open_bezier_path(BezierSegment[segment, segments...])
+open_bezier_path(control_points::Locs=[u0(), x(), xy(), y()]) =
+  open_bezier_path(BezierSegment(control_points))
+
+closed_bezier_path(segments::Vector{BezierSegment}) =
+  ClosedBezierPath(_validate_bezier_segments(segments, true))
+closed_bezier_path(segment::BezierSegment, segments::BezierSegment...) =
+  closed_bezier_path(BezierSegment[segment, segments...])
+closed_bezier_path(control_points::Locs=[u0(), x(), xy(), u0()]) =
+  closed_bezier_path(BezierSegment(control_points))
+
+bezier_path(segments::Vector{BezierSegment}; closed::Bool=false) =
+  closed ? closed_bezier_path(segments) : open_bezier_path(segments)
+bezier_path(control_points::Locs=[u0(), x(), xy(), y()]; closed::Bool=false) =
+  closed ? closed_bezier_path(control_points) : open_bezier_path(control_points)
+
+function bezier_eval(values, t::Real)
+  vs = collect(values)
+  for k in 1:max(length(vs) - 1, 0)
+    for i in 1:length(vs)-k
+      vs[i] = vs[i] + (vs[i + 1] - vs[i]) * t
+    end
+  end
+  vs[1]
+end
+
+bezier_derivative_control_points(seg::BezierSegment) =
+  let n = length(seg.control_points) - 1
+    [(seg.control_points[i + 1] - seg.control_points[i]) * n for i in 1:n]
+  end
+
+function location_at(seg::BezierSegment, t::Real)
+  t = clamp(Float64(t), 0.0, 1.0)
+  p = bezier_eval(seg.control_points, t)
+  dvs = bezier_derivative_control_points(seg)
+  tangent = isempty(dvs) ? vz(0, p.cs) : bezier_eval(dvs, t)
+  norm(tangent) <= zero_vector_tolerance() ? p : loc_from_o_vz(p, tangent)
+end
+
+path_domain(path::BezierPath) = (0.0, Float64(length(path.segments)))
+function _bezier_segment_at_parameter(path::BezierPath, t::Real)
+  n = length(path.segments)
+  u = is_closed_path(path) && n > 0 ? mod(Float64(t), n) : clamp(Float64(t), 0.0, n)
+  idx = min(floor(Int, u) + 1, n)
+  (path.segments[idx], idx == n && u == n ? 1.0 : u - (idx - 1))
+end
+location_at(path::BezierPath, t::Real) =
+  let (seg, local_t) = _bezier_segment_at_parameter(path, t)
+    location_at(seg, local_t)
+  end
+path_start(path::BezierPath) = _bezier_start(path.segments[1])
+path_end(path::OpenBezierPath) = _bezier_end(path.segments[end])
+path_end(path::ClosedBezierPath) = path_start(path)
+path_length(path::BezierPath) = length_at_parameter(path, path_domain(path)[2])
+location_at_length(path::BezierPath, d::Real) =
+  location_at(path, parameter_at_length(path, d))
+
+# B-spline and NURBS paths
+
+struct OpenBSplinePath <: BSplinePath{false,false}
+    control_points::Vector{Loc}
+    degree::Int
+    knots::Vector{Float64}
+    domain::Tuple{Float64,Float64}
+end
+
+struct ClosedBSplinePath <: BSplinePath{true,false}
+    control_points::Vector{Loc}
+    degree::Int
+    knots::Vector{Float64}
+    domain::Tuple{Float64,Float64}
+end
+
+struct OpenNurbsPath <: BSplinePath{false,true}
     control_points::Vector{Loc}
     degree::Int
     knots::Vector{Float64}
@@ -424,7 +643,7 @@ struct OpenNurbsPath <: OpenPath
     domain::Tuple{Float64,Float64}
 end
 
-struct ClosedNurbsPath <: ClosedPath
+struct ClosedNurbsPath <: BSplinePath{true,true}
     control_points::Vector{Loc}
     degree::Int
     knots::Vector{Float64}
@@ -432,10 +651,11 @@ struct ClosedNurbsPath <: ClosedPath
     domain::Tuple{Float64,Float64}
 end
 
+NonRationalBSplinePath = Union{OpenBSplinePath, ClosedBSplinePath}
 NurbsPath = Union{OpenNurbsPath, ClosedNurbsPath}
 
-function default_nurbs_knots(n::Integer, degree::Integer, periodic::Bool)
-  n > degree || throw(ArgumentError("A NURBS path needs at least degree + 1 control points."))
+function default_bspline_knots(n::Integer, degree::Integer, periodic::Bool)
+  n > degree || throw(ArgumentError("A B-spline path needs at least degree + 1 control points."))
   if periodic
     collect(0.0:Float64(n + degree))
   else
@@ -445,8 +665,10 @@ function default_nurbs_knots(n::Integer, degree::Integer, periodic::Bool)
          fill(1.0, degree + 1))
   end
 end
+default_nurbs_knots(n::Integer, degree::Integer, periodic::Bool) =
+  default_bspline_knots(n, degree, periodic)
 
-function normalize_nurbs_knots(knots, n::Integer, degree::Integer)
+function normalize_bspline_knots(knots, n::Integer, degree::Integer)
   ks = Float64.(collect(knots))
   expected = n + degree + 1
   if length(ks) == expected
@@ -458,9 +680,49 @@ function normalize_nurbs_knots(knots, n::Integer, degree::Integer)
     throw(ArgumentError("Expected $(expected) NURBS knots ($(expected - 2) for Rhino-style knots), got $(length(ks))."))
   end
 end
+normalize_nurbs_knots(knots, n::Integer, degree::Integer) =
+  normalize_bspline_knots(knots, n, degree)
 
-nurbs_domain(knots, degree, n) =
+bspline_domain(knots, degree, n) =
   (Float64(knots[degree + 1]), Float64(knots[n + 1]))
+nurbs_domain(knots, degree, n) = bspline_domain(knots, degree, n)
+
+function bspline_path(control_points::Locs; degree::Integer=3, periodic::Bool=false,
+                      knots=nothing, domain=nothing)
+  degree = Int(degree)
+  degree >= 1 || throw(ArgumentError("B-spline degree must be at least 1."))
+  cps = Loc[control_points...]
+  length(cps) > degree || throw(ArgumentError("A degree $degree B-spline path needs at least $(degree + 1) control points."))
+
+  if periodic && knots === nothing
+    cps = [cps; cps[1:degree]]
+  end
+
+  ks = knots === nothing ?
+    default_bspline_knots(length(cps), degree, periodic) :
+    normalize_bspline_knots(knots, length(cps), degree)
+  all(ks[i] <= ks[i + 1] for i in 1:length(ks)-1) ||
+    throw(ArgumentError("B-spline knots must be nondecreasing."))
+
+  dom = domain === nothing ?
+    bspline_domain(ks, degree, length(cps)) :
+    (Float64(domain[1]), Float64(domain[2]))
+  dom[1] < dom[2] || throw(ArgumentError("B-spline domain must be increasing."))
+
+  periodic ?
+    ClosedBSplinePath(cps, degree, ks, dom) :
+    OpenBSplinePath(cps, degree, ks, dom)
+end
+
+open_bspline_path(control_points::Locs=[u0(), x(), xy(), y()]; degree::Integer=3,
+                  knots=nothing, domain=nothing) =
+  bspline_path(control_points; degree=degree, periodic=false,
+               knots=knots, domain=domain)
+
+closed_bspline_path(control_points::Locs=[u0(), x(), xy(), y()]; degree::Integer=3,
+                    knots=nothing, domain=nothing) =
+  bspline_path(control_points; degree=degree, periodic=true,
+               knots=knots, domain=domain)
 
 function nurbs_path(control_points::Locs; degree::Integer=3, periodic::Bool=false,
                     knots=nothing, weights=nothing, domain=nothing)
@@ -503,11 +765,11 @@ closed_nurbs_path(control_points::Locs=[u0(), x(), xy(), y()]; degree::Integer=3
              knots=knots, weights=weights, domain=domain)
 
 control_point_curve_path(control_points::Locs, degree::Integer=3, periodic::Bool=false) =
-  nurbs_path(control_points; degree=degree, periodic=periodic)
+  bspline_path(control_points; degree=degree, periodic=periodic)
 
-path_domain(path::NurbsPath) = path.domain
+path_domain(path::BSplinePath) = path.domain
 
-function nurbs_parameter(path::NurbsPath, t::Real)
+function bspline_parameter(path::BSplinePath, t::Real)
   t0, t1 = path_domain(path)
   if is_closed_path(path)
     t == t1 && return t1
@@ -517,6 +779,7 @@ function nurbs_parameter(path::NurbsPath, t::Real)
     clamp(Float64(t), t0, t1)
   end
 end
+nurbs_parameter(path::NurbsPath, t::Real) = bspline_parameter(path, t)
 
 function nurbs_find_span(knots, degree, t, n)
   t <= knots[degree + 1] && return degree + 1
@@ -555,19 +818,26 @@ function nurbs_basis_functions(span, t, degree, knots)
   ns
 end
 
-function nurbs_location_raw(path::NurbsPath, t::Real)
-  t = nurbs_parameter(path, t)
+bspline_weights(path::BSplinePath{Closed,false}) where {Closed} = nothing
+bspline_weights(path::BSplinePath{Closed,true}) where {Closed} = path.weights
+bspline_backend_weights(path::BSplinePath{Closed,false}) where {Closed} =
+  fill(1.0, length(path.control_points))
+bspline_backend_weights(path::BSplinePath{Closed,true}) where {Closed} = path.weights
+
+function bspline_location_raw(path::BSplinePath, t::Real)
+  t = bspline_parameter(path, t)
   cps = path.control_points
   degree = path.degree
   span = nurbs_find_span(path.knots, degree, t, length(cps))
   ns = nurbs_basis_functions(span, t, degree, path.knots)
+  weights = bspline_weights(path)
   x = 0.0
   y = 0.0
   z = 0.0
   denom = 0.0
   for j in 0:degree
     i = span - degree + j
-    w = path.weights[i]
+    w = isnothing(weights) ? 1.0 : weights[i]
     coeff = ns[j + 1] * w
     p = raw_point(cps[i])
     x += coeff * p[1]
@@ -576,48 +846,64 @@ function nurbs_location_raw(path::NurbsPath, t::Real)
     denom += coeff
   end
   abs(denom) > eps(Float64) ||
-    throw(DomainError(t, "NURBS evaluation produced a zero denominator."))
+    throw(DomainError(t, "B-spline evaluation produced a zero denominator."))
   (x / denom, y / denom, z / denom)
 end
+nurbs_location_raw(path::NurbsPath, t::Real) = bspline_location_raw(path, t)
 
-nurbs_location(path::NurbsPath, t::Real) =
-  let p = nurbs_location_raw(path, t)
+bspline_location(path::BSplinePath, t::Real) =
+  let p = bspline_location_raw(path, t)
     xyz(p[1], p[2], p[3], world_cs)
   end
+nurbs_location(path::NurbsPath, t::Real) = bspline_location(path, t)
 
-function nurbs_tangent(path::NurbsPath, t::Real)
+function bspline_tangent(path::BSplinePath, t::Real)
   t0, t1 = path_domain(path)
   h = max((t1 - t0) * 1e-6, sqrt(eps(Float64)))
   ta = is_closed_path(path) ? t - h : max(t0, t - h)
   tb = is_closed_path(path) ? t + h : min(t1, t + h)
   tb == ta && return vz(1, world_cs)
-  pa = nurbs_location_raw(path, ta)
-  pb = nurbs_location_raw(path, tb)
+  pa = bspline_location_raw(path, ta)
+  pb = bspline_location_raw(path, tb)
   vxyz((pb[1] - pa[1]) / (tb - ta),
        (pb[2] - pa[2]) / (tb - ta),
        (pb[3] - pa[3]) / (tb - ta),
        world_cs)
 end
+nurbs_tangent(path::NurbsPath, t::Real) = bspline_tangent(path, t)
 
-location_at(path::NurbsPath, t::Real) =
-  let p = nurbs_location(path, t),
-      tangent = nurbs_tangent(path, t)
+location_at(path::BSplinePath, t::Real) =
+  let p = bspline_location(path, t),
+      tangent = bspline_tangent(path, t)
     norm(tangent) <= zero_vector_tolerance() ? p : loc_from_o_vz(p, tangent)
   end
 
-path_start(path::NurbsPath) = location_at(path, path_domain(path)[1])
-path_end(path::OpenNurbsPath) = location_at(path, path_domain(path)[2])
-path_end(path::ClosedNurbsPath) = path_start(path)
+path_start(path::BSplinePath) = location_at(path, path_domain(path)[1])
+path_end(path::BSplinePath{false}) = location_at(path, path_domain(path)[2])
+path_end(path::BSplinePath{true}) = path_start(path)
 
-translate(path::NurbsPath, v::Vec) =
+translate(path::BSplinePath{Closed,false}, v::Vec) where {Closed} =
+  bspline_path(translate(path.control_points, v); degree=path.degree,
+               periodic=is_closed_path(path), knots=path.knots,
+               domain=path.domain)
+translate(path::BSplinePath{Closed,true}, v::Vec) where {Closed} =
   nurbs_path(translate(path.control_points, v); degree=path.degree,
              periodic=is_closed_path(path), knots=path.knots,
              weights=path.weights, domain=path.domain)
-in_cs(path::NurbsPath, cs::CS) =
+in_cs(path::BSplinePath{Closed,false}, cs::CS) where {Closed} =
+  bspline_path(in_cs(path.control_points, cs); degree=path.degree,
+               periodic=is_closed_path(path), knots=path.knots,
+               domain=path.domain)
+in_cs(path::BSplinePath{Closed,true}, cs::CS) where {Closed} =
   nurbs_path(in_cs(path.control_points, cs); degree=path.degree,
              periodic=is_closed_path(path), knots=path.knots,
              weights=path.weights, domain=path.domain)
-scale(path::NurbsPath, s::Real, p::Loc=u0()) =
+scale(path::BSplinePath{Closed,false}, s::Real, p::Loc=u0()) where {Closed} =
+  s == 1 ? path :
+    bspline_path([p + (q - p)*s for q in path.control_points]; degree=path.degree,
+                 periodic=is_closed_path(path), knots=path.knots,
+                 domain=path.domain)
+scale(path::BSplinePath{Closed,true}, s::Real, p::Loc=u0()) where {Closed} =
   s == 1 ? path :
     nurbs_path([p + (q - p)*s for q in path.control_points]; degree=path.degree,
                periodic=is_closed_path(path), knots=path.knots,
@@ -642,6 +928,24 @@ translate(path::ClosedPolygonalPath, v::Vec) = ClosedPolygonalPath(translate(pat
 translate(path::OpenSplinePath, v::Vec) = OpenSplinePath(translate(path.vertices, v), path.v0, path.v1)
 translate(path::ClosedSplinePath, v::Vec) = ClosedSplinePath(translate(path.vertices, v))
 translate(ps::Locs, v::Vec) = map(p->p+v, ps)
+translate(seg::LineSegment, v::Vec) = LineSegment(seg.p0 + v, seg.p1 + v)
+translate(seg::ArcSegment, v::Vec) =
+  ArcSegment(seg.center + v, seg.radius, seg.start_angle, seg.amplitude)
+translate(seg::EllipseSegment, v::Vec) =
+  EllipseSegment(seg.center + v, seg.r1, seg.r2, seg.start_angle, seg.amplitude)
+translate(seg::SplineSegment, v::Vec) =
+  SplineSegment(translate(seg.vertices, v), seg.closed, seg.v0, seg.v1)
+translate(seg::BezierSegment, v::Vec) =
+  BezierSegment(translate(seg.control_points, v))
+translate(seg::BSplineSegment{Rational}, v::Vec) where {Rational} =
+  BSplineSegment{Rational}(translate(seg.control_points, v), seg.degree, seg.knots,
+                           seg.weights, seg.domain, seg.closed)
+translate(path::BezierPath{false}, v::Vec) =
+  open_bezier_path([translate(seg, v) for seg in path.segments])
+translate(path::BezierPath{true}, v::Vec) =
+  closed_bezier_path([translate(seg, v) for seg in path.segments])
+translate(path::SegmentPath, v::Vec) =
+  segment_path(path.start + v, [translate(seg, v) for seg in path.segments]; closed=is_closed_path(path))
 
 in_cs(path::PointPath, cs::CS) = PointPath(in_cs(path.location, cs))
 in_cs(path::CircularPath, cs::CS) = CircularPath(in_cs(path.center, cs), path.radius)
@@ -652,6 +956,24 @@ in_cs(path::ClosedPolygonalPath, cs::CS) = ClosedPolygonalPath(in_cs(path.vertic
 in_cs(path::OpenSplinePath, cs::CS) = OpenSplinePath(in_cs(path.vertices, cs), path.v0, path.v1)
 in_cs(path::ClosedSplinePath, cs::CS) = ClosedSplinePath(in_cs(path.vertices, cs))
 in_cs(ps::Locs, cs::CS) = map(p->in_cs(p, cs), ps)
+in_cs(seg::LineSegment, cs::CS) = LineSegment(in_cs(seg.p0, cs), in_cs(seg.p1, cs))
+in_cs(seg::ArcSegment, cs::CS) =
+  ArcSegment(in_cs(seg.center, cs), seg.radius, seg.start_angle, seg.amplitude)
+in_cs(seg::EllipseSegment, cs::CS) =
+  EllipseSegment(in_cs(seg.center, cs), seg.r1, seg.r2, seg.start_angle, seg.amplitude)
+in_cs(seg::SplineSegment, cs::CS) =
+  SplineSegment(in_cs(seg.vertices, cs), seg.closed, seg.v0, seg.v1)
+in_cs(seg::BezierSegment, cs::CS) =
+  BezierSegment(in_cs(seg.control_points, cs))
+in_cs(seg::BSplineSegment{Rational}, cs::CS) where {Rational} =
+  BSplineSegment{Rational}(in_cs(seg.control_points, cs), seg.degree, seg.knots,
+                           seg.weights, seg.domain, seg.closed)
+in_cs(path::BezierPath{false}, cs::CS) =
+  open_bezier_path([in_cs(seg, cs) for seg in path.segments])
+in_cs(path::BezierPath{true}, cs::CS) =
+  closed_bezier_path([in_cs(seg, cs) for seg in path.segments])
+in_cs(path::SegmentPath, cs::CS) =
+  segment_path(in_cs(path.start, cs), [in_cs(seg, cs) for seg in path.segments]; closed=is_closed_path(path))
 
 scale(path::CircularPath, s::Real, p::Loc=u0()) =
   s == 1 ?
@@ -681,6 +1003,25 @@ scale(path::ClosedSplinePath, s::Real, p::Loc=u0()) =
   s == 1 ?
     path :
     closed_spline_path([p + (q-p)*s for q in path.vertices])
+scale(seg::LineSegment, s::Real, p::Loc=u0()) =
+  LineSegment(p + (seg.p0 - p)*s, p + (seg.p1 - p)*s)
+scale(seg::ArcSegment, s::Real, p::Loc=u0()) =
+  ArcSegment(p + (seg.center - p)*s, seg.radius*s, seg.start_angle, seg.amplitude)
+scale(seg::EllipseSegment, s::Real, p::Loc=u0()) =
+  EllipseSegment(p + (seg.center - p)*s, seg.r1*s, seg.r2*s, seg.start_angle, seg.amplitude)
+scale(seg::SplineSegment, s::Real, p::Loc=u0()) =
+  SplineSegment([p + (q-p)*s for q in seg.vertices], seg.closed, seg.v0, seg.v1)
+scale(seg::BezierSegment, s::Real, p::Loc=u0()) =
+  BezierSegment([p + (q-p)*s for q in seg.control_points])
+scale(seg::BSplineSegment{Rational}, s::Real, p::Loc=u0()) where {Rational} =
+  BSplineSegment{Rational}([p + (q-p)*s for q in seg.control_points],
+                           seg.degree, seg.knots, seg.weights, seg.domain, seg.closed)
+scale(path::BezierPath{false}, s::Real, p::Loc=u0()) =
+  s == 1 ? path : open_bezier_path([scale(seg, s, p) for seg in path.segments])
+scale(path::BezierPath{true}, s::Real, p::Loc=u0()) =
+  s == 1 ? path : closed_bezier_path([scale(seg, s, p) for seg in path.segments])
+scale(path::SegmentPath, s::Real, p::Loc=u0()) =
+  s == 1 ? path : segment_path(p + (path.start - p)*s, [scale(seg, s, p) for seg in path.segments]; closed=is_closed_path(path))
 
 rotate(path::Path, Δα, rot_p=u0(), rot_v=vz()) =
   Δα == 0 ?
@@ -725,7 +1066,7 @@ path_length(path::ClosedSplinePath) =
   let vs = convert(ClosedPolygonalPath, path).vertices
     path_length(vs) + distance(vs[end], vs[1])
   end
-path_length(path::NurbsPath) =
+path_length(path::BSplinePath) =
   length_at_parameter(path, path_domain(path)[2])
 
 # Same delegation strategy for arc-length lookup. Without these, the
@@ -800,7 +1141,7 @@ location_at_length(path::ClosedPolygonalPath, d::Real) =
       end
     end
   end
-location_at_length(path::NurbsPath, d::Real) =
+location_at_length(path::BSplinePath, d::Real) =
   location_at(path, parameter_at_length(path, d))
 
 function path_parameter_speed(path::Path, t::Real)
@@ -851,8 +1192,9 @@ function length_at_parameter(path::Path, t::Real; atol=curve_length_tolerance(),
   integrate_path_parameter_length(path, t0, t; atol=atol, rtol=rtol)
 end
 
-function length_at_parameter(path::NurbsPath, t::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance())
-  if path.degree == 1 && all(w -> isapprox(w, path.weights[1]; atol=eps(Float64)), path.weights)
+function length_at_parameter(path::BSplinePath, t::Real; atol=curve_length_tolerance(), rtol=curve_length_tolerance())
+  weights = bspline_weights(path)
+  if path.degree == 1 && (isnothing(weights) || all(w -> isapprox(w, weights[1]; atol=eps(Float64)), weights))
     t0, t1 = path_domain(path)
     t = clamp(Float64(t), t0, t1)
     len = 0.0
@@ -1030,7 +1372,15 @@ path_sequence(paths...) =
       OpenPathSequence(paths)
   end
 
-ensure_connected_paths(paths) = filter(!is_empty_path, paths)
+function ensure_connected_paths(paths)
+  ps = filter(!is_empty_path, paths)
+  for i in 1:max(length(ps) - 1, 0)
+    p, q = ps[i], ps[i + 1]
+    coincident_path_location(path_end(p), path_start(q)) ||
+      throw(ArgumentError("Path sequence is disconnected: $(typeof(p)) ends at $(path_end(p)), but $(typeof(q)) starts at $(path_start(q))."))
+  end
+  ps
+end
 
 meta_program(p::OpenPolygonalPath) =
     Expr(:call, :open_polygonal_path, meta_program(p.vertices))
@@ -1057,6 +1407,19 @@ meta_program(p::OpenSplinePath) =
 meta_program(p::ClosedSplinePath) =
   Expr(:call, :closed_spline_path, Expr(:vect, map(meta_program, p.vertices)...))
 
+meta_program(p::BezierPath) =
+  Expr(:call, :bezier_path,
+       Expr(:vect, map(meta_program, p.segments)...),
+       Expr(:kw, :closed, is_closed_path(p)))
+
+meta_program(p::NonRationalBSplinePath) =
+  Expr(:call, :bspline_path,
+       Expr(:vect, map(meta_program, p.control_points)...),
+       Expr(:kw, :degree, p.degree),
+       Expr(:kw, :periodic, is_closed_path(p)),
+       Expr(:kw, :knots, p.knots),
+       Expr(:kw, :domain, p.domain))
+
 meta_program(p::NurbsPath) =
   Expr(:call, :nurbs_path,
        Expr(:vect, map(meta_program, p.control_points)...),
@@ -1071,6 +1434,32 @@ meta_program(p::OpenPathSequence) =
 
 meta_program(p::ClosedPathSequence) =
   Expr(:call, :closed_path_sequence, map(meta_program, p.paths)...)
+
+meta_program(s::LineSegment) =
+  Expr(:call, :LineSegment, meta_program(s.p0), meta_program(s.p1))
+meta_program(s::ArcSegment) =
+  Expr(:call, :ArcSegment, meta_program(s.center), meta_program(s.radius),
+       meta_program(s.start_angle), meta_program(s.amplitude))
+meta_program(s::EllipseSegment) =
+  Expr(:call, :EllipseSegment, meta_program(s.center), meta_program(s.r1),
+       meta_program(s.r2), meta_program(s.start_angle), meta_program(s.amplitude))
+meta_program(s::SplineSegment) =
+  Expr(:call, :SplineSegment, Expr(:vect, map(meta_program, s.vertices)...),
+       s.closed, meta_program(s.v0), meta_program(s.v1))
+meta_program(s::BezierSegment) =
+  Expr(:call, :BezierSegment, Expr(:vect, map(meta_program, s.control_points)...))
+meta_program(s::BSplineSegment{false}) =
+  Expr(:call, Expr(:curly, :BSplineSegment, false),
+       Expr(:vect, map(meta_program, s.control_points)...),
+       s.degree, s.knots, s.weights, s.domain, s.closed)
+meta_program(s::BSplineSegment{true}) =
+  Expr(:call, :NurbsSegment,
+       Expr(:vect, map(meta_program, s.control_points)...),
+       s.degree, s.knots, s.weights, s.domain, s.closed)
+meta_program(p::SegmentPath) =
+  Expr(:call, :segment_path, meta_program(p.start),
+       Expr(:vect, map(meta_program, p.segments)...),
+       Expr(:kw, :closed, is_closed_path(p)))
 
 # Path can be made of subparts
 abstract type PathOp end
@@ -1095,8 +1484,8 @@ struct PathOps <: Path
   ops::Vector{<:PathOp}
   closed::Bool
 end
-open_path_ops(start, ops...) = PathOps(start, [ops...], false)
-closed_path_ops(start, ops...) = PathOps(start, [ops...], true)
+open_path_ops(start, ops...) = _path_ops_segment_path(start, [ops...], false)
+closed_path_ops(start, ops...) = _path_ops_segment_path(start, [ops...], true)
 
 path_length(path::PathOps) =
   let len = mapreduce(path_length, +, path.ops, init=0)
@@ -1168,7 +1557,7 @@ subpath_ending_at(path::PathOps, d::Real) =
   end
 
 subpath_starting_at(pathOp::LineOp, d::Real) =
-  let len = path_length(pathOp.vec)
+  let len = path_length(pathOp)
     LineOp(pathOp.vec*(len-d)/len)
   end
 subpath_starting_at(pathOp::ArcOp, d::Real) =
@@ -1177,7 +1566,7 @@ subpath_starting_at(pathOp::ArcOp, d::Real) =
   end
 
 subpath_ending_at(pathOp::LineOp, d::Real) =
-  let len = path_length(pathOp.vec)
+  let len = path_length(pathOp)
     LineOp(pathOp.vec*d/len)
   end
 subpath_ending_at(pathOp::ArcOp, d::Real) =
@@ -1255,7 +1644,7 @@ convert_to_path_ops(path::RectangularPath) =
   end
 
 # A path set is a set of independent paths.
-struct PathSet <: Path
+struct PathSet <: GeometryElement
   paths::Vector{<:Path}
 end
 
@@ -1442,17 +1831,31 @@ convert(::Type{OpenPolygonalPath}, path::ClosedSplinePath) =
   let p = convert(ClosedPolygonalPath, path)
     open_polygonal_path(vcat(p.vertices, [p.vertices[1]]))
   end
-convert(::Type{OpenPolygonalPath}, path::OpenNurbsPath) =
+convert(::Type{OpenPolygonalPath}, path::BezierPath{false}) =
+  let (t0, t1) = path_domain(path),
+      n = max(path_smoothness_segments(), length(path.segments) * 8)
+    open_polygonal_path(uniform_path_frames(path, t0, t1, n))
+  end
+convert(::Type{ClosedPolygonalPath}, path::BezierPath{true}) =
+  let (t0, t1) = path_domain(path),
+      n = max(path_smoothness_segments(), length(path.segments) * 8)
+    closed_polygonal_path(uniform_path_frames(path, t0, t1, n)[1:end-1])
+  end
+convert(::Type{OpenPolygonalPath}, path::BezierPath{true}) =
+  let p = convert(ClosedPolygonalPath, path)
+    open_polygonal_path(vcat(p.vertices, [p.vertices[1]]))
+  end
+convert(::Type{OpenPolygonalPath}, path::BSplinePath{false}) =
   let (t0, t1) = path_domain(path),
       n = max(path_smoothness_segments(), length(path.control_points) * 8)
     open_polygonal_path(uniform_path_frames(path, t0, t1, n))
   end
-convert(::Type{ClosedPolygonalPath}, path::ClosedNurbsPath) =
+convert(::Type{ClosedPolygonalPath}, path::BSplinePath{true}) =
   let (t0, t1) = path_domain(path),
       n = max(path_smoothness_segments(), length(path.control_points) * 8)
     closed_polygonal_path(uniform_path_frames(path, t0, t1, n)[1:end-1])
   end
-convert(::Type{OpenPolygonalPath}, path::ClosedNurbsPath) =
+convert(::Type{OpenPolygonalPath}, path::BSplinePath{true}) =
   let p = convert(ClosedPolygonalPath, path)
     open_polygonal_path(vcat(p.vertices, [p.vertices[1]]))
   end
@@ -1481,6 +1884,255 @@ convert(::Type{OpenPolygonalPath}, path::PathOps) =
       path.closed && push!(vs, path.start)
       open_polygonal_path(vs)
   end
+
+
+segment_start(s::LineSegment) = s.p0
+segment_end(s::LineSegment) = s.p1
+segment_start(s::ArcSegment) = path_start(arc_path(s.center, s.radius, s.start_angle, s.amplitude))
+segment_end(s::ArcSegment) = path_end(arc_path(s.center, s.radius, s.start_angle, s.amplitude))
+segment_start(s::EllipseSegment) = location_at(elliptic_path(s.center, s.r1, s.r2), s.start_angle)
+segment_end(s::EllipseSegment) = location_at(elliptic_path(s.center, s.r1, s.r2), s.start_angle + s.amplitude)
+segment_start(s::SplineSegment) = s.vertices[1]
+segment_end(s::SplineSegment) = s.closed ? s.vertices[1] : s.vertices[end]
+segment_start(s::BezierSegment) = _bezier_start(s)
+segment_end(s::BezierSegment) = _bezier_end(s)
+segment_path_for_endpoint(s::BSplineSegment{false}) =
+  bspline_path(s.control_points; degree=s.degree, periodic=s.closed,
+               knots=s.knots, domain=s.domain)
+segment_path_for_endpoint(s::BSplineSegment{true}) =
+  nurbs_path(s.control_points; degree=s.degree, periodic=s.closed,
+             knots=s.knots, weights=s.weights, domain=s.domain)
+segment_start(s::BSplineSegment) =
+  location_at(segment_path_for_endpoint(s), s.domain[1])
+segment_end(s::BSplineSegment) =
+  s.closed ? segment_start(s) :
+    location_at(segment_path_for_endpoint(s), s.domain[2])
+
+function _validate_segment_path(start::Loc, segments::Vector{PathSegment}, closed::Bool)
+  isempty(segments) && closed &&
+    throw(ArgumentError("A closed SegmentPath needs at least one segment."))
+  if !isempty(segments)
+    coincident_path_location(start, segment_start(segments[1])) ||
+      throw(ArgumentError("SegmentPath start does not match its first segment."))
+    for i in 1:max(length(segments) - 1, 0)
+      coincident_path_location(segment_end(segments[i]), segment_start(segments[i + 1])) ||
+        throw(ArgumentError("SegmentPath segments are disconnected at index $(i)."))
+    end
+    closed && !coincident_path_location(segment_end(segments[end]), start) &&
+      throw(ArgumentError("Closed SegmentPath segments must end at the start location."))
+  end
+  segments
+end
+
+function segment_path(start::Loc, segments::Vector{<:PathSegment}; closed::Bool=false)
+  segs = PathSegment[segments...]
+  SegmentPath{closed}(start, _validate_segment_path(start, segs, closed))
+end
+segment_path(start::Loc, segments::PathSegment...; closed::Bool=false) =
+  segment_path(start, PathSegment[segments...]; closed=closed)
+
+segment_path(s::LineSegment) = open_polygonal_path([s.p0, s.p1])
+segment_path(s::ArcSegment) = arc_path(s.center, s.radius, s.start_angle, s.amplitude)
+segment_path(s::EllipseSegment) =
+  abs(s.amplitude) >= 2π - coincidence_tolerance() ?
+    elliptic_path(s.center, s.r1, s.r2) :
+    open_polygonal_path(uniform_path_frames(elliptic_path(s.center, s.r1, s.r2),
+                                            s.start_angle,
+                                            s.start_angle + s.amplitude,
+                                            arc_segment_count(s.amplitude)))
+segment_path(s::SplineSegment) =
+  s.closed ? closed_spline_path(s.vertices) : open_spline_path(s.vertices, s.v0, s.v1)
+segment_path(s::BezierSegment) =
+  open_bezier_path(s)
+segment_path(s::BSplineSegment{false}) =
+  bspline_path(s.control_points; degree=s.degree, periodic=s.closed,
+               knots=s.knots, domain=s.domain)
+segment_path(s::BSplineSegment{true}) =
+  nurbs_path(s.control_points; degree=s.degree, periodic=s.closed,
+             knots=s.knots, weights=s.weights, domain=s.domain)
+
+segment_length(s::LineSegment) = distance(s.p0, s.p1)
+segment_length(s::ArcSegment) = s.radius * abs(s.amplitude)
+segment_length(s::PathSegment) = path_length(segment_path(s))
+
+segment_location_at_length(s::LineSegment, d::Real) =
+  let len = segment_length(s)
+    v = unitized(s.p1 - s.p0)
+    loc_from_o_vz(s.p0 + v*d, v)
+  end
+segment_location_at_length(s::PathSegment, d::Real) =
+  location_at_length(segment_path(s), d)
+
+path_start(path::SegmentPath) = path.start
+path_end(path::SegmentPath{false}) =
+  isempty(path.segments) ? path.start : segment_end(path.segments[end])
+path_end(path::SegmentPath{true}) = path.start
+path_domain(path::SegmentPath) = (0, path_length(path))
+location_at(path::SegmentPath, d::Real) = location_at_length(path, d)
+path_length(path::SegmentPath) =
+  mapreduce(segment_length, +, path.segments; init=0.0)
+
+function location_at_length(path::SegmentPath, d::Real)
+  isempty(path.segments) &&
+    return abs(d) < coincidence_tolerance() ? path.start : error("Exceeded path length by ", d)
+  if is_closed_path(path)
+    total = path_length(path)
+    total > coincidence_tolerance() && (d = d % total)
+  end
+  for seg in path.segments
+    delta = segment_length(seg)
+    if d <= delta + coincidence_tolerance()
+      return segment_location_at_length(seg, d)
+    else
+      d -= delta
+    end
+  end
+  abs(d) < coincidence_tolerance() ? path_end(path) : error("Exceeded path length by ", d)
+end
+
+function _segment_path_polyline_vertices(path::SegmentPath)
+  pts = Loc[path.start]
+  for seg in path.segments
+    vs = convert(OpenPolygonalPath, segment_path(seg)).vertices
+    append!(pts, vs[2:end])
+  end
+  pts
+end
+
+convert(::Type{OpenPolygonalPath}, path::SegmentPath{false}) =
+  open_polygonal_path(_segment_path_polyline_vertices(path))
+convert(::Type{OpenPolygonalPath}, path::SegmentPath{true}) =
+  let vs = _segment_path_polyline_vertices(path)
+    !isempty(vs) && coincident_path_location(vs[1], vs[end]) ?
+      open_polygonal_path(vs) :
+      open_polygonal_path([vs..., vs[1]])
+  end
+convert(::Type{ClosedPolygonalPath}, path::SegmentPath{true}) =
+  let vs = _segment_path_polyline_vertices(path)
+    !isempty(vs) && coincident_path_location(vs[1], vs[end]) && pop!(vs)
+    closed_polygonal_path(vs)
+  end
+
+path_segments(path::SegmentPath) = path.segments
+path_segments(path::EmptyPath) = PathSegment[]
+path_segments(path::PointPath) = PathSegment[]
+path_segments(path::CircularPath) =
+  PathSegment[ArcSegment(path.center, path.radius, 0, 2π)]
+path_segments(path::ArcPath) =
+  PathSegment[ArcSegment(path.center, path.radius, path.start_angle, path.amplitude)]
+path_segments(path::EllipticPath) =
+  PathSegment[EllipseSegment(path.center, path.r1, path.r2, 0, 2π)]
+path_segments(path::RectangularPath) =
+  let p0 = path.corner,
+      p1 = add_x(path.corner, path.dx),
+      p2 = add_xy(path.corner, path.dx, path.dy),
+      p3 = add_y(path.corner, path.dy)
+    PathSegment[LineSegment(p0, p1), LineSegment(p1, p2),
+                LineSegment(p2, p3), LineSegment(p3, p0)]
+  end
+path_segments(path::OpenPolygonalPath) =
+  PathSegment[LineSegment(p0, p1) for (p0, p1) in zip(path.vertices[1:end-1], path.vertices[2:end])]
+path_segments(path::ClosedPolygonalPath) =
+  let vs = path.vertices
+    PathSegment[LineSegment(vs[i], vs[mod1(i + 1, length(vs))]) for i in eachindex(vs)]
+  end
+path_segments(path::OpenSplinePath) =
+  PathSegment[SplineSegment(path.vertices, false, path.v0, path.v1)]
+path_segments(path::ClosedSplinePath) =
+  PathSegment[SplineSegment(path.vertices, true, false, false)]
+path_segments(path::BezierPath) =
+  PathSegment[path.segments...]
+path_segments(path::BSplinePath{Closed,Rational}) where {Closed,Rational} =
+  PathSegment[BSplineSegment{Rational}(path.control_points, path.degree, path.knots,
+                                       bspline_weights(path), path.domain, is_closed_path(path))]
+path_segments(path::PathSequence) =
+  mapreduce(path_segments, vcat, path.paths; init=PathSegment[])
+path_segments(path::PathOps) =
+  let start = path.start,
+      segments = PathSegment[]
+    for op in path.ops
+      append!(segments, pathop_segments(op, start))
+      start = isempty(segments) ? start : segment_end(segments[end])
+    end
+    if path.closed && !coincident_path_location(start, path.start)
+      push!(segments, LineSegment(start, path.start))
+    end
+    segments
+  end
+path_segments(path::Path) =
+  throw(ArgumentError("$(typeof(path)) is not a connected contour path."))
+
+single_arc_segment(path::Path) =
+  let segs = path_segments(path)
+    length(segs) == 1 && segs[1] isa ArcSegment ? segs[1] : nothing
+  end
+
+arc_path_from_segment(seg::ArcSegment) =
+  arc_path(seg.center, seg.radius, seg.start_angle, seg.amplitude)
+
+pathop_segments(op::LineOp, start::Loc) =
+  PathSegment[LineSegment(start, start + op.vec)]
+pathop_segments(op::ArcOp, start::Loc) =
+  let center = start - vpol(op.radius, op.start_angle)
+    PathSegment[ArcSegment(center, op.radius, op.start_angle, op.amplitude)]
+  end
+pathop_segments(::CloseOp, start::Loc) = PathSegment[]
+
+function _path_ops_segment_path(start::Loc, ops::Vector, closed::Bool)
+  segments = PathSegment[]
+  curr = start
+  for op in ops
+    if op isa CloseOp
+      if !coincident_path_location(curr, start)
+        push!(segments, LineSegment(curr, start))
+        curr = start
+      end
+      continue
+    end
+    op_segments = pathop_segments(op, curr)
+    append!(segments, op_segments)
+    !isempty(op_segments) && (curr = segment_end(op_segments[end]))
+  end
+  if closed && !coincident_path_location(curr, start)
+    push!(segments, LineSegment(curr, start))
+  end
+  segment_path(start, segments; closed=closed)
+end
+
+path_control_points(path::EmptyPath) = Loc[]
+path_control_points(path::PointPath) = Loc[path.location]
+path_control_points(path::CircularPath) = Loc[path.center]
+path_control_points(path::ArcPath) = Loc[path.center, path_start(path), path_end(path)]
+path_control_points(path::EllipticPath) = Loc[path.center]
+path_control_points(path::RectangularPath) = path_vertices(path)
+path_control_points(path::Union{PolygonalPath,InterpolatingSplinePath}) = path.vertices
+path_control_points(path::BezierPath) =
+  mapreduce(seg -> seg.control_points, vcat, path.segments; init=Loc[])
+path_control_points(path::BSplinePath) = path.control_points
+path_control_points(path::PathSequence) =
+  mapreduce(path_control_points, vcat, path.paths; init=Loc[])
+path_control_points(path::PathOps) =
+  path_vertices(convert(OpenPolygonalPath, path))
+path_control_points(path::Path) =
+  throw(ArgumentError("$(typeof(path)) has no authored control-point representation."))
+
+path_breakpoints(path::Path) =
+  let segs = path_segments(path)
+    isempty(segs) && return path_control_points(path)
+    pts = Loc[segment_start(segs[1])]
+    append!(pts, segment_end.(segs))
+    is_closed_path(path) && !isempty(pts) && pop!(pts)
+    pts
+  end
+
+function path_points(path::Path; mode::Symbol=:sample, resolution=nothing)
+  resolution === nothing ||
+    throw(ArgumentError("Per-call path point resolution is not implemented yet; use path_smoothness_segments."))
+  mode === :sample && return path_vertices(path)
+  mode === :control && return path_control_points(path)
+  mode === :breakpoints && return path_breakpoints(path)
+  throw(ArgumentError("Unknown path point mode $(mode). Use :sample, :control, or :breakpoints."))
+end
 
 
 curve_interpolator(pts::Locs, closed::Bool) =
@@ -1528,7 +2180,7 @@ convert(::Type{ClosedPath}, pset::PathSet) =
   foldl(subtract_paths, pset.paths)
 
 #### Utilities
-path_vertices(path::Union{PolygonalPath,SplinePath}) =
+path_vertices(path::Union{PolygonalPath,InterpolatingSplinePath}) =
   path.vertices
 path_vertices(path::Path) =
   path_vertices(convert(is_closed_path(path) ? ClosedPolygonalPath : OpenPolygonalPath,
@@ -1592,7 +2244,7 @@ subpaths(path::ClosedPolygonalPath) =
   let ps = path.vertices
       map((p0, p1)->open_polygonal_path([p0, p1]), ps, [ps[2:end]..., ps[1]])
   end
-subpaths(path::Path) = subpaths(convert(OpenPolygonalPath, path))
+subpaths(path::Path) = segment_path.(path_segments(path))
 
 subtract_paths(path1::Path, path2::Path) =
   subtract_paths(convert(ClosedPolygonalPath, path1), convert(ClosedPolygonalPath, path2))
@@ -1615,7 +2267,11 @@ closed_path_for_height(path, h) =
 # In practice, it means that it does not have "corners"
 is_smooth_path(path::Path) = false
 is_smooth_path(pts::Locs) = false
-is_smooth_path(path::Union{ArcPath,CircularPath,SplinePath,NurbsPath}) = true
+is_smooth_path(path::Union{ArcPath,CircularPath,SplinePath}) = true
+is_smooth_segment(::PathSegment) = false
+is_smooth_segment(::Union{ArcSegment,EllipseSegment,SplineSegment,BezierSegment,BSplineSegment}) = true
+is_smooth_path(path::SegmentPath) =
+  length(path.segments) == 1 && is_smooth_segment(path.segments[1])
 
 ##Profiles are just predefined paths used for sections, usually centered at the origin
 export rectangular_profile,
@@ -1682,10 +2338,33 @@ path_on(path::ClosedPolygonalPath, p) =
   closed_polygonal_path(on_cs(path_vertices(path), p))
 path_on(path::OpenSplinePath, p) =
   open_spline_path(on_cs(path_vertices(path), p))
-path_on(path::NurbsPath, p) =
+path_on(path::BezierPath{false}, p) =
+  open_bezier_path([_segment_on(seg, p) for seg in path.segments])
+path_on(path::BezierPath{true}, p) =
+  closed_bezier_path([_segment_on(seg, p) for seg in path.segments])
+path_on(path::BSplinePath{Closed,false}, p) where {Closed} =
+  bspline_path(on_cs(path.control_points, p); degree=path.degree,
+               periodic=is_closed_path(path), knots=path.knots,
+               domain=path.domain)
+path_on(path::BSplinePath{Closed,true}, p) where {Closed} =
   nurbs_path(on_cs(path.control_points, p); degree=path.degree,
              periodic=is_closed_path(path), knots=path.knots,
              weights=path.weights, domain=path.domain)
+_segment_on(seg::LineSegment, p) =
+  LineSegment(on_cs(seg.p0, p), on_cs(seg.p1, p))
+_segment_on(seg::ArcSegment, p) =
+  ArcSegment(on_cs(seg.center, p), seg.radius, seg.start_angle, seg.amplitude)
+_segment_on(seg::EllipseSegment, p) =
+  EllipseSegment(on_cs(seg.center, p), seg.r1, seg.r2, seg.start_angle, seg.amplitude)
+_segment_on(seg::SplineSegment, p) =
+  SplineSegment(on_cs(seg.vertices, p), seg.closed, seg.v0, seg.v1)
+_segment_on(seg::BezierSegment, p) =
+  BezierSegment(on_cs(seg.control_points, p))
+_segment_on(seg::BSplineSegment{Rational}, p) where {Rational} =
+  BSplineSegment{Rational}(on_cs(seg.control_points, p), seg.degree, seg.knots,
+                           seg.weights, seg.domain, seg.closed)
+path_on(path::SegmentPath, p) =
+  segment_path(on_cs(path.start, p), [_segment_on(seg, p) for seg in path.segments]; closed=is_closed_path(path))
 path_on(path::Region, p) =
   region([path_on(path, p) for path in path.paths]...)
 path_on(path::ClosedPathSequence, p) =
@@ -1731,6 +2410,26 @@ Base.reverse(path::ClosedPathSequence) =
 Base.reverse(path::Region) =
   region(reverse.(path.paths)...)
 
+reverse_segment(seg::LineSegment) =
+  LineSegment(seg.p1, seg.p0)
+reverse_segment(seg::ArcSegment) =
+  let p = reverse(arc_path(seg.center, seg.radius, seg.start_angle, seg.amplitude))
+    ArcSegment(p.center, p.radius, p.start_angle, p.amplitude)
+  end
+reverse_segment(seg::EllipseSegment) =
+  EllipseSegment(seg.center, seg.r1, seg.r2, seg.start_angle + seg.amplitude, -seg.amplitude)
+reverse_segment(seg::SplineSegment) =
+  SplineSegment(reverse(seg.vertices), seg.closed, false, false)
+reverse_segment(seg::NurbsSegment) =
+  NurbsSegment(reverse(seg.control_points), seg.degree, seg.knots,
+               reverse(seg.weights), seg.domain, seg.closed)
+reverse_segment(seg::PathSegment) =
+  throw(ArgumentError("Cannot reverse $(typeof(seg)) exactly."))
+Base.reverse(path::SegmentPath) =
+  segment_path(is_closed_path(path) ? path.start : path_end(path),
+               reverse_segment.(reverse(path.segments));
+               closed=is_closed_path(path))
+
 
 mirrored_path(path::Path, p::Loc, v::Vec) =
   error("mirrored_path is not yet implemented for $(typeof(path))")
@@ -1743,7 +2442,7 @@ mirrored_on_z(path::OpenPolygonalPath) =
   join_paths(path, open_polygonal_path(reverse(map(p->xyz(-p.x, -p.y, p.z, p.cs), path_vertices(path)))))
 
 export mesh
-struct Mesh <: Path
+struct Mesh <: SurfaceGeometry
   vertices::Locs
   faces::Vector{Vector{Int}}
 end

@@ -41,19 +41,141 @@ offset_vertices(ps::Locs, d::Real, closed) =
     map(+, ps, closed ? ws : [vs[1], ws..., vs[end]])
   end
 
-offset(path, d::Real) = d == 0 ? path : nonzero_offset(path, d)
-nonzero_offset(path::RectangularPath, d::Real) =
-  rectangular_path(add_xy(path.corner, d, d), path.dx - 2d, path.dy - 2d)
-nonzero_offset(path::OpenPolygonalPath, d::Real) =
-  open_polygonal_path(offset_vertices(path.vertices, d, false))
-nonzero_offset(path::ClosedPolygonalPath, d::Real) =
-  closed_polygonal_path(offset_vertices(path.vertices, d, true))
-nonzero_offset(path::CircularPath, d::Real) =
+function offset(path, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0)
+  join in (:miter, :round, :bevel) ||
+    throw(ArgumentError("Unsupported offset join style $(join). Use :miter, :round, or :bevel."))
+  cap in (:butt, :square, :round) ||
+    throw(ArgumentError("Unsupported offset cap style $(cap). Use :butt, :square, or :round."))
+  miter_limit > 0 ||
+    throw(ArgumentError("miter_limit must be positive."))
+  d == 0 ? path : nonzero_offset(path, d; join=join, cap=cap, miter_limit=miter_limit)
+end
+
+function nonzero_offset(path::RectangularPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0)
+  join == :miter && cap == :butt ?
+    rectangular_path(add_xy(path.corner, d, d), path.dx - 2d, path.dy - 2d) :
+    nonzero_offset(convert(ClosedPolygonalPath, path), d; join=join, cap=cap, miter_limit=miter_limit)
+end
+function nonzero_offset(path::OpenPolygonalPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0)
+  _offset_polygonal_path(path.vertices, d, false; join=join, cap=cap, miter_limit=miter_limit)
+end
+function nonzero_offset(path::ClosedPolygonalPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0)
+  _offset_polygonal_path(path.vertices, d, true; join=join, cap=cap, miter_limit=miter_limit)
+end
+nonzero_offset(path::CircularPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
   circular_path(path.center, path.radius - d)
-nonzero_offset(path::ArcPath, d::Real) =
+nonzero_offset(path::ArcPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
   arc_path(path.center, path.radius - d, path.start_angle, path.amplitude)
-nonzero_offset(path::ClosedPathSequence, d::Real) =
-  ClosedPathSequence([nonzero_offset(path, d) for path in path.paths])
+nonzero_offset(path::ClosedPathSequence, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
+  ClosedPathSequence([nonzero_offset(path, d; join=join, cap=cap, miter_limit=miter_limit) for path in path.paths])
+
+_offset_edges(ps::Locs, d::Real, closed::Bool) =
+  let n = length(ps),
+      pairs = closed ? [(ps[i], ps[mod1(i + 1, n)]) for i in 1:n] :
+                       [(ps[i], ps[i + 1]) for i in 1:n-1]
+    [(p0=p0,
+      p1=p1,
+      tangent=unitized(p1 - p0),
+      normal=rotated_v(unitized(p1 - p0)*d, pi/2),
+      a=p0 + rotated_v(unitized(p1 - p0)*d, pi/2),
+      b=p1 + rotated_v(unitized(p1 - p0)*d, pi/2))
+     for (p0, p1) in pairs]
+  end
+
+_signed_angle_between(v0, v1) =
+  let a0 = pol_phi(v0), a1 = pol_phi(v1)
+    mod(a1 - a0 + π, 2π) - π
+  end
+
+_offset_miter_point(prev, next, vertex, d, miter_limit) =
+  let p = lines_intersection(prev.a, prev.b, next.a, next.b)
+    if isnothing(p) || distance(vertex, p) > abs(d) * miter_limit
+      nothing
+    else
+      p
+    end
+  end
+
+_offset_join_points(prev, next, vertex, d, join, miter_limit) =
+  if join == :miter
+    let p = _offset_miter_point(prev, next, vertex, d, miter_limit)
+      isnothing(p) ? Loc[prev.b, next.a] : Loc[p]
+    end
+  elseif join == :bevel || join == :round
+    Loc[prev.b, next.a]
+  else
+    throw(ArgumentError("Unsupported offset join style $(join)."))
+  end
+
+_offset_start_point(edge, cap, d) =
+  cap == :square ? edge.a - edge.tangent * abs(d) : edge.a
+
+_offset_end_point(edge, cap, d) =
+  cap == :square ? edge.b + edge.tangent * abs(d) : edge.b
+
+function _offset_polygonal_vertices(ps::Locs, d::Real, closed::Bool; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0)
+  edges = _offset_edges(ps, d, closed)
+  isempty(edges) && return ps
+  if closed
+    pts = Loc[]
+    for i in eachindex(edges)
+      prev = edges[mod1(i - 1, length(edges))]
+      next = edges[i]
+      append!(pts, _offset_join_points(prev, next, ps[i], d, join, miter_limit))
+    end
+    pts
+  else
+    pts = Loc[_offset_start_point(edges[1], cap, d)]
+    for i in 1:max(length(edges) - 1, 0)
+      append!(pts, _offset_join_points(edges[i], edges[i + 1], ps[i + 1], d, join, miter_limit))
+    end
+    push!(pts, _offset_end_point(edges[end], cap, d))
+    pts
+  end
+end
+
+function _offset_round_join_segment(vertex, p0, p1, d)
+  amp = _signed_angle_between(p0 - vertex, p1 - vertex)
+  ArcSegment(vertex, abs(d), pol_phi(p0 - vertex), amp)
+end
+
+function _offset_round_path(ps::Locs, d::Real, closed::Bool; cap::Symbol=:butt)
+  edges = _offset_edges(ps, d, closed)
+  isempty(edges) && return open_polygonal_path(ps)
+  if closed
+    start = edges[1].a
+    segments = PathSegment[]
+    for i in eachindex(edges)
+      edge = edges[i]
+      next = edges[mod1(i + 1, length(edges))]
+      vertex = ps[mod1(i + 1, length(ps))]
+      !coincident_path_location(edge.a, edge.b) && push!(segments, LineSegment(edge.a, edge.b))
+      !coincident_path_location(edge.b, next.a) &&
+        push!(segments, _offset_round_join_segment(vertex, edge.b, next.a, d))
+    end
+    segment_path(start, segments; closed=true)
+  else
+    start = _offset_start_point(edges[1], cap, d)
+    segments = PathSegment[]
+    first_line_start = start
+    for i in eachindex(edges)
+      edge = edges[i]
+      line_start = i == 1 ? first_line_start : edge.a
+      line_end = i == length(edges) ? _offset_end_point(edge, cap, d) : edge.b
+      !coincident_path_location(line_start, line_end) && push!(segments, LineSegment(line_start, line_end))
+      if i < length(edges) && !coincident_path_location(edge.b, edges[i + 1].a)
+        push!(segments, _offset_round_join_segment(ps[i + 1], edge.b, edges[i + 1].a, d))
+      end
+    end
+    segment_path(start, segments; closed=false)
+  end
+end
+
+function _offset_polygonal_path(ps::Locs, d::Real, closed::Bool; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0)
+  join == :round && return _offset_round_path(ps, d, closed; cap=cap)
+  pts = _offset_polygonal_vertices(ps, d, closed; join=join, cap=cap, miter_limit=miter_limit)
+  closed ? closed_polygonal_path(pts) : open_polygonal_path(pts)
+end
 
 
 export offset
