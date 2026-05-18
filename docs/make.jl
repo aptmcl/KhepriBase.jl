@@ -18,6 +18,7 @@ makedocs(;
             "Installation" => "getting_started/installation.md",
             "Coordinates" => "getting_started/coordinates.md",
             "Paths" => "getting_started/paths.md",
+            "Geometry Operations" => "getting_started/geometry_operations.md",
         ],
         "Concepts" => [
             "Levels of Abstraction" => "concepts/levels_of_abstraction.md",
@@ -45,6 +46,7 @@ makedocs(;
             "Space-First Layout Design" => "tutorials/spaces_tutorial.md",
             "Wall Graph Networks" => "tutorials/wall_graph_tutorial.md",
             "Spline Curves and Surfaces" => "tutorials/spline_geometry.md",
+            "Geometry Operations" => "tutorials/geometry_operations.md",
             "Rendering & Animation" => "tutorials/rendering_tutorial.md",
             "Algorithmic Design" => "tutorials/algorithmic_tutorial.md",
             "Isenberg (Bottom-Up)" => "tutorials/isemberg_bottom_up.md",

@@ -68,6 +68,17 @@ Modules = [KhepriBase]
 Pages = ["Geometry.jl"]
 ```
 
+### Geometry Operations
+
+See also [Geometry Operations](../getting_started/geometry_operations.md) for a
+narrative introduction and [Geometry Operations Tutorial](../tutorials/geometry_operations.md)
+for worked examples.
+
+```@autodocs
+Modules = [KhepriBase]
+Pages = ["GeometryOperations.jl"]
+```
+
 ## Backend Infrastructure
 
 ### Backend

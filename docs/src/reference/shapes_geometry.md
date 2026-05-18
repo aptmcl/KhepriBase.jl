@@ -193,6 +193,53 @@ slice(shape::Shape3D, p::Loc=u0(), n::Vec=vz(1); material)
 Cuts a solid with a half-space defined by point `p` and normal `n`, keeping the
 side in the direction of `n`.
 
+## Result-Valued Geometry Operations
+
+Shape CSG creates lazy proxies. The operations in this section compute explicit
+geometry results that can be inspected and reused by later modeling code. See
+[Geometry Operations](../getting_started/geometry_operations.md) for the
+narrative introduction.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `intersections` | `intersections(a, b; tolerance, overlap_tolerance, method, backend)` | Compute points, curves, or regions where two geometric objects meet. Returns an `IntersectionSet`. |
+| `section` | `section(a, b; kwargs...)` | Return the curve-valued part of `intersections`, e.g. plane/plane or surface/surface section curves. |
+| `boolean` | `boolean(op, a, b; kwargs...)` | Compute explicit result geometry for a set operation such as `:intersection`, `:union`, or `:difference`. |
+| `split` | `split(a::GeometryElement, cutters...; kwargs...)` | Split geometry by one or more cutters. Local support currently covers `LinePath`. |
+| `trim` | `trim(a::GeometryElement, cutters...; kwargs...)` | Trim geometry by cutters. Backend/local-kernel extension point. |
+| `project` | `project(a, target; kwargs...)` | Project geometry onto a target. Local support currently covers points and lines onto `PlaneSurface`. |
+| `closest_points` | `closest_points(a, b; kwargs...)` | Closest locations on two operands plus distance and parameter metadata. |
+
+### Result containers
+
+| Type | Description |
+|------|-------------|
+| `IntersectionSet` | Iterable result set with operands, elements, tolerance, method, and exactness metadata. |
+| `PointIntersection` | Point result with optional operand parameters and classification. |
+| `CurveIntersection` | Curve result such as an overlap or section curve. |
+| `RegionIntersection` | Filled region result. |
+| `MultiRegion` | Several independent planar regions. |
+| `GeometryCollection` | Heterogeneous result container. |
+| `ProjectionResult` | Result of `project`. |
+| `ClosestPointsResult` | Result of `closest_points`. |
+| `InfiniteLine` | Unbounded line, used for results like the section of two planes. |
+
+### Common selectors
+
+```julia
+intersection_points(result)    # Vector{Loc}
+intersection_curves(result)    # curve-valued elements
+intersection_regions(result)   # Region or MultiRegion values
+```
+
+### Local analytic coverage
+
+KhepriBase currently computes line/line, line/circle, circle/circle,
+arc variants, composite-path decomposition, line/plane, plane/plane, basic
+line splitting, plane projection, and point/line closest-point operations
+locally. Other operand combinations require a backend implementation and throw
+`UnsupportedGeometryOperation` when no implementation is available.
+
 ## High-Level Modeling
 
 These functions select the appropriate dimensionality variant automatically

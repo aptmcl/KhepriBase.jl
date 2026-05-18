@@ -69,7 +69,7 @@ import Base:
     show, showerror,
     zero, iterate, convert,
     getindex, firstindex, lastindex, broadcastable,
-    union, fill
+    union, fill, split
 import LinearAlgebra:
     cross, dot, norm
 
@@ -82,6 +82,7 @@ include("Paths.jl")
 include("Surfaces.jl")
 include("Geometry.jl")
 include("Backend.jl")
+include("GeometryOperations.jl")
 include("Frontend.jl")
 include("Shapes.jl")
 include("ArchMaterials.jl")

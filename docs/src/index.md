@@ -55,8 +55,9 @@ Start here for a ground-up introduction:
 1. [Installation and Setup](getting_started/installation.md) -- install a backend, run your first shape
 2. [Coordinates and Vectors](getting_started/coordinates.md) -- locations, vectors, coordinate systems
 3. [Paths](getting_started/paths.md) -- open/closed paths, regions, profiles
-4. [Shapes](concepts/shapes.md) -- the shape catalog (points, curves, surfaces, solids, CSG)
-5. [Levels, Families, and Materials](concepts/levels_and_families.md) -- BIM foundations
+4. [Geometry Operations](getting_started/geometry_operations.md) -- intersections, sections, projection, splitting
+5. [Shapes](concepts/shapes.md) -- the shape catalog (points, curves, surfaces, solids, CSG)
+6. [Levels, Families, and Materials](concepts/levels_and_families.md) -- BIM foundations
 
 ### BIM User?
 
@@ -88,6 +89,7 @@ Implement a new Khepri backend:
 - **[Installation and Setup](getting_started/installation.md)** -- Install, configure, hello-sphere
 - **[Coordinates and Vectors](getting_started/coordinates.md)** -- `Loc` vs `Vec`, constructors, coordinate spaces, arithmetic
 - **[Paths](getting_started/paths.md)** -- Open/closed paths, regions, profiles, path operations
+- **[Geometry Operations](getting_started/geometry_operations.md)** -- Explicit intersections, sections, projections, splits, and closest points
 
 ### Concepts
 - **[Levels, Families, and Materials](concepts/levels_and_families.md)** -- Levels, the family system, standard materials, the proxy pattern
@@ -108,6 +110,7 @@ Implement a new Khepri backend:
 - **[Building a Complete Building](tutorials/building_tutorial.md)** -- End-to-end: a 2-story office building from levels to render
 - **[Space-First Layout Design](tutorials/spaces_tutorial.md)** -- Define rooms and connections, auto-generate walls
 - **[Wall Graph Networks](tutorials/wall_graph_tutorial.md)** -- Direct wall network construction with junction geometry
+- **[Geometry Operations](tutorials/geometry_operations.md)** -- Compute intersections and use them to drive modeling operations
 - **[Rendering and Animation](tutorials/rendering_tutorial.md)** -- Camera, render settings, film workflow
 - **[Algorithmic Design](tutorials/algorithmic_tutorial.md)** -- Parametric patterns, subdivision, recursive structures
 

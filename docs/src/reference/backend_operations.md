@@ -297,6 +297,31 @@ Backends declare these direct mappings with `curve_geometry_capabilities` and
 | `NurbsSurface` | `b_nurbs_surface` | Rational tensor-product B-spline / NURBS surface | Rhino, AutoCAD, FreeCAD |
 | `TrimmedSurface` | `b_trimmed_surface` | Native trimmed face or trimmed surface | Planar trims use polygon-with-holes operations; non-planar trims tessellate from UV-space boundaries unless a backend provides a native override |
 
+## Geometry Computation Hooks
+
+The result-valued geometry operations in KhepriBase have backend hooks separate
+from the shape-realization hooks. They are used when the caller needs explicit
+computed geometry, not a lazy proxy. A backend should advertise support with
+`supports_geometry_operation(backend, operation, args...)` and return KhepriBase
+result containers such as `IntersectionSet`, `ProjectionResult`,
+`ClosestPointsResult`, `Region`, `MultiRegion`, or `GeometryCollection`.
+
+| Hook | Public operation | Expected result |
+|------|------------------|-----------------|
+| `b_intersections` | `intersections(a, b)` | `IntersectionSet` with point, curve, or region elements |
+| `b_section` | `section(a, b)` | `IntersectionSet` containing curve intersections |
+| `b_boolean_geometry` | `boolean(op, a, b)` | explicit `Region`, `MultiRegion`, `GeometryCollection`, or backend-specific geometry value |
+| `b_project_geometry` | `project(a, target)` | `ProjectionResult` |
+| `b_split_geometry` | `split(a, cutters...)` | geometry pieces, usually `PathSet`, `MultiRegion`, or `GeometryCollection` |
+| `b_trim_geometry` | `trim(a, cutters...)` | trimmed geometry |
+| `b_closest_points` | `closest_points(a, b)` | `ClosestPointsResult` |
+
+These hooks are intended to map directly to native kernel capabilities such as
+RhinoCommon intersection routines, AutoCAD/AcGe intersectors, or Open CASCADE
+section and projection algorithms. Backends without a native operation can
+decline support and let KhepriBase use its local analytic implementation when
+one exists.
+
 ## Backend Coverage Summary
 
 | Backend | Type | Curves | Surfaces | Solids | Boolean | BIM | Selection | Rendering | Materials | Lighting | OBJ/MTL |

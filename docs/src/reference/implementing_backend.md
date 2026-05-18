@@ -176,6 +176,38 @@ These are the most fundamental operations. Without them, nothing works.
 | `b_surface_grid` | `b_surface_grid(b, ptss, cu, cv, su, sv, mat)` | Quad strips with optional interpolation |
 | `b_surface_mesh` | `b_surface_mesh(b, vertices, faces, mat)` | Per-face `b_trig`/`b_quad`/`b_surface_polygon` |
 
+### Geometry Computation Hooks
+
+Rendering hooks create backend objects. Geometry computation hooks go the other
+way: they ask the backend's native kernel to compute explicit KhepriBase
+geometry. Implement them when your backend has reliable native support for
+curve/curve, curve/surface, surface/surface, projection, splitting, or closest
+point queries.
+
+Advertise support narrowly:
+
+```julia
+KhepriBase.supports_geometry_operation(b::MyBackend, op::Symbol, a, c) =
+  op == :intersections && supports_my_kernel_pair(a, c)
+```
+
+Then implement the matching hook:
+
+```julia
+function KhepriBase.b_intersections(b::MyBackend, a, c, opts)
+  # Convert Khepri geometry to native geometry, call the native kernel,
+  # then convert points/curves/regions back to IntersectionElement values.
+  KhepriBase.IntersectionSet(a, c, elements;
+    tolerance=opts.tolerance,
+    method=:backend,
+    exactness=:toleranced)
+end
+```
+
+Do not collapse mixed results to a single path or point. Return
+`PointIntersection`, `CurveIntersection`, `RegionIntersection`, `MultiRegion`,
+or `GeometryCollection` as needed.
+
 ### Tier 3 -- Solids
 
 All solid operations have default decompositions.
