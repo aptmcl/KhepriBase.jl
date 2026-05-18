@@ -182,7 +182,8 @@ Rendering hooks create backend objects. Geometry computation hooks go the other
 way: they ask the backend's native kernel to compute explicit KhepriBase
 geometry. Implement them when your backend has reliable native support for
 curve/curve, curve/surface, surface/surface, projection, splitting, or closest
-point queries.
+point queries. Classification is also part of this layer when the native kernel
+can reliably answer point/curve/surface/solid containment.
 
 Advertise support narrowly:
 
@@ -207,6 +208,12 @@ end
 Do not collapse mixed results to a single path or point. Return
 `PointIntersection`, `CurveIntersection`, `RegionIntersection`, `MultiRegion`,
 or `GeometryCollection` as needed.
+
+For backend-to-Khepri mapping, remote backends should also implement
+`b_existing_shape_refs` and `b_create_shape_from_ref_value`. This is what lets
+`all_shapes`, layer queries, and selected native objects become Khepri proxy
+objects again. `backend_geometry_mapping(backend)` reports whether those import
+hooks are present together with the backend's exact curve/surface capabilities.
 
 ### Tier 3 -- Solids
 

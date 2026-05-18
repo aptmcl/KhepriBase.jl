@@ -3,8 +3,9 @@
 Geometry operations compute new geometric values from existing geometric
 values. They are different from shape CSG: `intersection`, `union`, and
 `subtraction` create lazy shape proxies that are realized in a backend, while
-`intersections`, `section`, `project`, and `closest_points` return explicit
-KhepriBase geometry and metadata immediately.
+`intersections`, `section`, `project`, `split`, `trim`, `closest_points`, and
+`classify_geometry` return explicit KhepriBase geometry and metadata
+immediately.
 
 Use geometry operations when the result has to drive later modeling decisions:
 where two walls meet, where a curve pierces a surface, which curve is produced
@@ -99,6 +100,18 @@ pieces = split(path, cutter)
 cut point. Backends may extend `split` for richer curve, surface, and Brep
 types.
 
+`trim` uses the same intersection machinery but selects pieces instead of
+returning all of them:
+
+```julia
+before = trim(path, cutter; keep=:start)
+after = trim(path, cutter; keep=:end)
+```
+
+The local selector can keep the start, end, middle, all split pieces, or use a
+predicate function. Native backends can map trimming to their own curve and Brep
+trim operations.
+
 ## Projection and Closest Points
 
 Projection returns a `ProjectionResult`:
@@ -125,6 +138,22 @@ res.distance    # shortest distance
 
 The ordinary `distance(a, b)` function is extended for geometry operands and
 uses `closest_points` when appropriate.
+
+## Classification
+
+`classify_geometry` asks where one object lies relative to another:
+
+```julia
+room = region(rectangular_path(xy(0, 0), 4, 3))
+
+classify_geometry(room, xy(2, 1))   # :inside
+classify_geometry(room, xy(0, 1))   # :boundary
+classify_geometry(room, xy(5, 1))   # :outside
+```
+
+For planes, point classification returns `:on`, `:positive`, or `:negative`.
+`contains_geometry(container, item)` is the boolean convenience wrapper for
+inside-or-boundary tests.
 
 ## Boolean Geometry
 
@@ -156,10 +185,12 @@ KhepriBase includes a small analytic kernel for common exact/toleranced cases:
 | path/plane | decomposes paths into primitive pieces when possible |
 | line/trimmed plane | point intersections filtered by the trim boundary |
 | plane/plane | unbounded section line |
-| region/region | planar polygon intersection, including concave contours and disconnected results |
+| region/region | planar polygon intersection, including concave contours, disconnected results, and contained holes |
 | split | `LinePath` split at point intersections |
-| project | point or line segment to `PlaneSurface` |
-| closest points | point/point, point/line, line/line |
+| trim | `LinePath` trim after point intersections |
+| project | point, line segment, polygonal path, sampled path, or region to `PlaneSurface` |
+| closest points | point/point, point/line, line/line, point/plane, line/plane |
+| classify | point against line, plane, or planar region |
 
 Other combinations throw `UnsupportedGeometryOperation` unless the selected
 backend provides a native implementation.

@@ -116,6 +116,15 @@ using KhepriBase
     @test closest.second.x ≈ 1 atol=1e-10
     @test closest.second.y ≈ 0 atol=1e-10
     @test closest.distance ≈ 1 atol=1e-10
+
+    lifted = rectangular_path(xyz(0, 0, 2), 2, 1)
+    projected_path = project(lifted, plane).geometry
+    @test projected_path isa ClosedPolygonalPath
+    @test all(p -> isapprox(p.z, 0; atol=1e-10), path_vertices(projected_path))
+
+    plane_closest = closest_points(xyz(1, 2, 3), plane)
+    @test plane_closest.second.z ≈ 0 atol=1e-10
+    @test plane_closest.distance ≈ 3 atol=1e-10
   end
 
   @testset "split line by intersections" begin
@@ -127,6 +136,14 @@ using KhepriBase
     @test length(pieces.paths) == 2
     @test in_world(path_end(pieces.paths[1])).x ≈ 1 atol=1e-10
     @test in_world(path_start(pieces.paths[2])).x ≈ 1 atol=1e-10
+
+    trimmed_start = trim(a, b; keep=:start)
+    @test trimmed_start isa PathSet
+    @test length(trimmed_start.paths) == 1
+    @test in_world(path_end(only(trimmed_start.paths))).x ≈ 1 atol=1e-10
+
+    trimmed_end = trim(a, b; keep=:end)
+    @test in_world(path_start(only(trimmed_end.paths))).x ≈ 1 atol=1e-10
   end
 
   @testset "region intersection" begin
@@ -168,6 +185,37 @@ using KhepriBase
     disconnected = boolean(:intersection, c_shape, strip)
     @test disconnected isa MultiRegion
     @test length(disconnected.regions) == 2
+
+    donut = region(rectangular_path(xy(0, 0), 4, 4),
+                   rectangular_path(xy(1, 1), 2, 2))
+    donut_clip = region(rectangular_path(xy(0.5, 0.5), 3, 3))
+    holed = boolean(:intersection, donut, donut_clip)
+    @test holed isa Region
+    @test length(inner_paths(holed)) == 1
+    @test minimum(p.x for p in path_vertices(outer_path(holed))) ≈ 0.5 atol=1e-10
+    @test maximum(p.x for p in path_vertices(outer_path(holed))) ≈ 3.5 atol=1e-10
+  end
+
+  @testset "classification" begin
+    r = region(rectangular_path(xy(0, 0), 2, 2),
+               rectangular_path(xy(0.75, 0.75), 0.5, 0.5))
+    @test classify_geometry(r, xy(0.5, 0.5)) == :inside
+    @test classify_geometry(r, xy(0, 1)) == :boundary
+    @test classify_geometry(r, xy(1, 1)) == :outside
+    @test contains_geometry(r, xy(0.5, 0.5))
+    @test !contains_geometry(r, xy(3, 3))
+
+    plane = plane_surface(u0())
+    @test classify_geometry(plane, xyz(0, 0, 1)) == :positive
+    @test classify_geometry(plane, xyz(0, 0, 0)) == :on
+  end
+
+  @testset "backend geometry mapping report" begin
+    report = backend_geometry_mapping(KhepriBase.IOBackend{Symbol,Int,Nothing}())
+    @test haskey(report, :curve_capabilities)
+    @test haskey(report, :surface_capabilities)
+    @test haskey(report, :import_mapping)
+    @test haskey(report, :operations)
   end
 
   @testset "result containers" begin

@@ -315,6 +315,7 @@ result containers such as `IntersectionSet`, `ProjectionResult`,
 | `b_split_geometry` | `split(a, cutters...)` | geometry pieces, usually `PathSet`, `MultiRegion`, or `GeometryCollection` |
 | `b_trim_geometry` | `trim(a, cutters...)` | trimmed geometry |
 | `b_closest_points` | `closest_points(a, b)` | `ClosestPointsResult` |
+| `b_classify_geometry` | `classify_geometry(container, item)` | classification symbol such as `:inside`, `:boundary`, `:outside`, `:on`, `:positive`, or `:negative` |
 
 These hooks are intended to map directly to native kernel capabilities such as
 RhinoCommon intersection routines, AutoCAD/AcGe intersectors, or Open CASCADE
@@ -329,6 +330,30 @@ Current direct mappings:
 | Rhino | RhinoCommon `Intersection.CurveCurve`, `CurveBrep`, and `BrepBrep` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands; straight sampled section curves collapse to `LinePath` |
 | AutoCAD | Entity `IntersectWith` | point-valued `intersections` for path/path and path/finite-surface operands |
 | FreeCAD | Open CASCADE section results through `Shape.section` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands; straight sampled section curves collapse to `LinePath` |
+
+## Backend Geometry Mapping Report
+
+`backend_geometry_mapping(backend)` returns a compact machine-readable summary
+of the backend's exact creation capabilities, import path, and advertised
+result-valued operations for representative operands. Use it to keep backend
+coverage tables honest:
+
+```julia
+report = backend_geometry_mapping(top_backend())
+
+report.curve_capabilities.nurbs
+report.surface_capabilities.trimmed
+report.import_mapping.all_shapes
+report.operations.section_surface_surface
+```
+
+The import fields distinguish local shape storage from remote-reference
+storage. A remote backend should provide both `b_existing_shape_refs` and
+`b_create_shape_from_ref_value` so `all_shapes`, layer queries, and selected
+backend objects can be mapped back into Khepri proxies. Rhino, AutoCAD, and
+FreeCAD now use this pathway for basic curve imports; FreeCAD currently imports
+lines, polygons, circles, arcs, sampled open curves, sampled closed curves, and
+opaque surface placeholders.
 
 ## Backend Coverage Summary
 

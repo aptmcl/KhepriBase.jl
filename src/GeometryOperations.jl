@@ -20,6 +20,9 @@ export GeometryOperationOptions,
        trim,
        project,
        closest_points,
+       classify_geometry,
+       contains_geometry,
+       backend_geometry_mapping,
        intersection_points,
        intersection_curves,
        intersection_regions,
@@ -261,7 +264,8 @@ public supports_geometry_operation,
        b_project_geometry,
        b_split_geometry,
        b_trim_geometry,
-       b_closest_points
+       b_closest_points,
+       b_classify_geometry
 
 """
     supports_geometry_operation(backend, operation, args...)
@@ -332,6 +336,15 @@ Backend hook for [`closest_points`](@ref).
 """
 b_closest_points(::Backend, a, b, opts::GeometryOperationOptions) =
   throw(UnsupportedGeometryOperation(:closest_points, (a, b)))
+
+"""
+    b_classify_geometry(backend, container, item, opts)
+
+Backend hook for [`classify_geometry`](@ref). Return a classification symbol
+such as `:inside`, `:boundary`, `:outside`, `:on`, `:positive`, or `:negative`.
+"""
+b_classify_geometry(::Backend, container, item, opts::GeometryOperationOptions) =
+  throw(UnsupportedGeometryOperation(:classify, (container, item)))
 
 geometry_operation_options(; tolerance=coincidence_tolerance(),
                            overlap_tolerance=tolerance,
@@ -416,19 +429,20 @@ function split(a::GeometryElement, cutters...; kwargs...)
 end
 
 """
-    trim(a::GeometryElement, cutters...; kwargs...)
+    trim(a::GeometryElement, cutters...; keep=:start, kwargs...)
 
-Trim a geometric object by one or more cutters. This is a backend/local-kernel
-extension point; unsupported operand combinations throw
-[`UnsupportedGeometryOperation`](@ref).
+Trim a geometric object by one or more cutters. The local implementation
+supports trimming `LinePath` values after point intersections. `keep` can be
+`:start`, `:end`, `:middle`, `:all`, or a predicate `(piece, midpoint) -> Bool`.
+Backends may support richer native trimming through `b_trim_geometry`.
 """
-trim(a::GeometryElement, cutters...; kwargs...) =
-  let opts = geometry_operation_options(; kwargs...)
-    _with_backend_or_local(:trim,
-      () -> _analytic_trim(a, cutters, opts),
-      backend -> b_trim_geometry(backend, a, cutters, opts),
-      (a, cutters...), opts)
-  end
+function trim(a::GeometryElement, cutters...; keep=:start, kwargs...)
+  opts = geometry_operation_options(; kwargs...)
+  _with_backend_or_local(:trim,
+    () -> _analytic_trim(a, cutters, opts, keep),
+    backend -> b_trim_geometry(backend, a, cutters, opts),
+    (a, cutters...), opts)
+end
 
 """
     project(a, target; kwargs...)
@@ -458,6 +472,80 @@ closest_points(a, b; kwargs...) =
       backend -> b_closest_points(backend, a, b, opts),
       (a, b), opts)
   end
+
+"""
+    classify_geometry(container, item; kwargs...) -> Symbol
+
+Classify `item` relative to `container`. Local classifications currently cover
+points against lines, planes, and planar regions. Backends can advertise
+`:classify` for richer native point/curve/surface/solid classification.
+"""
+classify_geometry(container, item; kwargs...) =
+  let opts = geometry_operation_options(; kwargs...)
+    _with_backend_or_local(:classify,
+      () -> _analytic_classify(container, item, opts),
+      backend -> b_classify_geometry(backend, container, item, opts),
+      (container, item), opts)
+  end
+
+"""
+    contains_geometry(container, item; kwargs...) -> Bool
+
+Return `true` when [`classify_geometry`](@ref) classifies `item` as inside or
+on the boundary of `container`.
+"""
+contains_geometry(container, item; kwargs...) =
+  classify_geometry(container, item; kwargs...) in (:inside, :boundary, :on)
+
+"""
+    backend_geometry_mapping(backend) -> NamedTuple
+
+Summarize a backend's exact curve/surface creation capabilities, shape import
+path, and advertised result-valued geometry operations for representative
+operands. This is an introspection aid for backend coverage matrices; it does
+not replace backend-specific conformance tests.
+"""
+function backend_geometry_mapping(b::Backend)
+  curve_caps = curve_geometry_capabilities(b)
+  surface_caps = surface_geometry_capabilities(b)
+  storage = shape_storage_type(typeof(b))
+  path = line_path(xy(0, 0), xy(1, 0))
+  crossing = line_path(xy(0.5, -1), xy(0.5, 1))
+  plane = plane_surface(u0())
+  vertical = plane_surface(loc_from_o_rot_x(u0(), pi / 2))
+  reg = region(rectangular_path(xy(0, 0), 1, 1))
+  create_shape_method = which(b_create_shape_from_ref_value, (typeof(b), Any))
+  existing_refs_method = storage isa RemoteShapeStorage ?
+    which(b_existing_shape_refs, (RemoteShapeStorage, typeof(b))) :
+    nothing
+  (
+    backend=backend_name(b),
+    curve_capabilities=(
+      interpolating_spline=supports_exact_interpolating_spline_curves(curve_caps),
+      bezier=supports_exact_bezier_curves(curve_caps),
+      bspline=supports_exact_bspline_curves(curve_caps),
+      nurbs=supports_exact_nurbs_curves(curve_caps),
+      polycurve=supports_exact_polycurves(curve_caps)),
+    surface_capabilities=(
+      bezier=supports_exact_bezier_surfaces(surface_caps),
+      bspline=supports_exact_bspline_surfaces(surface_caps),
+      nurbs=supports_exact_nurbs_surfaces(surface_caps),
+      trimmed=supports_exact_trimmed_surfaces(surface_caps)),
+    import_mapping=(
+      storage=storage isa RemoteShapeStorage ? :remote_refs : :local_created_shapes,
+      all_shapes=storage isa LocalShapeStorage ||
+        (!isnothing(existing_refs_method) && existing_refs_method.module !== @__MODULE__),
+      create_shape=create_shape_method.module !== @__MODULE__),
+    operations=(
+      intersections_path_path=supports_geometry_operation(b, :intersections, path, crossing),
+      intersections_path_surface=supports_geometry_operation(b, :intersections, path, reg),
+      section_surface_surface=supports_geometry_operation(b, :section, plane, vertical),
+      project_point_surface=supports_geometry_operation(b, :project, u0(), plane),
+      split_path_path=supports_geometry_operation(b, :split, path, crossing),
+      trim_path_path=supports_geometry_operation(b, :trim, path, crossing),
+      closest_points_path_path=supports_geometry_operation(b, :closest_points, path, crossing),
+      classify_region_point=supports_geometry_operation(b, :classify, reg, xy(0.5, 0.5))))
+end
 
 distance(a::GeometryElement, b::GeometryElement; kwargs...) =
   closest_points(a, b; kwargs...).distance
@@ -1061,7 +1149,7 @@ end
 
 function _add_boundary_edge!(edges::Vector{Tuple{Int,Int}}, u::Int, v::Int)
   u == v && return
-  rev = findfirst(==((v, u)), edges)
+  rev = findfirst(e -> e == (v, u) || e == (u, v), edges)
   isnothing(rev) ? push!(edges, (u, v)) : deleteat!(edges, rev)
 end
 
@@ -1155,12 +1243,67 @@ function _boundary_loops_to_regions(loops, tol)
   length(regions) == 1 ? regions[1] : multi_region(regions)
 end
 
-function _polygon_region_intersection(a::Region, b::Region, opts)
+function _polygon_region_intersection_raw(a::Region, b::Region, opts)
   pieces = _polygon_intersection_pieces(a, b, opts.tolerance)
   isempty(pieces) && return multi_region()
   points, edges = _boundary_edges_from_pieces(pieces, opts.tolerance)
   isempty(edges) && return multi_region()
   _boundary_loops_to_regions(_trace_boundary_loops(points, edges), opts.tolerance)
+end
+
+_region_list(r::Region) = Region[r]
+_region_list(r::MultiRegion) = r.regions
+
+function _point_in_region_2d(p::Loc, r::Region, tol)
+  cs = path_start(outer_path(r)).cs
+  q = in_cs(p, cs)
+  outer = Loc[in_cs(v, cs) for v in path_vertices(outer_path(r))]
+  _point_in_polygon_2d(q, outer, tol) || return false
+  !any(hole -> _point_in_polygon_2d(q, Loc[in_cs(v, cs) for v in path_vertices(hole)], tol),
+       inner_paths(r))
+end
+
+function _path_inside_region_2d(path::ClosedPath, r::Region, tol)
+  all(p -> _point_in_region_2d(p, r, tol), path_vertices(path)) || return false
+  boundary = outer_path(r)
+  for edge in path_pieces(path), outer_edge in path_pieces(boundary)
+    isempty(intersection_points(intersections(edge, outer_edge; tolerance=tol, method=:local))) || return false
+  end
+  true
+end
+
+function _dedupe_holes(holes::Vector{ClosedPath}, tol)
+  result = ClosedPath[]
+  for hole in holes
+    pts = path_vertices(hole)
+    area = abs(_polygon_signed_area(pts))
+    centroid = xy(sum(p.x for p in pts) / length(pts), sum(p.y for p in pts) / length(pts), pts[1].cs)
+    duplicate = any(existing -> begin
+      epts = path_vertices(existing)
+      abs(abs(_polygon_signed_area(epts)) - area) <= tol &&
+        distance(centroid, xy(sum(p.x for p in epts) / length(epts),
+                             sum(p.y for p in epts) / length(epts), epts[1].cs)) <= tol
+    end, result)
+    duplicate || push!(result, hole)
+  end
+  result
+end
+
+function _attach_contained_intersection_holes(base::Region, a::Region, b::Region, opts)
+  candidates = ClosedPath[inner_paths(a)..., inner_paths(b)...]
+  isempty(candidates) && return base
+  holes = ClosedPath[h for h in candidates if _path_inside_region_2d(h, base, opts.tolerance)]
+  isempty(holes) && return base
+  region(outer_path(base), _dedupe_holes(holes, opts.tolerance)...)
+end
+
+function _polygon_region_intersection(a::Region, b::Region, opts)
+  if isempty(inner_paths(a)) && isempty(inner_paths(b))
+    return _polygon_region_intersection_raw(a, b, opts)
+  end
+  base = _polygon_region_intersection_raw(region(outer_path(a)), region(outer_path(b)), opts)
+  regions = [_attach_contained_intersection_holes(r, a, b, opts) for r in _region_list(base)]
+  length(regions) == 1 ? regions[1] : multi_region(regions)
 end
 
 function _analytic_boolean(op::Symbol, a::Region, b::Region, opts::GeometryOperationOptions)
@@ -1182,7 +1325,7 @@ function _unique_sorted_parameters(params, tol)
   result
 end
 
-function _analytic_split(path::LinePath, cutters, opts::GeometryOperationOptions)
+function _line_split_parameters(path::LinePath, cutters, opts::GeometryOperationOptions)
   params = Float64[0.0, path_length(path)]
   for cutter in cutters
     for e in intersections(path, cutter; tolerance=opts.tolerance,
@@ -1194,15 +1337,35 @@ function _analytic_split(path::LinePath, cutters, opts::GeometryOperationOptions
       end
     end
   end
-  params = _unique_sorted_parameters(params, opts.tolerance)
-  path_set([line_path(location_at(path, params[i]), location_at(path, params[i + 1]))
-            for i in 1:length(params)-1]...)
+  _unique_sorted_parameters(params, opts.tolerance)
+end
+
+_line_pieces_at_parameters(path::LinePath, params) =
+  [line_path(location_at(path, params[i]), location_at(path, params[i + 1]))
+   for i in 1:length(params)-1
+   if params[i + 1] - params[i] > coincidence_tolerance()]
+
+function _analytic_split(path::LinePath, cutters, opts::GeometryOperationOptions)
+  path_set(_line_pieces_at_parameters(path, _line_split_parameters(path, cutters, opts))...)
 end
 
 _analytic_split(a::GeometryElement, cutters, opts::GeometryOperationOptions) =
   throw(UnsupportedGeometryOperation(:split, (a, cutters...)))
 
-_analytic_trim(a::GeometryElement, cutters, opts::GeometryOperationOptions) =
+function _analytic_trim(path::LinePath, cutters, opts::GeometryOperationOptions, keep)
+  pieces = _line_pieces_at_parameters(path, _line_split_parameters(path, cutters, opts))
+  isempty(pieces) && return path_set()
+  selected =
+    keep isa Function ? [piece for piece in pieces if keep(piece, location_at(piece, path_length(piece) / 2))] :
+    keep in (:start, :before, :first) ? pieces[1:1] :
+    keep in (:end, :after, :last) ? pieces[end:end] :
+    keep in (:middle, :between) ? (length(pieces) <= 2 ? LinePath[] : pieces[2:end-1]) :
+    keep in (:all, :split) ? pieces :
+    throw(ArgumentError("Unsupported trim keep selector $(keep)."))
+  path_set(selected...)
+end
+
+_analytic_trim(a::GeometryElement, cutters, opts::GeometryOperationOptions, keep) =
   throw(UnsupportedGeometryOperation(:trim, (a, cutters...)))
 
 function _analytic_project(p::Loc, surface::PlaneSurface, opts::GeometryOperationOptions)
@@ -1221,11 +1384,41 @@ function _analytic_project(path::LinePath, surface::PlaneSurface, opts::Geometry
                    :analytic, :toleranced)
 end
 
+function _analytic_project(path::Path, surface::PlaneSurface, opts::GeometryOperationOptions)
+  projected_vertices = Loc[_analytic_project(p, surface, opts).geometry for p in path_vertices(path)]
+  projected = is_closed_path(path) ?
+    closed_polygonal_path(projected_vertices) :
+    open_polygonal_path(projected_vertices)
+  distances = [distance(a, b) for (a, b) in zip(path_vertices(path), projected_vertices)]
+  ProjectionResult(path, surface, projected, (;), maximum(distances; init=0.0),
+                   :analytic, :approximated)
+end
+
+function _analytic_project(r::Region, surface::PlaneSurface, opts::GeometryOperationOptions)
+  projected_outer = _analytic_project(outer_path(r), surface, opts).geometry
+  projected_holes = ClosedPath[_analytic_project(hole, surface, opts).geometry for hole in inner_paths(r)]
+  projected = region(projected_outer, projected_holes...)
+  ProjectionResult(r, surface, projected, (;), 0.0, :analytic, :approximated)
+end
+
 _analytic_project(a, target, opts::GeometryOperationOptions) =
   throw(UnsupportedGeometryOperation(:project, (a, target)))
 
 _analytic_closest_points(a::Loc, b::Loc, opts::GeometryOperationOptions) =
   ClosestPointsResult(a, b, nothing, nothing, distance(a, b), :analytic, :exact)
+
+function _analytic_closest_points(p::Loc, surface::PlaneSurface, opts::GeometryOperationOptions)
+  projected = _analytic_project(p, surface, opts).geometry
+  ClosestPointsResult(p, projected, nothing,
+                      (u=projected.x - surface.frame.x, v=projected.y - surface.frame.y),
+                      distance(p, projected), :analytic, :toleranced)
+end
+
+_analytic_closest_points(surface::PlaneSurface, p::Loc, opts::GeometryOperationOptions) =
+  let r = _analytic_closest_points(p, surface, opts)
+    ClosestPointsResult(r.second, r.first, r.second_parameter, r.first_parameter,
+                        r.distance, r.method, r.exactness)
+  end
 
 function _analytic_closest_points(p::Loc, line::LinePath, opts::GeometryOperationOptions)
   p0 = in_world(line.p0)
@@ -1269,5 +1462,62 @@ function _analytic_closest_points(a::LinePath, b::LinePath, opts::GeometryOperat
                       distance(pa, pb), :analytic, :toleranced)
 end
 
+function _analytic_closest_points(line::LinePath, surface::PlaneSurface, opts::GeometryOperationOptions)
+  hits = intersections(line, surface; tolerance=opts.tolerance, method=:local)
+  if !isempty(intersection_points(hits))
+    p = first(intersection_points(hits))
+    return ClosestPointsResult(p, p, _point_on_segment_parameter(line, p),
+                               (u=in_cs(p, surface.frame.cs).x - surface.frame.x,
+                                v=in_cs(p, surface.frame.cs).y - surface.frame.y),
+                               0.0, :analytic, :toleranced)
+  end
+  candidates = [_analytic_closest_points(line.p0, surface, opts),
+                _analytic_closest_points(line.p1, surface, opts)]
+  best = candidates[argmin([c.distance for c in candidates])]
+  ClosestPointsResult(best.first, best.second,
+                      _point_on_segment_parameter(line, best.first),
+                      best.second_parameter, best.distance, best.method, best.exactness)
+end
+
+_analytic_closest_points(surface::PlaneSurface, line::LinePath, opts::GeometryOperationOptions) =
+  let r = _analytic_closest_points(line, surface, opts)
+    ClosestPointsResult(r.second, r.first, r.second_parameter, r.first_parameter,
+                        r.distance, r.method, r.exactness)
+  end
+
 _analytic_closest_points(a, b, opts::GeometryOperationOptions) =
   throw(UnsupportedGeometryOperation(:closest_points, (a, b)))
+
+function _analytic_classify(line::LinePath, p::Loc, opts::GeometryOperationOptions)
+  _analytic_closest_points(p, line, opts).distance <= opts.tolerance ? :on : :outside
+end
+
+function _analytic_classify(surface::PlaneSurface, p::Loc, opts::GeometryOperationOptions)
+  q = in_cs(p, surface.frame.cs)
+  dz = q.z - surface.frame.z
+  abs(dz) <= opts.tolerance ? :on : (dz > 0 ? :positive : :negative)
+end
+
+function _analytic_classify(r::Region, p::Loc, opts::GeometryOperationOptions)
+  cs = path_start(outer_path(r)).cs
+  q = in_cs(p, cs)
+  outer = Loc[in_cs(v, cs) for v in path_vertices(outer_path(r))]
+  if any(i -> _point_on_segment_2d(q, outer[i], outer[mod1(i + 1, length(outer))], opts.tolerance),
+         eachindex(outer))
+    return :boundary
+  end
+  _point_in_polygon_2d(q, outer, opts.tolerance) || return :outside
+  for hole in inner_paths(r)
+    h = Loc[in_cs(v, cs) for v in path_vertices(hole)]
+    if any(i -> _point_on_segment_2d(q, h[i], h[mod1(i + 1, length(h))], opts.tolerance),
+           eachindex(h))
+      return :boundary
+    elseif _point_in_polygon_2d(q, h, opts.tolerance)
+      return :outside
+    end
+  end
+  :inside
+end
+
+_analytic_classify(container, item, opts::GeometryOperationOptions) =
+  throw(UnsupportedGeometryOperation(:classify, (container, item)))

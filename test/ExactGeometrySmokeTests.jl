@@ -138,7 +138,7 @@ function run_exact_geometry_smoke_tests(b; verify_samples::Bool=true,
     end
   end
 
-  if KhepriBase.backend_name(b) in ("Rhino", "AutoCAD")
+  if KhepriBase.backend_name(b) in ("Rhino", "AutoCAD", "FreeCAD")
     @testset "Backend to Khepri shape mapping" begin
       delete_all_shapes()
       backend(b)

@@ -65,6 +65,14 @@ point(path_start(second_piece))
 This pattern is useful for placing joints, structural members, control points,
 or annotations at computed locations.
 
+When only one side is needed, trim the same axis instead of manually indexing
+the split result:
+
+```julia
+left_piece = only(trim(beam_axis, grid_line; keep=:start).paths)
+right_piece = only(trim(beam_axis, grid_line; keep=:end).paths)
+```
+
 ## Intersecting Paths with a Boundary
 
 Closed paths decompose into primitive pieces during intersection. A line across
@@ -118,6 +126,20 @@ zone = region(rectangular_path(xy(0.5, 0.5), 2.5, 2.5))
 
 overlap = boolean(:intersection, room, zone)
 ```
+
+Regions with holes keep that topology when the hole is fully contained in the
+overlap:
+
+```julia
+room = region(rectangular_path(xy(0, 0), 6, 6),
+              rectangular_path(xy(2, 2), 2, 2))
+zone = region(rectangular_path(xy(1, 1), 4, 4))
+
+usable_ring = boolean(:intersection, room, zone)
+```
+
+`usable_ring` is a `Region` whose outer path is the clipped square and whose
+inner paths still describe the void.
 
 ## Circle Chords and Tangencies
 
@@ -196,6 +218,14 @@ projected = project(skew_line, work_plane).geometry
 stroke(projected)
 ```
 
+Closed paths can be projected too. Smooth curves are sampled when the local
+kernel cannot preserve their exact analytic type:
+
+```julia
+tilted_outline = rectangular_path(xyz(0, 0, 0.15), 4, 2)
+flat_outline = project(tilted_outline, work_plane).geometry
+```
+
 ## Closest Points and Distances
 
 `closest_points` returns both closest locations and the distance between them:
@@ -217,6 +247,25 @@ clearance = distance(fixture, path)
 
 This is useful for snapping, clearance checks, and placing dependent objects on
 nearby guide geometry.
+
+## Classification Checks
+
+Classification is useful before committing to a modeling operation:
+
+```julia
+footprint = region(rectangular_path(xy(0, 0), 8, 6))
+candidate = xy(3, 2)
+
+if contains_geometry(footprint, candidate)
+  point(candidate)
+end
+```
+
+Use the symbolic result when boundary cases matter:
+
+```julia
+classify_geometry(footprint, xy(0, 3))  # :boundary
+```
 
 ## Choosing Local or Backend Computation
 
