@@ -75,6 +75,18 @@ using KhepriBase
     @test r[1].point.z ≈ 0 atol=1e-10
     @test r[1].parameters.second.u ≈ 0 atol=1e-10
     @test r[1].parameters.second.v ≈ 0 atol=1e-10
+
+    circle = circular_path(xyz(0, 0, 0), 2)
+    vertical = plane_surface(loc_from_o_rot_x(u0(), pi/2))
+    pts = sort(intersection_points(intersections(circle, vertical)); by=p -> p.x)
+    @test length(pts) == 2
+    @test pts[1].x ≈ -2 atol=1e-10
+    @test pts[2].x ≈ 2 atol=1e-10
+
+    coplanar = intersections(circle, plane)
+    @test length(coplanar) == 1
+    @test coplanar[1] isa CurveIntersection
+    @test coplanar[1].kind == :overlap
   end
 
   @testset "plane-plane section" begin
@@ -115,6 +127,25 @@ using KhepriBase
     @test length(pieces.paths) == 2
     @test in_world(path_end(pieces.paths[1])).x ≈ 1 atol=1e-10
     @test in_world(path_start(pieces.paths[2])).x ≈ 1 atol=1e-10
+  end
+
+  @testset "convex region intersection" begin
+    a = region(rectangular_path(xy(0, 0), 4, 3))
+    b = region(rectangular_path(xy(2, 1), 4, 3))
+    r = boolean(:intersection, a, b)
+
+    @test r isa Region
+    pts = path_vertices(outer_path(r))
+    @test length(pts) == 4
+    @test minimum(p.x for p in pts) ≈ 2 atol=1e-10
+    @test maximum(p.x for p in pts) ≈ 4 atol=1e-10
+    @test minimum(p.y for p in pts) ≈ 1 atol=1e-10
+    @test maximum(p.y for p in pts) ≈ 3 atol=1e-10
+
+    c = region(rectangular_path(xy(10, 10), 1, 1))
+    empty = boolean(:intersection, a, c)
+    @test empty isa MultiRegion
+    @test isempty(empty.regions)
   end
 
   @testset "result containers" begin

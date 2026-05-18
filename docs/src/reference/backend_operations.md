@@ -322,6 +322,14 @@ section and projection algorithms. Backends without a native operation can
 decline support and let KhepriBase use its local analytic implementation when
 one exists.
 
+Current direct mappings:
+
+| Backend | Native kernel/API | Advertised geometry operations |
+|---------|-------------------|--------------------------------|
+| Rhino | RhinoCommon `Intersection.CurveCurve`, `CurveBrep`, and `BrepBrep` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands |
+| AutoCAD | Entity `IntersectWith` | point-valued `intersections` for path/path and path/finite-surface operands |
+| FreeCAD | Open CASCADE section results through `Shape.section` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands |
+
 ## Backend Coverage Summary
 
 | Backend | Type | Curves | Surfaces | Solids | Boolean | BIM | Selection | Rendering | Materials | Lighting | OBJ/MTL |

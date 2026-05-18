@@ -31,6 +31,7 @@ function run_conformance_tests(b::Backend; reset!::Function, skip::Vector{Symbol
     should_test(:layers, skip)     && test_layers(b, reset!)
     should_test(:refs, skip)       && test_refs(b, reset!)
     should_test(:highlevel, skip)  && test_highlevel(b, reset!)
+    should_test(:geometry_ops, skip) && test_geometry_ops(b, reset!)
     should_test(:delete, skip)     && test_delete(b, reset!)
     should_test(:advanced, skip)   && test_advanced(b, reset!)
   end
@@ -415,6 +416,45 @@ function test_highlevel(b, reset!)
       refs = shape_refs_storage(b)
       # We created 12 shapes above (point through torus)
       @test length(refs) >= 12
+    end
+  end
+end
+
+# ================================================================
+# :geometry_ops -- result-valued geometric computations
+# ================================================================
+function test_geometry_ops(b, reset!)
+  @testset "Geometry Operations" begin
+    reset!()
+    a = line_path(xy(0, 0), xy(2, 0))
+    c = line_path(xy(1, -1), xy(1, 1))
+
+    @testset "local operation remains available" begin
+      r = intersections(a, c; method=:local)
+      @test r isa IntersectionSet
+      @test length(r) == 1
+      @test only(intersection_points(r)).x ≈ 1 atol=1e-10
+    end
+
+    @testset "backend operation advertises support consistently" begin
+      if supports_geometry_operation(b, :intersections, a, c)
+        r = intersections(a, c; method=:backend, backend=b)
+        @test r isa IntersectionSet
+        @test r.method == :backend
+        @test length(r) == 1
+        @test only(intersection_points(r)).x ≈ 1 atol=1e-10
+      else
+        @test_throws UnsupportedGeometryOperation intersections(a, c; method=:backend, backend=b)
+      end
+    end
+
+    @testset "auto selects backend when advertised" begin
+      r = intersections(a, c; method=:auto, backend=b)
+      @test r isa IntersectionSet
+      @test length(r) == 1
+      if supports_geometry_operation(b, :intersections, a, c)
+        @test r.method == :backend
+      end
     end
   end
 end

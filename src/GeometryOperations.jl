@@ -489,6 +489,16 @@ _reverse_result(r::IntersectionSet) =
   IntersectionSet(r.operands[2], r.operands[1], _reverse_element.(r.elements);
                   tolerance=r.tolerance, method=r.method, exactness=r.exactness)
 
+function _dedupe_intersection_elements(elements::Vector{IntersectionElement}, tol::Real)
+  result = IntersectionElement[]
+  for e in elements
+    duplicate = e isa PointIntersection &&
+      any(r -> r isa PointIntersection && distance(e.point, r.point) <= tol, result)
+    duplicate || push!(result, e)
+  end
+  result
+end
+
 _point_on_segment_parameter(path::LinePath, p::Loc) =
   let p0 = in_world(path.p0),
       p1 = in_world(path.p1),
@@ -786,7 +796,8 @@ function _analytic_intersections(a::Path, b::Path, opts::GeometryOperationOption
   for pa in pieces_a, pb in pieces_b
     append!(elements, _analytic_intersections(pa, pb, opts).elements)
   end
-  IntersectionSet(a, b, elements; tolerance=opts.tolerance)
+  IntersectionSet(a, b, _dedupe_intersection_elements(elements, opts.tolerance);
+                  tolerance=opts.tolerance)
 end
 
 function _analytic_intersections(line::LinePath, surface::PlaneSurface, opts::GeometryOperationOptions)
@@ -817,6 +828,91 @@ function _analytic_intersections(line::LinePath, surface::PlaneSurface, opts::Ge
 end
 
 _analytic_intersections(surface::PlaneSurface, line::LinePath, opts::GeometryOperationOptions) =
+  _reverse_result(_analytic_intersections(line, surface, opts))
+
+function _circle_plane_points(path::Union{ArcPath,CircularPath}, surface::PlaneSurface, opts)
+  circle_plane = plane_surface(path.center)
+  p1, n1 = _plane_equation(circle_plane)
+  p2, n2 = _plane_equation(surface)
+  d = LinearAlgebra.cross(n1, n2)
+  denom = dot(d, d)
+  if denom <= parallelism_tolerance()
+    return abs(dot(n1, p2 - p1)) <= opts.tolerance ? :coplanar : Loc[]
+  end
+  c1 = dot(n1, p1)
+  c2 = dot(n2, p2)
+  line_point = (LinearAlgebra.cross(d, n2) * c1 + LinearAlgebra.cross(n1, d) * c2) / denom
+  c = in_world(path.center)
+  center = SVector(c.x, c.y, c.z)
+  t = dot(center - line_point, d) / denom
+  closest = line_point + d * t
+  dist2 = sum(abs2, closest - center)
+  radius = Float64(path.radius)
+  dist2 > (radius + opts.tolerance)^2 && return Loc[]
+  h2 = max(radius^2 - dist2, 0.0)
+  dir = d / sqrt(denom)
+  candidates = h2 <= opts.tolerance^2 ?
+    [closest] :
+    [closest - dir * sqrt(h2), closest + dir * sqrt(h2)]
+  pts = Loc[]
+  for p in candidates
+    loc = xyz(p[1], p[2], p[3])
+    local_p = in_cs(loc, path.center.cs)
+    angle = atan(local_p.y - path.center.y, local_p.x - path.center.x)
+    _angle_in_path(path, angle, opts.tolerance) && push!(pts, loc)
+  end
+  _dedupe_points(pts, opts.tolerance)
+end
+
+function _analytic_intersections(path::Union{ArcPath,CircularPath}, surface::PlaneSurface, opts::GeometryOperationOptions)
+  points = _circle_plane_points(path, surface, opts)
+  points === :coplanar && return IntersectionSet(path, surface, [CurveIntersection(path;
+    parameters=(first=path_domain(path), second=nothing), kind=:overlap)];
+    tolerance=opts.tolerance)
+  kind = length(points) == 1 ? :tangent : :transversal
+  elements = IntersectionElement[
+    PointIntersection(p;
+      parameters=(first=_path_parameter_for_angle(path, atan(in_cs(p, path.center.cs).y - path.center.y,
+                                                        in_cs(p, path.center.cs).x - path.center.x)),
+                  second=(u=in_cs(p, surface.frame.cs).x - surface.frame.x,
+                          v=in_cs(p, surface.frame.cs).y - surface.frame.y)),
+      kind=kind)
+    for p in points
+  ]
+  IntersectionSet(path, surface, elements; tolerance=opts.tolerance)
+end
+
+_analytic_intersections(surface::PlaneSurface, path::Union{ArcPath,CircularPath}, opts::GeometryOperationOptions) =
+  _reverse_result(_analytic_intersections(path, surface, opts))
+
+function _analytic_intersections(path::Path, surface::PlaneSurface, opts::GeometryOperationOptions)
+  pieces = path_pieces(path)
+  length(pieces) == 1 && pieces[1] === path && _unsupported(:intersections, path, surface)
+  elements = IntersectionElement[]
+  for piece in pieces
+    append!(elements, _analytic_intersections(piece, surface, opts).elements)
+  end
+  IntersectionSet(path, surface, _dedupe_intersection_elements(elements, opts.tolerance);
+                  tolerance=opts.tolerance)
+end
+
+_analytic_intersections(surface::PlaneSurface, path::Path, opts::GeometryOperationOptions) =
+  _reverse_result(_analytic_intersections(path, surface, opts))
+
+function _trimmed_plane_contains_point(surface::TrimmedSurface{PlaneSurface}, p::Loc, opts)
+  q = in_cs(p, surface.base.frame.cs)
+  trimmed_surface_contains(surface, q.x - surface.base.frame.x, q.y - surface.base.frame.y)
+end
+
+function _analytic_intersections(line::LinePath, surface::TrimmedSurface{PlaneSurface}, opts::GeometryOperationOptions)
+  r = _analytic_intersections(line, surface.base, opts)
+  elements = IntersectionElement[e for e in r.elements
+    if !(e isa PointIntersection) || _trimmed_plane_contains_point(surface, e.point, opts)]
+  IntersectionSet(line, surface, elements; tolerance=opts.tolerance,
+                  method=r.method, exactness=r.exactness)
+end
+
+_analytic_intersections(surface::TrimmedSurface{PlaneSurface}, line::LinePath, opts::GeometryOperationOptions) =
   _reverse_result(_analytic_intersections(line, surface, opts))
 
 function _plane_equation(surface::PlaneSurface)
@@ -850,6 +946,64 @@ function _analytic_section(a, b, opts::GeometryOperationOptions)
   r = _analytic_intersections(a, b, opts)
   IntersectionSet(a, b, IntersectionElement[e for e in r.elements if e isa CurveIntersection];
                   tolerance=r.tolerance, method=r.method, exactness=r.exactness)
+end
+
+function _polygon_signed_area(pts)
+  n = length(pts)
+  sum(pts[i].x * pts[mod1(i + 1, n)].y - pts[mod1(i + 1, n)].x * pts[i].y
+      for i in 1:n) / 2
+end
+
+_clip_inside(p, a, b, orientation, tol) =
+  orientation * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) >= -tol
+
+function _clip_line_intersection(s, e, a, b)
+  den = (e.x - s.x) * (b.y - a.y) - (e.y - s.y) * (b.x - a.x)
+  abs(den) <= parallelism_tolerance() && return e
+  t = ((a.x - s.x) * (b.y - a.y) - (a.y - s.y) * (b.x - a.x)) / den
+  xy(s.x + t * (e.x - s.x), s.y + t * (e.y - s.y), s.cs)
+end
+
+function _convex_polygon_intersection(subject, clipper, tol)
+  (isempty(subject) || isempty(clipper)) && return Loc[]
+  orientation = _polygon_signed_area(clipper) >= 0 ? 1 : -1
+  output = Loc[subject...]
+  for i in eachindex(clipper)
+    input = output
+    output = Loc[]
+    isempty(input) && break
+    a = clipper[i]
+    b = clipper[mod1(i + 1, length(clipper))]
+    s = input[end]
+    for e in input
+      e_inside = _clip_inside(e, a, b, orientation, tol)
+      s_inside = _clip_inside(s, a, b, orientation, tol)
+      if e_inside
+        s_inside || push!(output, _clip_line_intersection(s, e, a, b))
+        push!(output, e)
+      elseif s_inside
+        push!(output, _clip_line_intersection(s, e, a, b))
+      end
+      s = e
+    end
+  end
+  result = Loc[]
+  for p in output
+    (isempty(result) || distance(p, result[end]) > tol) && push!(result, p)
+  end
+  length(result) > 1 && distance(result[1], result[end]) <= tol && pop!(result)
+  result
+end
+
+function _analytic_boolean(op::Symbol, a::Region, b::Region, opts::GeometryOperationOptions)
+  op in (:intersection, :intersect) || _unsupported(Symbol(:boolean_, op), a, b)
+  (isempty(inner_paths(a)) && isempty(inner_paths(b))) ||
+    throw(UnsupportedGeometryOperation(:boolean_intersection_with_holes, (a, b)))
+  pts = _convex_polygon_intersection(path_vertices(outer_path(a)),
+                                     path_vertices(outer_path(b)),
+                                     opts.tolerance)
+  length(pts) < 3 && return multi_region()
+  region(closed_polygonal_path(pts))
 end
 
 _analytic_boolean(op::Symbol, a, b, opts::GeometryOperationOptions) =

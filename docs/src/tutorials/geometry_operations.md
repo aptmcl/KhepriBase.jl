@@ -90,6 +90,23 @@ This is the same kind of operation needed for slabs, rooms, facade grids, and
 wall-layout helpers: compute where a guiding curve meets a boundary, then use
 the result as authored geometry for the next step.
 
+## Intersecting Filled Regions
+
+For simple planar footprints, result-valued booleans return geometry that can
+drive later modeling. This example computes the overlap between two rectangular
+zones:
+
+```julia
+room = region(rectangular_path(xy(0, 0), 6, 4))
+setback = region(rectangular_path(xy(2, 1), 5, 5))
+
+usable = boolean(:intersection, room, setback)
+```
+
+`usable` is a `Region` when the overlap is connected. A disjoint result would
+be a `MultiRegion`. That distinction matters for modeling operations such as a
+slab contour, a ceiling panel layout, or a room area calculation.
+
 ## Circle Chords and Tangencies
 
 Circle intersections are classified. A secant line produces two point

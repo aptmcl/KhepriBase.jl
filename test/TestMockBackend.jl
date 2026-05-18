@@ -13,7 +13,8 @@ import KhepriBase: Backend, realize, void_ref, new_refs, b_trig, b_point, b_line
   shape_storage_type, ShapeStorageType, LocalShapeStorage, RemoteShapeStorage,
   current_transaction, Transaction, AutoCommitTransaction,
   GenericRef, NativeRef, NativeRefs, References, backend_name,
-  BackendDefault
+  BackendDefault,
+  supports_geometry_operation, b_intersections
 
 export MockBackend, mock_backend, reset_mock_backend!, mock_geometry_stats
 
@@ -213,6 +214,17 @@ b_closed_spline(b::MockBackend, ps, mat) = begin
   push!(b.lines, MockLine([ps..., ps[1]]))
   next_ref!(b)
 end
+
+supports_geometry_operation(::MockBackend, op::Symbol, a::LinePath, b::LinePath) =
+  op == :intersections
+
+b_intersections(::MockBackend, a::LinePath, b::LinePath, opts::GeometryOperationOptions) =
+  let r = intersections(a, b; tolerance=opts.tolerance,
+                        overlap_tolerance=opts.overlap_tolerance,
+                        method=:local)
+    IntersectionSet(a, b, r.elements; tolerance=r.tolerance,
+                    method=:backend, exactness=r.exactness)
+  end
 
 # Tier 1: Triangles (fundamental)
 b_trig(b::MockBackend, p1, p2, p3) = begin
