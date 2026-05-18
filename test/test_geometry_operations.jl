@@ -129,7 +129,7 @@ using KhepriBase
     @test in_world(path_start(pieces.paths[2])).x ≈ 1 atol=1e-10
   end
 
-  @testset "convex region intersection" begin
+  @testset "region intersection" begin
     a = region(rectangular_path(xy(0, 0), 4, 3))
     b = region(rectangular_path(xy(2, 1), 4, 3))
     r = boolean(:intersection, a, b)
@@ -146,6 +146,28 @@ using KhepriBase
     empty = boolean(:intersection, a, c)
     @test empty isa MultiRegion
     @test isempty(empty.regions)
+
+    l_shape = region(closed_polygonal_path([
+      xy(0, 0), xy(4, 0), xy(4, 1), xy(1, 1), xy(1, 4), xy(0, 4)
+    ]))
+    clip = region(rectangular_path(xy(0.5, 0.5), 2.5, 2.5))
+    concave = boolean(:intersection, l_shape, clip)
+    @test concave isa Region
+    concave_pts = path_vertices(outer_path(concave))
+    @test length(concave_pts) == 6
+    @test minimum(p.x for p in concave_pts) ≈ 0.5 atol=1e-10
+    @test maximum(p.x for p in concave_pts) ≈ 3.0 atol=1e-10
+    @test minimum(p.y for p in concave_pts) ≈ 0.5 atol=1e-10
+    @test maximum(p.y for p in concave_pts) ≈ 3.0 atol=1e-10
+
+    c_shape = region(closed_polygonal_path([
+      xy(0, 0), xy(4, 0), xy(4, 1), xy(1, 1),
+      xy(1, 3), xy(4, 3), xy(4, 4), xy(0, 4)
+    ]))
+    strip = region(rectangular_path(xy(2, 0.5), 1, 3))
+    disconnected = boolean(:intersection, c_shape, strip)
+    @test disconnected isa MultiRegion
+    @test length(disconnected.regions) == 2
   end
 
   @testset "result containers" begin

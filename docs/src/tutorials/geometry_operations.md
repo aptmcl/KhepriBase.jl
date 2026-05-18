@@ -107,6 +107,18 @@ usable = boolean(:intersection, room, setback)
 be a `MultiRegion`. That distinction matters for modeling operations such as a
 slab contour, a ceiling panel layout, or a room area calculation.
 
+The local implementation is not limited to rectangles. Concave polygonal
+regions are decomposed internally and stitched back into boundary loops:
+
+```julia
+room = region(closed_polygonal_path([
+  xy(0, 0), xy(4, 0), xy(4, 1), xy(1, 1), xy(1, 4), xy(0, 4)
+]))
+zone = region(rectangular_path(xy(0.5, 0.5), 2.5, 2.5))
+
+overlap = boolean(:intersection, room, zone)
+```
+
 ## Circle Chords and Tangencies
 
 Circle intersections are classified. A secant line produces two point

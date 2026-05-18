@@ -986,17 +986,20 @@ struct WallMesh
   quad_materials::Vector{Material}
 end
 
+function _wall_construction_line(p::Loc, d; extent::Real=max(1.0e3, 100.0 * max(abs(cx(p)), abs(cy(p)), 1.0)))
+  v = vxy(cx(d) * extent, cy(d) * extent)
+  line_path(p - v, p + v)
+end
+
+_wall_snap_point(p::Loc) = xy(round(cx(p); digits=12), round(cy(p); digits=12))
+
 # 2D line intersection: p1 + t*d1 = p2 + s*d2. Returns an XY or nothing.
 function line_intersection_2d(p1, d1, p2, d2)
-  let denom = cx(d1) * cy(d2) - cy(d1) * cx(d2)
-    # denom is the 2D cross product of the two direction vectors;
-    # it goes to zero exactly when the lines are parallel.
-    abs(denom) < parallelism_tolerance() && return nothing
-    let dpx = cx(p2) - cx(p1),
-        dpy = cy(p2) - cy(p1),
-        t = (dpx * cy(d2) - dpy * cx(d2)) / denom
-      xy(cx(p1) + cx(d1) * t, cy(p1) + cy(d1) * t)
-    end
+  let pts = intersection_points(intersections(_wall_construction_line(p1, d1),
+                                              _wall_construction_line(p2, d2);
+                                              tolerance=1e-7,
+                                              method=:local))
+    isempty(pts) ? nothing : _wall_snap_point(_nearest(pts, p1))
   end
 end
 
@@ -1012,27 +1015,11 @@ these points (typically the one closest to the junction position).
 =#
 "Intersections of a 2D parametric line with a circle. Returns 0, 1, or 2 points."
 function line_arc_intersection_2d(p_line::Loc, d_line, center::Loc, radius::Real)
-  let dx = cx(d_line), dy = cy(d_line),
-      fx = cx(p_line) - cx(center), fy = cy(p_line) - cy(center),
-      a = dx*dx + dy*dy,
-      b = 2 * (fx*dx + fy*dy),
-      c = fx*fx + fy*fy - radius*radius,
-      disc = b*b - 4*a*c
-    if disc < -parallelism_tolerance()
-      Loc[]
-    elseif disc < parallelism_tolerance()
-      let t = -b / (2*a)
-        [xy(cx(p_line) + dx*t, cy(p_line) + dy*t)]
-      end
-    else
-      let sq = sqrt(disc),
-          t1 = (-b + sq) / (2*a),
-          t2 = (-b - sq) / (2*a)
-        [xy(cx(p_line) + dx*t1, cy(p_line) + dy*t1),
-         xy(cx(p_line) + dx*t2, cy(p_line) + dy*t2)]
-      end
-    end
-  end
+  radius <= coincidence_tolerance() && return Loc[]
+  intersection_points(intersections(_wall_construction_line(p_line, d_line),
+                                    circular_path(center, radius);
+                                    tolerance=1e-7,
+                                    method=:local))
 end
 
 #=
@@ -1048,23 +1035,11 @@ one of their intersection points.
 =#
 "Intersections of two 2D circles. Returns 0, 1, or 2 points."
 function arc_arc_intersection_2d(c1::Loc, r1::Real, c2::Loc, r2::Real)
-  let dx = cx(c2) - cx(c1), dy = cy(c2) - cy(c1),
-      d = sqrt(dx*dx + dy*dy)
-    # No intersection: too far apart or one strictly inside the other
-    (d > r1 + r2 + parallelism_tolerance() ||
-     d < abs(r1 - r2) - parallelism_tolerance() ||
-     d < parallelism_tolerance()) && return Loc[]
-    let a = (r1*r1 - r2*r2 + d*d) / (2*d),
-        h_sq = r1*r1 - a*a,
-        h = h_sq < 0 ? 0.0 : sqrt(h_sq),
-        mx = cx(c1) + a*dx/d,
-        my = cy(c1) + a*dy/d
-      h < parallelism_tolerance() ?
-        [xy(mx, my)] :
-        [xy(mx + h*dy/d, my - h*dx/d),
-         xy(mx - h*dy/d, my + h*dx/d)]
-    end
-  end
+  (r1 <= coincidence_tolerance() || r2 <= coincidence_tolerance()) && return Loc[]
+  intersection_points(intersections(circular_path(c1, r1),
+                                    circular_path(c2, r2);
+                                    tolerance=1e-7,
+                                    method=:local))
 end
 
 #=
@@ -1537,4 +1512,3 @@ function render_opening_frame(wg, seg, op, b)
     vcat(collect(panel_refs), collect(frame_refs))
   end
 end
-

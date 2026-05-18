@@ -326,9 +326,9 @@ Current direct mappings:
 
 | Backend | Native kernel/API | Advertised geometry operations |
 |---------|-------------------|--------------------------------|
-| Rhino | RhinoCommon `Intersection.CurveCurve`, `CurveBrep`, and `BrepBrep` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands |
+| Rhino | RhinoCommon `Intersection.CurveCurve`, `CurveBrep`, and `BrepBrep` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands; straight sampled section curves collapse to `LinePath` |
 | AutoCAD | Entity `IntersectWith` | point-valued `intersections` for path/path and path/finite-surface operands |
-| FreeCAD | Open CASCADE section results through `Shape.section` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands |
+| FreeCAD | Open CASCADE section results through `Shape.section` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands; straight sampled section curves collapse to `LinePath` |
 
 ## Backend Coverage Summary
 

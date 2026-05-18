@@ -156,7 +156,7 @@ KhepriBase includes a small analytic kernel for common exact/toleranced cases:
 | path/plane | decomposes paths into primitive pieces when possible |
 | line/trimmed plane | point intersections filtered by the trim boundary |
 | plane/plane | unbounded section line |
-| convex region/convex region | filled planar intersection without holes |
+| region/region | planar polygon intersection, including concave contours and disconnected results |
 | split | `LinePath` split at point intersections |
 | project | point or line segment to `PlaneSurface` |
 | closest points | point/point, point/line, line/line |
@@ -183,9 +183,9 @@ See [Backend Operations Matrix](../reference/backend_operations.md#geometry-comp
 for the backend side of the contract.
 
 The Rhino and FreeCAD backends can delegate curve/curve, curve/finite-surface,
-and finite-surface/finite-surface intersections to their native kernels.
-AutoCAD currently maps curve/curve and curve/finite-surface point intersections
-through `IntersectWith`.
+and finite-surface/finite-surface intersections to their native kernels and map
+straight sampled section curves back to `LinePath`. AutoCAD currently maps
+curve/curve and curve/finite-surface point intersections through `IntersectWith`.
 
 ## Tolerances
 

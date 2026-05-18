@@ -995,15 +995,177 @@ function _convex_polygon_intersection(subject, clipper, tol)
   result
 end
 
+function _clean_polygon_vertices(pts, tol)
+  result = Loc[]
+  for p in pts
+    (isempty(result) || distance(p, result[end]) > tol) && push!(result, p)
+  end
+  length(result) > 1 && distance(result[1], result[end]) <= tol && pop!(result)
+  length(result) < 3 && return result
+  cleaned = Loc[]
+  for i in eachindex(result)
+    a = result[mod1(i - 1, length(result))]
+    p = result[i]
+    b = result[mod1(i + 1, length(result))]
+    cross2 = (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)
+    if abs(cross2) > tol ||
+       !(_point_on_segment_2d(p, a, b, tol) || _point_on_segment_2d(p, b, a, tol))
+      push!(cleaned, p)
+    end
+  end
+  cleaned
+end
+
+_polygon_area_large_enough(pts, tol) =
+  length(pts) >= 3 && abs(_polygon_signed_area(pts)) > tol^2
+
+function _region_triangulation_vertices(r::Region, tol)
+  pts = path_vertices(outer_path(r))
+  for hole in inner_paths(r)
+    pts = subtract_polygon_vertices(pts, reverse(path_vertices(hole)))
+  end
+  _clean_polygon_vertices(pts, tol)
+end
+
+function _region_triangles(r::Region, tol)
+  pts = _region_triangulation_vertices(r, tol)
+  length(pts) < 3 && return Vector{Loc}[]
+  triangles = Vector{Loc}[]
+  for (i, j, k) in triangulate_polygon([raw_point(p) for p in pts])
+    tri = _clean_polygon_vertices(Loc[pts[i], pts[j], pts[k]], tol)
+    _polygon_area_large_enough(tri, tol) || continue
+    _polygon_signed_area(tri) < 0 && reverse!(tri)
+    push!(triangles, tri)
+  end
+  triangles
+end
+
+function _polygon_intersection_pieces(a::Region, b::Region, tol)
+  pieces = Vector{Loc}[]
+  for ta in _region_triangles(a, tol), tb in _region_triangles(b, tol)
+    pts = _clean_polygon_vertices(_convex_polygon_intersection(ta, tb, tol), tol)
+    _polygon_area_large_enough(pts, tol) || continue
+    _polygon_signed_area(pts) < 0 && reverse!(pts)
+    push!(pieces, pts)
+  end
+  pieces
+end
+
+function _intern_boundary_point!(points::Vector{Loc}, p::Loc, tol)
+  for (i, q) in enumerate(points)
+    distance(p, q) <= tol && return i
+  end
+  push!(points, p)
+  length(points)
+end
+
+function _add_boundary_edge!(edges::Vector{Tuple{Int,Int}}, u::Int, v::Int)
+  u == v && return
+  rev = findfirst(==((v, u)), edges)
+  isnothing(rev) ? push!(edges, (u, v)) : deleteat!(edges, rev)
+end
+
+function _boundary_edges_from_pieces(pieces, tol)
+  points = Loc[]
+  edges = Tuple{Int,Int}[]
+  for piece in pieces
+    ids = [_intern_boundary_point!(points, p, tol) for p in piece]
+    for i in eachindex(ids)
+      _add_boundary_edge!(edges, ids[i], ids[mod1(i + 1, length(ids))])
+    end
+  end
+  points, edges
+end
+
+function _trace_boundary_loops(points, edges)
+  remaining = copy(edges)
+  loops = Vector{Loc}[]
+  while !isempty(remaining)
+    start_edge = popfirst!(remaining)
+    start, current = start_edge
+    ids = Int[start]
+    while current != start
+      push!(ids, current)
+      next_i = findfirst(e -> e[1] == current, remaining)
+      isnothing(next_i) && break
+      next_edge = remaining[next_i]
+      deleteat!(remaining, next_i)
+      current = next_edge[2]
+    end
+    current == start && length(ids) >= 3 && push!(loops, Loc[points[i] for i in ids])
+  end
+  loops
+end
+
+function _point_on_segment_2d(p, a, b, tol)
+  cross2 = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+  abs(cross2) <= tol &&
+    min(a.x, b.x) - tol <= p.x <= max(a.x, b.x) + tol &&
+    min(a.y, b.y) - tol <= p.y <= max(a.y, b.y) + tol
+end
+
+function _point_in_polygon_2d(p, poly, tol)
+  inside = false
+  for i in eachindex(poly)
+    a = poly[i]
+    b = poly[mod1(i + 1, length(poly))]
+    _point_on_segment_2d(p, a, b, tol) && return true
+    if (a.y > p.y) != (b.y > p.y)
+      x = a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)
+      p.x < x + tol && (inside = !inside)
+    end
+  end
+  inside
+end
+
+function _boundary_loops_to_regions(loops, tol)
+  cleaned = Vector{Loc}[]
+  for loop in loops
+    pts = _clean_polygon_vertices(loop, tol)
+    _polygon_area_large_enough(pts, tol) && push!(cleaned, pts)
+  end
+  isempty(cleaned) && return multi_region()
+
+  outers = Vector{Loc}[]
+  holes = Vector{Loc}[]
+  for loop in cleaned
+    if _polygon_signed_area(loop) >= 0
+      push!(outers, loop)
+    else
+      push!(holes, reverse(loop))
+    end
+  end
+  if isempty(outers)
+    append!(outers, reverse.(holes))
+    empty!(holes)
+  end
+
+  regions = Region[]
+  assigned = falses(length(holes))
+  for outer in outers
+    hole_paths = ClosedPath[]
+    for (i, hole) in enumerate(holes)
+      if !assigned[i] && _point_in_polygon_2d(hole[1], outer, tol)
+        push!(hole_paths, closed_polygonal_path(reverse(hole)))
+        assigned[i] = true
+      end
+    end
+    push!(regions, region(closed_polygonal_path(outer), hole_paths...))
+  end
+  length(regions) == 1 ? regions[1] : multi_region(regions)
+end
+
+function _polygon_region_intersection(a::Region, b::Region, opts)
+  pieces = _polygon_intersection_pieces(a, b, opts.tolerance)
+  isempty(pieces) && return multi_region()
+  points, edges = _boundary_edges_from_pieces(pieces, opts.tolerance)
+  isempty(edges) && return multi_region()
+  _boundary_loops_to_regions(_trace_boundary_loops(points, edges), opts.tolerance)
+end
+
 function _analytic_boolean(op::Symbol, a::Region, b::Region, opts::GeometryOperationOptions)
   op in (:intersection, :intersect) || _unsupported(Symbol(:boolean_, op), a, b)
-  (isempty(inner_paths(a)) && isempty(inner_paths(b))) ||
-    throw(UnsupportedGeometryOperation(:boolean_intersection_with_holes, (a, b)))
-  pts = _convex_polygon_intersection(path_vertices(outer_path(a)),
-                                     path_vertices(outer_path(b)),
-                                     opts.tolerance)
-  length(pts) < 3 && return multi_region()
-  region(closed_polygonal_path(pts))
+  _polygon_region_intersection(a, b, opts)
 end
 
 _analytic_boolean(op::Symbol, a, b, opts::GeometryOperationOptions) =

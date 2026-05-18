@@ -43,6 +43,10 @@ function _surface_samples_match(b, ref, surface; atol)
   end
 end
 
+function _test_point_close(p, q; atol)
+  @test _raw_distance(p, q) <= atol
+end
+
 function _curve_cases()
   cps = [xyz(0, 0, 0), xyz(1, 0, 0.2), xyz(1, 1, 0.1), xyz(2, 1, 0)]
   bs_cps = [xyz(0, 0, 0), xyz(0.5, 1, 0.2), xyz(1.5, -0.5, 0.3), xyz(2, 0.5, 0)]
@@ -102,6 +106,54 @@ function run_exact_geometry_smoke_tests(b; verify_samples::Bool=true,
         @test ref != KhepriBase.void_ref(b)
         verify_surface_samples && _surface_samples_match(b, ref, surface; atol=atol)
       end
+    end
+  end
+
+  @testset "Result-valued geometry operations" begin
+    a = line_path(xy(0, 0), xy(2, 0))
+    c = line_path(xy(1, -1), xy(1, 1))
+    if supports_geometry_operation(b, :intersections, a, c)
+      r = intersections(a, c; method=:backend, backend=b, tolerance=atol)
+      @test r isa IntersectionSet
+      @test r.method == :backend
+      _test_point_close(only(intersection_points(r)), xy(1, 0); atol=atol)
+    end
+
+    face = region(rectangular_path(xy(0, 0), 2, 2))
+    pierce = line_path(xyz(1, 1, -1), xyz(1, 1, 1))
+    if supports_geometry_operation(b, :intersections, pierce, face)
+      r = intersections(pierce, face; method=:backend, backend=b, tolerance=atol)
+      @test r isa IntersectionSet
+      @test !isempty(intersection_points(r))
+      _test_point_close(first(intersection_points(r)), xyz(1, 1, 0); atol=atol)
+    end
+
+    vertical = region(closed_polygonal_path([
+      xyz(1, -1, -1), xyz(1, 3, -1), xyz(1, 3, 1), xyz(1, -1, 1)
+    ]))
+    if supports_geometry_operation(b, :section, face, vertical)
+      r = section(face, vertical; method=:backend, backend=b, tolerance=atol)
+      @test r isa IntersectionSet
+      @test !isempty(intersection_curves(r))
+    end
+  end
+
+  if KhepriBase.backend_name(b) in ("Rhino", "AutoCAD")
+    @testset "Backend to Khepri shape mapping" begin
+      delete_all_shapes()
+      backend(b)
+      line_ref = KhepriBase.b_stroke(b, line_path(xy(0, 0), xy(2, 0)), mat)
+      circle_ref = KhepriBase.b_stroke(b, circular_path(xy(4, 0), 1), mat)
+      arc_ref = KhepriBase.b_stroke(b, arc_path(xy(7, 0), 1, 0, pi / 2), mat)
+
+      line_shape = KhepriBase.get_or_create_shape_from_ref_value(b, line_ref)
+      circle_shape = KhepriBase.get_or_create_shape_from_ref_value(b, circle_ref)
+      arc_shape = KhepriBase.get_or_create_shape_from_ref_value(b, arc_ref)
+
+      @test shape_path(line_shape) isa OpenPolygonalPath
+      @test shape_path(circle_shape) isa CircularPath
+      @test shape_path(arc_shape) isa ArcPath
+      @test length(all_shapes(; backend=b)) >= 3
     end
   end
 end
