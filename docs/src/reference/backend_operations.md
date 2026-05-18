@@ -327,9 +327,9 @@ Current direct mappings:
 
 | Backend | Native kernel/API | Advertised geometry operations |
 |---------|-------------------|--------------------------------|
-| Rhino | RhinoCommon `Intersection.CurveCurve`, `CurveBrep`, and `BrepBrep` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands; straight sampled section curves collapse to `LinePath` |
+| Rhino | RhinoCommon `Intersection.CurveCurve`, `CurveBrep`, `BrepBrep`, curve closest-point, and Brep closest-point/classification routines | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands; point projection and closest-point queries for supported paths and finite surfaces; point classification for paths and finite surfaces; straight sampled section curves collapse to `LinePath` |
 | AutoCAD | Entity `IntersectWith` | point-valued `intersections` for path/path and path/finite-surface operands |
-| FreeCAD | Open CASCADE section results through `Shape.section` | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands; straight sampled section curves collapse to `LinePath` |
+| FreeCAD | Open CASCADE section and distance queries through `Shape.section`, `distToShape`, and point containment tests | `intersections` and `section` for path/path, path/finite-surface, and finite-surface/finite-surface operands; point projection and closest-point queries for supported paths and finite surfaces; point classification for paths and finite surfaces; straight sampled section curves collapse to `LinePath` |
 
 ## Backend Geometry Mapping Report
 
@@ -350,10 +350,11 @@ report.operations.section_surface_surface
 The import fields distinguish local shape storage from remote-reference
 storage. A remote backend should provide both `b_existing_shape_refs` and
 `b_create_shape_from_ref_value` so `all_shapes`, layer queries, and selected
-backend objects can be mapped back into Khepri proxies. Rhino, AutoCAD, and
-FreeCAD now use this pathway for basic curve imports; FreeCAD currently imports
-lines, polygons, circles, arcs, sampled open curves, sampled closed curves, and
-opaque surface placeholders.
+backend objects can be mapped back into Khepri proxies. Rhino and AutoCAD use
+this pathway for basic curve imports, including ellipses when the backend can
+report native ellipse data. FreeCAD currently imports lines, polygons, circles,
+arcs, sampled open curves, sampled closed curves, and opaque surface
+placeholders.
 
 ## Backend Coverage Summary
 

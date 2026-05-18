@@ -209,6 +209,8 @@ narrative introduction.
 | `trim` | `trim(a::GeometryElement, cutters...; kwargs...)` | Trim geometry by cutters. Backend/local-kernel extension point. |
 | `project` | `project(a, target; kwargs...)` | Project geometry onto a target. Local support currently covers points and lines onto `PlaneSurface`. |
 | `closest_points` | `closest_points(a, b; kwargs...)` | Closest locations on two operands plus distance and parameter metadata. |
+| `classify_geometry` | `classify_geometry(container, item; kwargs...)` | Classify an item relative to a container, e.g. `:inside`, `:boundary`, `:outside`, `:on`, `:positive`, or `:negative`. |
+| `contains_geometry` | `contains_geometry(container, item; kwargs...)` | Boolean wrapper for inside-or-boundary classification. |
 
 ### Result containers
 
@@ -236,8 +238,9 @@ intersection_regions(result)   # Region or MultiRegion values
 
 KhepriBase currently computes line/line, line/circle, circle/circle,
 arc variants, composite-path decomposition, line/plane, plane/plane, basic
-line splitting, plane projection, and point/line closest-point operations
-locally. Other operand combinations require a backend implementation and throw
+line splitting, plane projection, point/line closest-point operations, point
+classification, and simple planar polygon intersections locally. Other operand
+combinations require a backend implementation and throw
 `UnsupportedGeometryOperation` when no implementation is available.
 
 ## High-Level Modeling

@@ -194,6 +194,16 @@ using KhepriBase
     @test length(inner_paths(holed)) == 1
     @test minimum(p.x for p in path_vertices(outer_path(holed))) ≈ 0.5 atol=1e-10
     @test maximum(p.x for p in path_vertices(outer_path(holed))) ≈ 3.5 atol=1e-10
+
+    bowtie = region(closed_polygonal_path([
+      xy(0, 0), xy(2, 2), xy(0, 2), xy(2, 0)
+    ]))
+    @test_throws ArgumentError boolean(:intersection, bowtie, a)
+
+    pinched = region(closed_polygonal_path([
+      xy(0, 0), xy(2, 0), xy(2, 2), xy(1, 2), xy(1, 0), xy(0, 2)
+    ]))
+    @test_throws ArgumentError boolean(:intersection, pinched, a)
   end
 
   @testset "classification" begin

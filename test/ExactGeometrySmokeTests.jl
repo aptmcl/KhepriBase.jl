@@ -136,6 +136,24 @@ function run_exact_geometry_smoke_tests(b; verify_samples::Bool=true,
       @test r isa IntersectionSet
       @test !isempty(intersection_curves(r))
     end
+
+    floating_point = xyz(1, 1, 0.75)
+    if supports_geometry_operation(b, :project, floating_point, face)
+      projected = project(floating_point, face; method=:backend, backend=b, tolerance=atol)
+      @test projected isa ProjectionResult
+      _test_point_close(projected.geometry, xyz(1, 1, 0); atol=atol)
+    end
+
+    if supports_geometry_operation(b, :closest_points, floating_point, face)
+      closest = closest_points(floating_point, face; method=:backend, backend=b, tolerance=atol)
+      @test closest isa ClosestPointsResult
+      _test_point_close(closest.second, xyz(1, 1, 0); atol=atol)
+    end
+
+    if supports_geometry_operation(b, :classify, face, xy(1, 1))
+      @test classify_geometry(face, xy(1, 1); method=:backend, backend=b, tolerance=atol) in (:inside, :boundary)
+      @test classify_geometry(face, xy(3, 3); method=:backend, backend=b, tolerance=atol) == :outside
+    end
   end
 
   if KhepriBase.backend_name(b) in ("Rhino", "AutoCAD", "FreeCAD")
@@ -154,6 +172,12 @@ function run_exact_geometry_smoke_tests(b; verify_samples::Bool=true,
       @test shape_path(circle_shape) isa CircularPath
       @test shape_path(arc_shape) isa ArcPath
       @test length(all_shapes(; backend=b)) >= 3
+
+      if KhepriBase.backend_name(b) in ("Rhino", "AutoCAD")
+        ellipse_ref = KhepriBase.b_stroke(b, elliptic_path(xy(10, 0), 2, 1), mat)
+        ellipse_shape = KhepriBase.get_or_create_shape_from_ref_value(b, ellipse_ref)
+        @test shape_path(ellipse_shape) isa EllipticPath
+      end
     end
   end
 end

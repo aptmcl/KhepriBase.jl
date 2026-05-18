@@ -139,6 +139,11 @@ res.distance    # shortest distance
 The ordinary `distance(a, b)` function is extended for geometry operands and
 uses `closest_points` when appropriate.
 
+Native backends may support richer projection and closest-point queries than
+the local analytic kernel. Rhino and FreeCAD, for example, can project points
+onto backend curves and finite surfaces and can ask their native kernels for
+closest points between paths or between a point and a surface.
+
 ## Classification
 
 `classify_geometry` asks where one object lies relative to another:
@@ -170,6 +175,10 @@ Only operand combinations with a local implementation or a backend override are
 supported. This is deliberate: a boolean result may have multiple disconnected
 components or holes, so callers should not expect a single `Path`.
 
+Local region booleans expect simple, non-self-intersecting polygon boundaries.
+Invalid contours are rejected before clipping instead of producing ambiguous
+loops.
+
 ## Local Coverage
 
 KhepriBase includes a small analytic kernel for common exact/toleranced cases:
@@ -185,7 +194,7 @@ KhepriBase includes a small analytic kernel for common exact/toleranced cases:
 | path/plane | decomposes paths into primitive pieces when possible |
 | line/trimmed plane | point intersections filtered by the trim boundary |
 | plane/plane | unbounded section line |
-| region/region | planar polygon intersection, including concave contours, disconnected results, and contained holes |
+| region/region | simple planar polygon intersection, including concave contours, disconnected results, and contained holes |
 | split | `LinePath` split at point intersections |
 | trim | `LinePath` trim after point intersections |
 | project | point, line segment, polygonal path, sampled path, or region to `PlaneSurface` |
@@ -215,8 +224,10 @@ for the backend side of the contract.
 
 The Rhino and FreeCAD backends can delegate curve/curve, curve/finite-surface,
 and finite-surface/finite-surface intersections to their native kernels and map
-straight sampled section curves back to `LinePath`. AutoCAD currently maps
-curve/curve and curve/finite-surface point intersections through `IntersectWith`.
+straight sampled section curves back to `LinePath`. They also advertise native
+point projection, closest-point, and point classification queries for supported
+paths and finite surfaces. AutoCAD currently maps curve/curve and
+curve/finite-surface point intersections through `IntersectWith`.
 
 ## Tolerances
 

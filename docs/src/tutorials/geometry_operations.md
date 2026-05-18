@@ -248,6 +248,12 @@ clearance = distance(fixture, path)
 This is useful for snapping, clearance checks, and placing dependent objects on
 nearby guide geometry.
 
+The same pattern is useful in higher-level modeling code. WallGraph, for
+example, computes miter and arc-wall junction points from path intersections
+instead of keeping a separate hand-written solver for every junction type. That
+keeps wall contours tied to the same geometric operations used elsewhere in the
+model.
+
 ## Classification Checks
 
 Classification is useful before committing to a modeling operation:
@@ -266,6 +272,43 @@ Use the symbolic result when boundary cases matter:
 ```julia
 classify_geometry(footprint, xy(0, 3))  # :boundary
 ```
+
+## Backend-Native Queries
+
+When a backend is active, `method=:auto` asks that backend first for operations
+it advertises. Use `backend_geometry_mapping` to inspect the current backend's
+direct mappings:
+
+```julia
+report = backend_geometry_mapping(top_backend())
+report.operations.project_point_surface
+report.operations.closest_points_path_path
+report.operations.classify_region_point
+```
+
+For operations where the native kernel matters, request it explicitly:
+
+```julia
+b = top_backend()
+face = region(rectangular_path(u0(), 5, 3))
+p = xyz(1, 1, 2)
+
+projection = project(p, face; method=:backend, backend=b)
+closest = closest_points(p, face; method=:backend, backend=b)
+where = classify_geometry(face, xy(1, 1); method=:backend, backend=b)
+```
+
+Rhino and FreeCAD map these calls to their native curve and surface kernels for
+the supported operand pairs. If the backend does not advertise the requested
+combination, KhepriBase throws `UnsupportedGeometryOperation` for
+`method=:backend` or falls back to the local kernel for `method=:auto`.
+
+Backend-native work also matters in the other direction. Shape queries such as
+`all_shapes`, layer searches, and selection import backend references through
+`get_shape` and related mapping hooks. Exact concepts such as lines, circles,
+arcs, ellipses, and splines should be reconstructed as Khepri geometry whenever
+the backend can report enough data; otherwise the import path must say that the
+result is approximate or opaque.
 
 ## Choosing Local or Backend Computation
 

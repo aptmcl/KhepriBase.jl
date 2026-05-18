@@ -1206,6 +1206,52 @@ function _point_in_polygon_2d(p, poly, tol)
   inside
 end
 
+function _segments_intersect_2d(a, b, c, d, tol)
+  if _point_on_segment_2d(a, c, d, tol) ||
+    _point_on_segment_2d(b, c, d, tol) ||
+    _point_on_segment_2d(c, a, b, tol) ||
+    _point_on_segment_2d(d, a, b, tol)
+    return true
+  end
+  o1 = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+  o2 = (b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x)
+  o3 = (d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)
+  o4 = (d.x - c.x) * (b.y - c.y) - (d.y - c.y) * (b.x - c.x)
+  ((o1 > tol && o2 < -tol) || (o1 < -tol && o2 > tol)) &&
+    ((o3 > tol && o4 < -tol) || (o3 < -tol && o4 > tol))
+end
+
+function _simple_polygon_2d(pts, tol)
+  n = length(pts)
+  n >= 3 || return false
+  for i in 1:n
+    a = pts[i]
+    b = pts[mod1(i + 1, n)]
+    distance(a, b) > tol || return false
+    for j in i+1:n
+      (j == i || j == mod1(i + 1, n) || i == mod1(j + 1, n)) && continue
+      c = pts[j]
+      d = pts[mod1(j + 1, n)]
+      _segments_intersect_2d(a, b, c, d, tol) && return false
+    end
+  end
+  true
+end
+
+function _validate_boolean_region(r::Region, opts)
+  paths = ClosedPath[outer_path(r), inner_paths(r)...]
+  for path in paths
+    pts = _clean_polygon_vertices(path_vertices(path), opts.tolerance)
+    _simple_polygon_2d(pts, opts.tolerance) ||
+      throw(ArgumentError("Region boolean requires simple, non-self-intersecting polygon boundaries."))
+  end
+  for hole in inner_paths(r)
+    _path_inside_region_2d(hole, region(outer_path(r)), opts.tolerance) ||
+      throw(ArgumentError("Region boolean requires holes to be contained in the outer boundary."))
+  end
+  r
+end
+
 function _boundary_loops_to_regions(loops, tol)
   cleaned = Vector{Loc}[]
   for loop in loops
@@ -1308,6 +1354,8 @@ end
 
 function _analytic_boolean(op::Symbol, a::Region, b::Region, opts::GeometryOperationOptions)
   op in (:intersection, :intersect) || _unsupported(Symbol(:boolean_, op), a, b)
+  _validate_boolean_region(a, opts)
+  _validate_boolean_region(b, opts)
   _polygon_region_intersection(a, b, opts)
 end
 

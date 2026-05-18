@@ -214,6 +214,10 @@ For backend-to-Khepri mapping, remote backends should also implement
 `all_shapes`, layer queries, and selected native objects become Khepri proxy
 objects again. `backend_geometry_mapping(backend)` reports whether those import
 hooks are present together with the backend's exact curve/surface capabilities.
+Preserve exact Khepri types when the backend can expose the necessary native
+data: line endpoints, circle centers and radii, arc domains, ellipse frames and
+radii, spline control data, surface trims, and so on. Fall back to sampled or
+opaque geometry only when exact reconstruction is not available.
 
 ### Tier 3 -- Solids
 
