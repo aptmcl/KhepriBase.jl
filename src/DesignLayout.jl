@@ -140,8 +140,8 @@ function _layout!(spaces, r::Repeated, x, y, z, prefix)
 end
 
 function _layout!(spaces, g::GridLayout, x, y, z, prefix)
-  col_widths = KhepriBase._grid_col_widths(g)
-  row_depths = KhepriBase._grid_row_depths(g)
+  col_widths = _grid_col_widths(g)
+  row_depths = _grid_row_depths(g)
   col_offsets = [0.0; cumsum(col_widths)]
   row_offsets = [0.0; cumsum(row_depths)]
   grid_h = 0.0

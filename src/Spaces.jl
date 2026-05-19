@@ -898,11 +898,11 @@ function build(s::Storey)
   # this picks one consistently; a proper per-wedge tessellation
   # would assign each wedge to its two flanking walls' shared
   # material, but that's a refinement for a future pass.
-  let corners = KhepriBase.all_junction_face_corners(wg),
-      top_z = wg.top_level.height * KhepriBase.wall_z_fighting_factor,
+  let corners = all_junction_face_corners(wg),
+      top_z = wg.top_level.height * wall_z_fighting_factor,
       bot_z = wg.bottom_level.height
     for j_idx in 1:length(wg.junctions)
-      let cap = KhepriBase.junction_cap_polygon(wg, j_idx, corners[j_idx]),
+      let cap = junction_cap_polygon(wg, j_idx, corners[j_idx]),
           j = wg.junctions[j_idx]
         isempty(cap) && continue
         # Pick any incident wall's family for the cap's material;

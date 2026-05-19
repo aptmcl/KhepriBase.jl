@@ -780,12 +780,12 @@ See also: src/Paths.jl `Base.reverse(::ArcPath)`, which the head relies
 on for its reversed traversal.
 =#
 frame_refs(b::Backend, s::Union{Door, Window}, subpath::Path, height) =
-  let arc = single_arc_segment(subpath)
+  let arc = single_arc_path(subpath)
     isnothing(arc) ?
       b_sweep(b, frame_path(s, subpath, height),
               s.family.frame.profile, 0, 1,
               material_ref(b, s.family.frame.material)) :
-      frame_refs_arc(b, s, arc_path_from_segment(arc), height)
+      frame_refs_arc(b, s, arc, height)
   end
 
 frame_refs(b::Backend, s::Union{Door, Window}, subpath::ArcPath, height) =
@@ -1609,14 +1609,14 @@ show_stresses(results, b::Backend=autocad) =
     for bar in frame3dd.truss_bar_data
       let diff = bar_length_variation(bar, disp),
           color = diff > 0 ?
-            KhepriBase.rgb(diff/max, 0, 0) :
-            KhepriBase.rgb(0, 0, diff/min),
+            rgb(diff/max, 0, 0) :
+            rgb(0, 0, diff/min),
           bar_radius = 0.05,
           (node1, node2) = (bar.node1, bar.node2),
           (p1, p2) = (node1.loc, node2.loc),
           (d1, d2) = disp.((node1, node2)),
           s = cylinder(p1+d1, bar_radius, p2+d2)
-        KhepriBase.@remote(b, SetShapeColor(KhepriBase.ref(b, s).value, to255(KhepriBase.red(color)), to255(KhepriBase.green(color)), to255(KhepriBase.blue(color))))
+        @remote(b, SetShapeColor(ref(b, s).value, to255(red(color)), to255(green(color)), to255(blue(color))))
       end
     end
   end

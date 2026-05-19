@@ -149,12 +149,15 @@ using KhepriBase
     @test length(arc_pieces) == 1
     @test arc_pieces[1] isa ArcPath
     @test arc_pieces[1].radius == 2
+    @test single_arc_path(arc) === arc
+    @test single_arc_segment(arc) === arc
 
     seq = path_sequence(arc, open_polygonal_path([path_end(arc), xy(0, 3)]))
     seq_pieces = path_pieces(seq)
     @test length(seq_pieces) == 2
     @test seq_pieces[1] isa ArcPath
     @test seq_pieces[2] isa LinePath
+    @test isnothing(single_arc_path(seq))
     unified = composite_path([line_path(xy(0, 0), xy(1, 0)),
                               line_path(xy(1, 0), xy(1, 1))])
     @test unified isa CompositePath{false}

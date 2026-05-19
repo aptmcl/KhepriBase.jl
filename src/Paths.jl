@@ -12,6 +12,8 @@ export empty_path,
        CompositePath,
        composite_path,
        path_pieces,
+       single_arc_path,
+       single_arc_segment,
        LinePath,
        line_path,
        EllipticArcPath,
@@ -1945,6 +1947,8 @@ single_arc_path(path::Path) =
   let pieces = path_pieces(path)
     length(pieces) == 1 && pieces[1] isa ArcPath ? pieces[1] : nothing
   end
+
+single_arc_segment(path::Path) = single_arc_path(path)
 
 pathop_piece(op::LineOp, start::Loc) =
   line_path(start, start + op.vec)

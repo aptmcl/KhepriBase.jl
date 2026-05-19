@@ -5,8 +5,8 @@ using KhepriBase
 
 export run_exact_geometry_smoke_tests
 
-_smoke_mat(b) = KhepriBase.backend_name(b) == "Rhino" ? -1 : KhepriBase.void_ref(b)
-_raw_coordinates(p::KhepriBase.Loc) = KhepriBase.raw_point(p)
+_smoke_mat(b) = backend_name(b) == "Rhino" ? -1 : KhepriBase.void_ref(b)
+_raw_coordinates(p::Loc) = raw_point(p)
 _raw_coordinates(p) = p
 
 function _raw_distance(p, q)
@@ -20,26 +20,26 @@ function _same_location(actual, expected; atol)
 end
 
 function _curve_samples_match(b, ref, path; atol)
-  domain = Tuple(KhepriBase.@remote(b, CurveDomain(ref)))
-  path_dom = KhepriBase.path_domain(path)
+  domain = Tuple(@remote(b, CurveDomain(ref)))
+  path_dom = path_domain(path)
   backend_ts = collect(range(domain[1], domain[2]; length=5))
   path_ts = collect(range(path_dom[1], path_dom[2]; length=5))
-  pts = KhepriBase.@remote(b, CurvePointsAt(ref, backend_ts))
+  pts = @remote(b, CurvePointsAt(ref, backend_ts))
   for (actual, t) in zip(pts, path_ts)
-    _same_location(actual, KhepriBase.location_at(path, t); atol=atol)
+    _same_location(actual, location_at(path, t); atol=atol)
   end
 end
 
 function _surface_samples_match(b, ref, surface; atol)
-  domain = Tuple(KhepriBase.@remote(b, SurfaceDomain(ref)))
-  surf_dom = KhepriBase.surface_domain(surface)
+  domain = Tuple(@remote(b, SurfaceDomain(ref)))
+  surf_dom = surface_domain(surface)
   backend_us = collect(range(domain[1], domain[2]; length=3))
   backend_vs = collect(range(domain[3], domain[4]; length=3))
   surface_us = collect(range(surf_dom[1], surf_dom[2]; length=3))
   surface_vs = collect(range(surf_dom[3], surf_dom[4]; length=3))
   for (bu, su) in zip(backend_us, surface_us), (bv, sv) in zip(backend_vs, surface_vs)
-    frame = KhepriBase.@remote(b, SurfaceFrameAt(ref, bu, bv))
-    _same_location(frame, KhepriBase.location_at(surface, su, sv); atol=atol)
+    frame = @remote(b, SurfaceFrameAt(ref, bu, bv))
+    _same_location(frame, location_at(surface, su, sv); atol=atol)
   end
 end
 
@@ -156,7 +156,7 @@ function run_exact_geometry_smoke_tests(b; verify_samples::Bool=true,
     end
   end
 
-  if KhepriBase.backend_name(b) in ("Rhino", "AutoCAD", "FreeCAD")
+  if backend_name(b) in ("Rhino", "AutoCAD", "FreeCAD")
     @testset "Backend to Khepri shape mapping" begin
       delete_all_shapes()
       backend(b)
@@ -173,7 +173,7 @@ function run_exact_geometry_smoke_tests(b; verify_samples::Bool=true,
       @test shape_path(arc_shape) isa ArcPath
       @test length(all_shapes(; backend=b)) >= 3
 
-      if KhepriBase.backend_name(b) in ("Rhino", "AutoCAD")
+      if backend_name(b) in ("Rhino", "AutoCAD")
         ellipse_ref = KhepriBase.b_stroke(b, elliptic_path(xy(10, 0), 2, 1), mat)
         ellipse_shape = KhepriBase.get_or_create_shape_from_ref_value(b, ellipse_ref)
         @test shape_path(ellipse_shape) isa EllipticPath
