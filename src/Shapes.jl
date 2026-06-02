@@ -1322,7 +1322,7 @@ cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real; material=default_material()) 
     cone_frustum(c, rb, h, rt, material)
   end
 @defshape(Shape3D, cylinder, cb::Loc=u0(), r::Real=1, h::Real=1)
-cylinder(cb::Loc, r::Real, ct::Loc; material=default_material()) =
+cylinder(cb::Loc, r::Real, ct::Loc, _material=default_material(); material=_material) =
   let (c, h) = position_and_height(cb, ct)
     cylinder(c, r, h, material)
   end
