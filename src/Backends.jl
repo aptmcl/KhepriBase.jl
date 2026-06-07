@@ -549,13 +549,12 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
       let buf = try 
                   receive(c) 
                 catch e
-                  if WebSockets.isok(e)
-                    @warn("Connection to backend '$(c.name)' lost.")
-                    delete_global_backend(c)
-                    break
-                  else
-                    rethrow(e)
-                  end
+                  # Symmetric cleanup on every error path: the non-isok branch
+                  # previously rethrew without removing the backend or closing the
+                  # socket, leaving a zombie backend registered with a dead socket and
+                  # a dead task. retire_dead_backend does the full delete+discard+close.
+                  retire_dead_backend(c)
+                  WebSockets.isok(e) ? break : rethrow(e)
                 end,
           target = decode(namespace, Val(:size), buf),
           args_len = decode(namespace, Val(:size), buf),
