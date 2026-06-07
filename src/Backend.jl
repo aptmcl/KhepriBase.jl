@@ -492,7 +492,7 @@ the full circle, density scales linearly with amplitude, with a floor of
 const elliptic_arc_segments = 64
 
 b_elliptic_arc(b::Backend, c, rx, ry, α, Δα, mat) =
-  Δα ≈ 0.0 ?
+  abs(Δα)*max(rx, ry) < coincidence_tolerance() ?  # mirror b_arc: guard near-coincident spans by chord length, not exact Δα==0
     void_ref(b) :
     let n = max(ceil(Int, abs(Δα) * elliptic_arc_segments / 2 / π), 8),
         pts = [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
@@ -516,7 +516,7 @@ b_surface_ellipse(b::Backend, c, rx, ry, mat) =
      for ϕ in division(0, 2pi, elliptic_arc_segments, false)], mat)
 
 b_surface_elliptic_arc(b::Backend, c, rx, ry, α, Δα, mat) =
-  Δα ≈ 0.0 ?
+  abs(Δα)*max(rx, ry) < coincidence_tolerance() ?  # mirror b_arc: guard near-coincident spans by chord length, not exact Δα==0
     void_ref(b) :
     let n = max(ceil(Int, abs(Δα) * elliptic_arc_segments / 2 / π), 8),
         arc_pts = [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))

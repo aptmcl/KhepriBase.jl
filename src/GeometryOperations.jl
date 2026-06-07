@@ -677,7 +677,9 @@ function _circle_plane_relation(a::Union{ArcPath,CircularPath}, b::Union{ArcPath
   cb = in_world(_circle_center(b))
   na = unitized(in_world(vz(1, _circle_center(a).cs)))
   nb = unitized(in_world(vz(1, _circle_center(b).cs)))
-  abs(abs(dot(na, nb)) - 1.0) > opts.tolerance && return :skew
+  # normal-alignment: dimensionless cosine deviation -> angular tolerance
+  abs(abs(dot(na, nb)) - 1.0) > coplanarity_tolerance() && return :skew
+  # plane-distance: a length -> the length-valued opts.tolerance is correct here
   abs(dot(na, cb - ca)) <= opts.tolerance ? :coplanar : :parallel_distinct
 end
 

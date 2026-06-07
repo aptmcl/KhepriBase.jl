@@ -187,11 +187,26 @@ add_wall_window!(wg::WallGraph, j_a::Int, j_b::Int; kw...) =
 
 #=== Path-Based Construction ===#
 
+#=
+Distance below which two wall endpoints are treated as the same junction (merged
+into one node). A LENGTH in model metres — distinct from collinearity_tolerance,
+which this code previously (incorrectly) borrowed: that is a triangle AREA in m²
+whose default (1e-2) merely happened to look like a 1 cm distance, so tuning
+collinearity for its own purpose silently moved junction snapping and vice versa.
+
+Default 1e-2 m (1 cm) preserves the previous de-facto behaviour; tighten it for
+fine models. See also: coincidence_tolerance (a far tighter geometric-coincidence
+length), collinearity_tolerance (the area tolerance this replaces).
+=#
+"Distance (metres) below which two wall endpoints merge into one junction."
+const junction_coincidence_tolerance = Parameter(1e-2)
+export junction_coincidence_tolerance
+
 function wall_path!(wg::WallGraph, points...;
                     closed=false,
                     family=default_wall_family(),
                     offset=0)
-  let tol = collinearity_tolerance(),
+  let tol = junction_coincidence_tolerance(),
       jids = [find_or_create_junction!(wg, p, tol) for p in points],
       pairs = closed ? [zip(jids, [jids[2:end]..., jids[1]])...] :
                        [zip(jids[1:end-1], jids[2:end])...],

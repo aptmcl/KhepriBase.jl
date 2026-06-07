@@ -283,6 +283,25 @@ mathematically zero, as distinct from two vectors being parallel).
 const parallelism_tolerance = Parameter(1e-8)
 export parallelism_tolerance, nearest_point_from_lines, circle_from_three_points
 
+#=
+Maximum |1 − |cos θ|| between two surface normals for them to count as parallel
+when deciding whether two circles/arcs are coplanar. This is a DIMENSIONLESS
+cosine deviation (≈ θ²/2 for small θ) — NOT a length, and distinct from the
+length-valued coincidence_tolerance used for the companion plane-distance test
+in _circle_plane_relation.
+
+The default 1e-7 (≈ 4.5e-4 rad ≈ 0.026°) is intentionally looser than the
+length tolerance it replaced (1e-10): these normals come from `vz(1, cs)` on
+coordinate frames whose transforms are Float32 (Mat4f), so they accumulate
+angular error that a length-valued tolerance rejects for genuinely coplanar
+geometry. Tighten it for high-precision analytic work.
+
+See also: parallelism_tolerance, coincidence_tolerance.
+=#
+"Max |1 - |cos θ|| between two normals for coplanarity classification (dimensionless cosine deviation)."
+const coplanarity_tolerance = Parameter(1e-7)
+export coplanarity_tolerance
+
 nearest_point_from_lines(l0p0::Loc, l0p1::Loc, l1p0::Loc, l1p1::Loc) =
   let u = l0p1-l0p0,
       v = l1p1-l1p0,

@@ -759,9 +759,10 @@ input arcs' sweep direction — the caller can build a forward sub-arc
 via `arc_path(center, radius, θ_start, θ_end - θ_start)`.
 =#
 "Angular overlap of two co-circular `ArcPath`s, or `nothing`."
-function cocircular_overlap(a::ArcPath, b::ArcPath, tol=coincidence_tolerance())
-  distance(path_center(a), path_center(b)) > tol && return nothing
-  abs(path_radius(a) - path_radius(b)) > tol && return nothing
+function cocircular_overlap(a::ArcPath, b::ArcPath, tol=coincidence_tolerance(),
+                            angular_tol=arc_overlap_angular_tolerance())
+  distance(path_center(a), path_center(b)) > tol && return nothing  # centre distance (metres)
+  abs(path_radius(a) - path_radius(b)) > tol && return nothing       # radius difference (metres)
   a_lo, a_hi = minmax(arc_start_angle(a), arc_end_angle(a))
   b_lo, b_hi = minmax(arc_start_angle(b), arc_end_angle(b))
   # Align b's range into the same 2π-window as a (shift by integer
@@ -770,8 +771,23 @@ function cocircular_overlap(a::ArcPath, b::ArcPath, tol=coincidence_tolerance())
   shift = round((((a_lo + a_hi) - (b_lo + b_hi)) / 2) / (2π)) * 2π
   b_lo += shift; b_hi += shift
   lo = max(a_lo, b_lo); hi = min(a_hi, b_hi)
-  (hi - lo) > tol ? (lo, hi) : nothing
+  (hi - lo) > angular_tol ? (lo, hi) : nothing   # angular overlap (radians)
 end
+
+#=
+Minimum angular overlap (radians) for two co-circular arcs to count as sharing a
+boundary segment, used by cocircular_overlap. An ANGLE, kept separate from the
+length tolerance used for the centre-distance / radius-difference checks in the
+same function: those compare metres, this compares radians, and conflating them
+is a units bug when either is tuned.
+
+Default 1e-2 rad (≈ 0.57°) preserves the prior behaviour (the length tolerance
+was reused here) and ignores negligible tangential overlaps. See also:
+coincidence_tolerance.
+=#
+"Minimum angular overlap (radians) for two co-circular arcs to share a boundary."
+const arc_overlap_angular_tolerance = Parameter(1e-2)
+export arc_overlap_angular_tolerance
 
 #=== Query Helpers ===#
 
