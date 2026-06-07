@@ -145,21 +145,31 @@ end
     subdivide_radial(base, ratios, ids)
 
 Split a polar envelope into concentric annular bands by proportional
-radial `ratios` (must sum to 1.0), naming each band from `ids`.
+radial `ratios` (normalized by their sum), naming each band from `ids`.
+`ratios` and `ids` must have the same length.
 """
 subdivide_radial(base::SpaceDesc, ratios, ids) =
-  SubdividedPolar(base, :radial, Float64.(collect(ratios)),
-                  [id isa Symbol ? id : Symbol(id) for id in ids])
+  let rv = Float64.(collect(ratios)),
+      iv = [id isa Symbol ? id : Symbol(id) for id in ids]
+    length(rv) == length(iv) ||
+      error("subdivide_radial: ratios and ids must have same length")
+    SubdividedPolar(base, :radial, rv, iv)
+  end
 
 """
     subdivide_angular(base, ratios, ids)
 
 Split a polar envelope into angular wedges by proportional `ratios`
-(must sum to 1.0), naming each wedge from `ids`.
+(normalized by their sum), naming each wedge from `ids`. `ratios` and
+`ids` must have the same length.
 """
 subdivide_angular(base::SpaceDesc, ratios, ids) =
-  SubdividedPolar(base, :angular, Float64.(collect(ratios)),
-                  [id isa Symbol ? id : Symbol(id) for id in ids])
+  let rv = Float64.(collect(ratios)),
+      iv = [id isa Symbol ? id : Symbol(id) for id in ids]
+    length(rv) == length(iv) ||
+      error("subdivide_angular: ratios and ids must have same length")
+    SubdividedPolar(base, :angular, rv, iv)
+  end
 
 """
     PartitionedPolar <: SpaceDesc
@@ -559,7 +569,16 @@ collect_ids(e::Envelope) = Symbol[e.id]
 collect_ids(b::BesideX) = vcat(collect_ids(b.left), collect_ids(b.right))
 collect_ids(b::BesideY) = vcat(collect_ids(b.front), collect_ids(b.back))
 collect_ids(a::Above) = vcat(collect_ids(a.below), collect_ids(a.above))
-collect_ids(r::Repeated) = collect_ids(r.unit)  # base ids before namespace scoping
+# Emit the per-copy scoped ids the layout actually produces (`unit_i/<id>`), so
+# assign_all/refine can match zones inside a Repeated. Exact for a top-level
+# Repeated (empty outer prefix); a Repeated nested inside another scope also picks
+# up that outer prefix, which this context-free traversal can't see — apply
+# assign_all/refine to the unit before repeat_unit in that case.
+collect_ids(r::Repeated) =
+  reduce(vcat,
+    ([_scoped_id([Symbol("unit_", i)], id) for id in collect_ids(r.unit)]
+     for i in 1:r.count);
+    init=Symbol[])
 collect_ids(g::GridLayout) =
   reduce(vcat, collect_ids(g.cell_fn(r, c)) for r in 1:g.rows, c in 1:g.cols; init=Symbol[])
 collect_ids(s::Scaled) = collect_ids(s.base)

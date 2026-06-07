@@ -207,6 +207,12 @@ function _ensure_index(l::Layout)
   isnothing(l._index) || return l._index
   idx = Dict{Symbol, Tuple{Storey, Space}}()
   for s in l.storeys, sp in s.spaces
+    # Same id on multiple storeys would silently collapse to the last one, so
+    # find_space/_storey_of would resolve it to the wrong storey. The declarative
+    # engine scopes ids per unit; the imperative Layout API has no such guard, so
+    # warn rather than fail silently.
+    haskey(idx, sp.id) &&
+      @warn "Layout has a duplicate space id :$(sp.id) across storeys; lookups resolve it to the last storey."
     idx[sp.id] = (s, sp)
   end
   l._index = idx
@@ -810,13 +816,16 @@ shared_boundary(space_a::Space, space_b::Space, tol=collinearity_tolerance()) =
 
 "Exterior-facing edges of a space within a storey as `(Loc, Loc)` pairs. Used for facade computations."
 exterior_edges(s::Storey, space::Space, tol=collinearity_tolerance()) =
-  let edges = polygon_edges(path_vertices(space.boundary)),
-      other_edges = [(b1, b2, sp)
+  # Mirror classify_all_edges: classify_edge takes a boundary component (LineEdge/
+  # ArcEdge), the space, a list of (edge, other_space) pairs, and tol, returning
+  # 6-tuples (p1, p2, kind, sp_a, sp_b, _). The previous code passed Loc pairs and
+  # a 5-arg signature that no method matched (guaranteed MethodError).
+  let other_edges = [(e, sp)
                      for sp in s.spaces if sp !== space
-                     for (b1, b2) in polygon_edges(path_vertices(sp.boundary))]
+                     for e in boundary_components(sp.boundary)]
     [(p1, p2)
-     for (a1, a2) in edges
-     for (p1, p2, kind, _, _) in classify_edge(a1, a2, space, other_edges, tol)
+     for edge in boundary_components(space.boundary)
+     for (p1, p2, kind, _, _, _) in classify_edge(edge, space, other_edges, tol)
      if kind == :exterior]
   end
 

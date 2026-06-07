@@ -41,6 +41,14 @@ _ctx_storeys(l::Layout) = l.storeys
 _ctx_storeys(r::BuildResult) = (r.storey,)
 _ctx_storeys(rs::AbstractVector{BuildResult}) = (r.storey for r in rs)
 
+# BuildResults of the context — constraints that need realized geometry (doors,
+# connections) iterate these. A Layout has nothing built yet, so such constraints
+# vacuously pass on a Layout (no violations) instead of crashing on a
+# non-BuildResult context.
+_ctx_build_results(::Layout) = BuildResult[]
+_ctx_build_results(r::BuildResult) = (r,)
+_ctx_build_results(rs::AbstractVector{BuildResult}) = rs
+
 # AdjacencyRelations in the context. Both Layout and BuildResult go
 # through `_storey_adjacencies` so the two paths share the same
 # classify_all_edges code.
@@ -163,7 +171,11 @@ area_ratio(kind_a::Symbol, kind_b::Symbol, min_ratio::Real; severity=SOFT) =
     ctx -> let
       area_a = sum((space_area(sp) for sp in _ctx_spaces(ctx) if sp.kind == kind_a); init=0.0)
       area_b = sum((space_area(sp) for sp in _ctx_spaces(ctx) if sp.kind == kind_b); init=0.0)
-      ratio = area_b > 0 ? area_a / area_b : 0.0
+      # No reference-kind (kind_b) spaces -> the ratio is undefined, not 0.0;
+      # treat it as not-applicable (vacuously satisfied) rather than reporting a
+      # spurious "= 0.0 < min_ratio" violation.
+      area_b > 0 || return Violation[]
+      ratio = area_a / area_b
       ratio >= min_ratio ? Violation[] : [Violation(
         "area_ratio_$(kind_a)_$(kind_b)", severity, AREA_PROPORTION,
         "$(kind_a)/$(kind_b)",
@@ -395,17 +407,19 @@ about physical doors until `build(layout)` runs.
 """
 has_door(; severity=HARD) = Constraint(
   "has_door", severity, CIRCULATION,
-  r::BuildResult -> [
+  ctx -> [
     Violation("has_door", severity, CIRCULATION,
       space_name(sp), "$(space_name(sp)): has no door", 0.0, 1.0)
+    for r in _ctx_build_results(ctx)
     for sp in r.storey.spaces
     if isempty(space_doors(r, sp))])
 
 has_door(kind::Symbol; severity=HARD) = Constraint(
   "has_door_$(kind)", severity, CIRCULATION,
-  r::BuildResult -> [
+  ctx -> [
     Violation("has_door_$(kind)", severity, CIRCULATION,
       space_name(sp), "$(space_name(sp)) ($(kind)): has no door", 0.0, 1.0)
+    for r in _ctx_build_results(ctx)
     for sp in r.storey.spaces
     if sp.kind == kind && isempty(space_doors(r, sp))])
 
@@ -417,9 +431,10 @@ window, or arch). BuildResult-only; inspects `storey.connections`.
 """
 has_connection(; severity=HARD) = Constraint(
   "has_connection", severity, CIRCULATION,
-  r::BuildResult -> [
+  ctx -> [
     Violation("has_connection", severity, CIRCULATION,
       space_name(sp), "$(space_name(sp)): has no connections", 0.0, 1.0)
+    for r in _ctx_build_results(ctx)
     for sp in r.storey.spaces
     if isempty([c for c in r.storey.connections
                 if c.space_a === sp || c.space_b === sp])])

@@ -171,17 +171,23 @@ end
 
 #=== Algebra ===#
 
+# In the @enum, HARD=0 < SOFT=1 < PREFERENCE=2, so the MOST-severe level is the
+# numerically smallest — pick by `min`, not `max`.
+most_severe(severities) = minimum(severities)
+
 """
     combine(constraints...)
 
 Conjoin multiple constraints into one whose check returns the
 concatenation of all inputs' violations. Takes the maximum severity.
 """
-combine(constraints::Constraint...) = Constraint(
-  join([c.name for c in constraints], " & "),
-  maximum(c.severity for c in constraints),
-  first(constraints).category,
-  ctx -> vcat((c.check(ctx) for c in constraints)...))
+combine(constraints::Constraint...) =
+  isempty(constraints) ? error("combine: needs at least one constraint") :
+  Constraint(
+    join([c.name for c in constraints], " & "),
+    most_severe(c.severity for c in constraints),
+    first(constraints).category,
+    ctx -> vcat((c.check(ctx) for c in constraints)...))
 
 """
     either(a, b)
@@ -191,7 +197,7 @@ If both fail, the fewer violations are reported.
 """
 either(a::Constraint, b::Constraint) = Constraint(
   "$(a.name) | $(b.name)",
-  max(a.severity, b.severity),
+  most_severe((a.severity, b.severity)),
   a.category,
   ctx -> let va = a.check(ctx), vb = b.check(ctx)
     isempty(va) || isempty(vb) ? Violation[] :
@@ -226,9 +232,11 @@ with_severity(constraint::Constraint, severity::ConstraintSeverity) = Constraint
 
 Concatenate multiple `ConstraintSet`s into a single set.
 """
-merge_constraints(sets::ConstraintSet...) = ConstraintSet(
-  join([s.name for s in sets], " + "),
-  vcat((s.constraints for s in sets)...))
+merge_constraints(sets::ConstraintSet...) =
+  isempty(sets) ? error("merge_constraints: needs at least one set") :
+  ConstraintSet(
+    join([s.name for s in sets], " + "),
+    vcat((s.constraints for s in sets)...))
 
 #=== Fixer Loop ===#
 

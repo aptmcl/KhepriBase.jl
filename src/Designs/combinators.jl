@@ -317,7 +317,10 @@ function assign_all(desc, id_prefix, use; props=(;))
   prefix_str = String(id_prefix) * "_"
   ids = filter(collect_ids(desc)) do id
     s = String(id)
-    startswith(s, prefix_str) && all(isdigit, s[length(prefix_str)+1:end])
+    # require a non-empty numeric suffix: all(isdigit, "") is vacuously true, so
+    # the bare `<prefix>_` (e.g. :lobby_) would otherwise match the zone pattern.
+    suffix = startswith(s, prefix_str) ? s[length(prefix_str)+1:end] : ""
+    !isempty(suffix) && all(isdigit, suffix)
   end
   result = desc
   for id in ids
