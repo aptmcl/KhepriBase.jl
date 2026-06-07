@@ -53,9 +53,16 @@ macro defcb(expr)
           try
             $(backend_name)(backend, $(pnames...))
           catch e
-            e isa Base.IOError && backend isa RemoteBackend ?
-              (retire_dead_backend(backend); rethrow()) :
-              rethrow()
+            #= Single-backend dispatch shares one retire policy with @defcbs:
+               handle_backend_error retires a RemoteBackend on the transport-
+               class error set Union{IOError, ArgumentError, EOFError} and lets
+               every other error fall through to its rethrowing generic method.
+               The trailing rethrow() is load-bearing and is what makes this
+               differ from the @defcbs loop: that loop swallows after retiring
+               so it can proceed to the next backend, but a single-backend op
+               has no fallback target, so a dead-backend failure must propagate
+               rather than silently return the retire path's value. =#
+            handle_backend_error(e, backend); rethrow()
           end
           # We use a default definition for a Any backend to avoid conflict with a similar def in Backend.jl
 #      $(backend_name)(backend::Any, $(map(name_typ_init->Expr(:(::), name_typ_init[1], name_typ_init[2]), params_data)...)) =

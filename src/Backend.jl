@@ -1251,8 +1251,19 @@ public b_subtracted, b_intersected, b_united,
 @bdef b_intersect_ref(sref, mref)
 b_unite_ref(b::Backend, sref, mref) = vcat(sref, mref)
 
+#=
+The default `b_unite_ref` is `vcat`, so this fold accumulates raw refs into a
+`Vector{T}`; `ensure_ref` then wraps the result. An empty `rs` (a degenerate
+ContourPath/Region/Mesh with no pieces, reaching here via `b_stroke_unite`)
+must yield the empty-ref value `new_refs(b)` -- an empty `T[]` -- NOT
+`void_ref(b)`: `void_ref` is a raw sentinel scalar that `ensure_ref` would wrap
+as a NativeRef to a phantom shape, whereas `new_refs(b)` wraps as an empty
+NativeRefs (no shapes), the correct identity of a union. A single-element `rs`
+is returned unchanged by `foldl` (it never calls the reducer): the bare scalar
+ref, the intended 1-curve/1-solid result.
+=#
 b_unite_refs(b::Backend, rs) =
-  foldl((s, r)->b_unite_ref(b, s, r), rs)
+  isempty(rs) ? new_refs(b) : foldl((s, r)->b_unite_ref(b, s, r), rs)
 
 b_subtracted_surfaces(b::Backend, source, mask, mat) =
   b_subtracted(b, source, mask, mat)
@@ -1551,7 +1562,14 @@ b_text(b::Backend, str, p, size, mat) =
     inter_letter_spacing_factor = 1/3,
     refs = new_refs(b)
     for c in str
-      let glyph = letter_glyph[c]
+      #= The glyph table covers only printable ASCII (0x20-0x7e). This portable
+         text path is the fallback used by b_dimension/b_dim_line, so a stray
+         accented, Unicode, tab, or newline char must not crash the render with a
+         KeyError. We degrade to the '?' glyph — the conventional font .notdef
+         stand-in, guaranteed present in letter_glyph — so the unrenderable char
+         shows as a visible marker. b_text_size below must use the same fallback
+         so the measured box matches what gets drawn. =#
+      let glyph = get(letter_glyph, c, letter_glyph['?'])
         for vs in glyph.vss
           push!(refs, b_line(b, [add_xy(p, dx + v[1]*size, v[2]*size) for v in vs], mat))
         end
@@ -1565,7 +1583,9 @@ b_text_size(b::Backend, str, size, mat) =
   let dx = 0, minx = 0, maxx = 0, miny = 0, maxy = 0,
     inter_letter_spacing_factor = 1/3
     for c in str
-      let glyph = letter_glyph[c]
+      # Same '?' fallback as b_text (see the prose block there): unknown chars
+      # are measured as the .notdef glyph so the box matches what is drawn.
+      let glyph = get(letter_glyph, c, letter_glyph['?'])
     minx = min(minx, dx + glyph.bb[1][1])
     maxx = max(maxx, dx + glyph.bb[2][1]-glyph.bb[1][1])
         dx += glyph.bb[2][1]-glyph.bb[1][1] + inter_letter_spacing_factor

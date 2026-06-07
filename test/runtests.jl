@@ -40,6 +40,7 @@ using Test
   @testset "Shape System" begin
     include("test_shapes.jl")
     include("test_backend.jl")
+    include("test_default_ops.jl")
   end
 
   # Phase 4: Extended Features tests

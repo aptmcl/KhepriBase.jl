@@ -641,7 +641,13 @@ public b_layer, b_current_layer_ref,
 b_layer(b::Backend, name, visible, color) = BasicLayer(name, visible, color)
 b_current_layer_ref(b::Backend) = b.current_layer
 b_current_layer_ref(b::Backend, layer) = b.current_layer = layer
-b_all_shapes_in_layer(b::Backend, layer) = b.layers[layer]
+# `b.layers` is populated lazily (a key appears only once a shape is added to that
+# layer, via `get!(layers, cur, Proxy[])`).  A layer that exists but holds no shapes
+# has no key, so index with `get(...)` and fall back to an empty collection rather
+# than raising KeyError.  `Proxy[]` is the broadest element type: layers may hold
+# both Shapes and Annotations (both <: Proxy), and it is assignment-compatible with
+# every concrete `b.layers` value type (Vector{Proxy} or Vector{Shape}).
+b_all_shapes_in_layer(b::Backend, layer) = get(b.layers, layer, Proxy[])
 b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_in_layer(b, layer))
 b_set_layer_material(b::Backend, layer_ref, material_ref) = nothing
 b_set_layer_visible(b::Backend, layer, visible) = nothing
@@ -903,7 +909,10 @@ KhepriBase.b_delete_shape(b::LocalBackend, shape::Proxy) =
   end
 
 KhepriBase.b_all_shapes(b::LocalBackend) = local_shape_storage(b)
-KhepriBase.b_all_shapes_in_layer(b::LocalBackend, layer) = local_layer_index(b)[layer]
+# Mirror the generic default: the layer index is filled lazily by `save_shape!`
+# (`get!(local_layer_index(b), cur, Proxy[])`), so an empty layer has no key.
+# Use `get` to return an empty `Proxy[]` instead of throwing KeyError.
+KhepriBase.b_all_shapes_in_layer(b::LocalBackend, layer) = get(local_layer_index(b), layer, Proxy[])
 
 KhepriBase.b_realistic_sky(b::LocalBackend, date, latitude, longitude, elevation, meridian, turbidity, sun) =
   begin

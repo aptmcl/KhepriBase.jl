@@ -436,20 +436,54 @@ dolly_effect_pull_back(delta) = begin
 end
 
 #=
-To collect the camera/target/lens path
+To collect the camera/target/lens path.
+
+Interactively builds the control path for a camera animation: each iteration
+asks the user to pick/confirm a position in the viewport (select_position),
+then captures the resulting view via get_view() as a (camera, target, lens)
+tuple. The user ends collection by cancelling the pick, which yields an empty
+tail. The recursion is on this same function: the original code referenced an
+undefined select_camera_target_lens_path, but the collector is simply its own
+tail. This mirrors the collect-until-cancel idiom used by b_select_positions.
+The (camera, target, lens) shape matches what interpolate_view_save_frames
+consumes below (p[1], p[2], p[3]) and what get_view returns.
 =#
 
 select_camera_target_lens_positions() =
   isnothing(select_position()) ?
     [] :
-    [get_view(), select_camera_target_lens_path()...]
+    [get_view(), select_camera_target_lens_positions()...]
 
+#=
+ctl_positions is a list of (camera, target, lens) triples (as returned by
+get_view / select_camera_target_lens_positions). The camera and target paths
+are resampled to nframes+1 locations through an open spline; the lens must be
+resampled to the SAME count or the per-frame zip in set_view_save_frames would
+truncate to the shortest and desynchronise the lens from the motion.
+
+Lens is a scalar with no meaningful curvature, so it is interpolated
+piecewise-linearly across the control lenses (spline-framing collinear scalars
+throws on the zero second derivative). We use the numeric map_division over
+[0,1], which yields nframes+1 samples — matching the spline map_division above.
+The four set_view_save_frames vectors (cameras, targets, lenses, apertures) are
+thus equal length, selecting the (Locs, Locs, Vector, Vector) method. Aperture
+is not part of the control positions, so it is held at the current default.
+=#
 interpolate_view_save_frames(ctl_positions, nframes) =
-  set_view_save_frames(
-    map_division(
-      in_world,
-      open_spline_path(map(p -> p[1], ctl_positions)), nframes),
-    map_division(
-      in_world,
-      open_spline_path(map(p -> p[2], ctl_positions)), nframes),
-    map(p -> p[3], ctl_positions))
+  let ctl_lenses = map(p -> p[3], ctl_positions),
+      last_ctl = length(ctl_lenses) - 1,
+      lenses = map_division(
+        t -> let s = t*last_ctl, i = clamp(floor(Int, s), 0, last_ctl-1), f = s - i
+               ctl_lenses[i+1]*(1-f) + ctl_lenses[i+2]*f
+             end,
+        0.0, 1.0, nframes, true)
+    set_view_save_frames(
+      map_division(
+        in_world,
+        open_spline_path(map(p -> p[1], ctl_positions)), nframes),
+      map_division(
+        in_world,
+        open_spline_path(map(p -> p[2], ctl_positions)), nframes),
+      lenses,
+      fill(default_aperture(), length(lenses)))
+  end
