@@ -1328,26 +1328,6 @@ cylinder(cb::Loc, r::Real, ct::Loc, _material=default_material(); material=_mate
   end
 
 #=
-An isosurface is surface that is described by the implícit equation
-
-F(x,y,z) = k
-
-It is frequent to use the simpler form
-
-G(x,y,z) = 0,
-
-by defining G(x,y,z) = F(x,y,z) - k
-
-The name 'iso' means 'same value', which comes from the fact that F(x,y,z) has
-always the same value. The idea is that we sample all points in space, applying
-F to each one, and we those where F returns k (or G returns zero) belong to the
-isosurface. There are several algorithms that speed up this sampling process,
-being the marching cubes the most popular one.
-=#
-
-@defshape(Shape3D, isosurface, frep::Function=loc->sph_rho(loc), bounding_box::Locs=[xyz(-1,-1,-1), xyz(+1,+1,+1)])
-
-#=
 The profile fields below are deliberately Union types instead of plain Path /
 Region. With a strictly-typed field, the @defproxy constructor would call
 `convert(Path, profile)` (resp. `convert(Region, profile)`), which deletes the
