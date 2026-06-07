@@ -1183,6 +1183,32 @@ corner; `dir_left` / `dir_right` are their tangent directions
 leaving the junction (as from `segment_direction`); `l_th` /
 `r_th` are the relevant half-thicknesses.
 =#
+#=
+SHARED ARC-OFFSET CONVENTION (see also `segment_mesh`'s `lr_at`).
+
+A face at half-thickness `h` on an arc wall offsets the *radius*, not
+the position: the INNER face (the one whose outward normal points
+back toward the arc centre) sits on radius `R - h`, the OUTER face on
+`R + h`. Which of left/right is inner is NOT fixed — it flips with the
+arc's sweep orientation (CW vs CCW). So we cannot just add `h`
+unconditionally (the previous bug: every offset grew outward, putting
+an inner-face corner on the `R + h` circle, off the real face).
+
+We derive inner/outer the orientation-independent way: take the
+face's outward normal at the junction (the same `±perp(dir)` used for
+the straight-wall anchor points above) and dot it with the radial
+direction `centre -> junction`. A positive dot means the face points
+away from the centre (outer, `R + h`); negative means it points back
+toward the centre (inner, `R - h`). `_arc_offset_radius` packages
+this so the line/arc and arc/arc branches share one rule, and so it
+matches the mid-wall offsets `segment_mesh` produces.
+=#
+_arc_offset_radius(arc::ArcPath, pos::Loc, face_normal, half_th::Real) =
+  let radial = pos - arc.center,
+      outward = cx(face_normal) * cx(radial) + cy(face_normal) * cy(radial)
+    arc.radius + (outward >= 0 ? half_th : -half_th)
+  end
+
 function wall_corner(pos::Loc,
                      seg_left::WallSegment, dir_left,
                      seg_right::WallSegment, dir_right,
@@ -1191,6 +1217,10 @@ function wall_corner(pos::Loc,
   # along each segment's outward-facing normal.
   p_left  = xy(cx(pos) - cy(dir_left)  * l_th, cy(pos) + cx(dir_left)  * l_th)
   p_right = xy(cx(pos) + cy(dir_right) * r_th, cy(pos) - cx(dir_right) * r_th)
+  # Outward face normals, matching the anchor-point offsets above:
+  # left face is `dir` rotated +90°, right face rotated -90°.
+  n_left  = vxy(-cy(dir_left),  cx(dir_left))
+  n_right = vxy( cy(dir_right), -cx(dir_right))
   arc_l = seg_left.arc
   arc_r = seg_right.arc
   if isnothing(arc_l) && isnothing(arc_r)
@@ -1198,18 +1228,19 @@ function wall_corner(pos::Loc,
     line_intersection_2d(p_left, dir_left, p_right, dir_right)
   elseif isnothing(arc_l) && !isnothing(arc_r)
     # Line / arc: the right-side offset is a circle at arc_r.center
-    # with radius arc_r.radius shifted outward by r_th.
-    let r = arc_r.radius + r_th
+    # whose radius is shifted in (inner) or out (outer) per the
+    # shared arc-offset convention — see `_arc_offset_radius`.
+    let r = _arc_offset_radius(arc_r, pos, n_right, r_th)
       _nearest(line_arc_intersection_2d(p_left, dir_left, arc_r.center, r), pos)
     end
   elseif !isnothing(arc_l) && isnothing(arc_r)
-    let r = arc_l.radius + l_th
+    let r = _arc_offset_radius(arc_l, pos, n_left, l_th)
       _nearest(line_arc_intersection_2d(p_right, dir_right, arc_l.center, r), pos)
     end
   else
-    # Arc / arc: two offset circles.
-    let rl = arc_l.radius + l_th,
-        rr = arc_r.radius + r_th
+    # Arc / arc: two offset circles, each signed by its own face side.
+    let rl = _arc_offset_radius(arc_l, pos, n_left,  l_th),
+        rr = _arc_offset_radius(arc_r, pos, n_right, r_th)
       _nearest(arc_arc_intersection_2d(arc_l.center, rl, arc_r.center, rr), pos)
     end
   end
@@ -1418,11 +1449,40 @@ function segment_mesh(wg, seg_idx, jc)
   dir = unitized(pos_b - pos_a)
   l_th = l_thickness(seg.offset, fam.thickness)
   r_th = r_thickness(seg.offset, fam.thickness)
+  #=
+  Mid-wall face offsets for an arc segment (SHARED ARC-OFFSET CONVENTION,
+  see also wall_corner). For a circular wall the centerline point at
+  arc-length `t·seg_len` lies on the circle (centre C, radius R); the two
+  faces are concentric circles, NOT chord-parallel lines. The face at
+  half-thickness h offsets the radius: the INNER face (toward C) is R−h, the
+  OUTER face is R+h. Which of left/right is inner is fixed by the sweep
+  orientation: the left normal of the sweep tangent, rot90(tangent) = (−dy,dx),
+  points toward C for a CCW arc (amplitude>0) and away from C for a CW arc.
+  Equivalently `leftn = −sign(amplitude)·radial_outward`, so left = p + leftn·l_th
+  and right = p − leftn·r_th — the SAME (−dy,dx)/(+dy,−dx) offset formula as the
+  straight branch, but applied at the arc point along the LOCAL radial normal
+  instead of the chord perpendicular. This yields |C−left| = R∓l_th and
+  |C−right| = R±r_th (sign by sweep), the same radius split wall_corner uses for
+  the t=0/1 mitered corners so the strips connect. Openings already index by
+  arc-length (segment_length returns the arc length), so `t·seg_len` lands them
+  on the curve.
+  =#
+  arc_lr_at(t) =
+    let p = in_world(location_at_length(seg.arc, t * seg_len)),
+        c = in_world(seg.arc.center),
+        rad = unitized(p - c),
+        s = sign(seg.arc.amplitude),
+        lnx = -s * cx(rad), lny = -s * cy(rad)  # left normal = -sign(amp)·radial
+      (xy(cx(p) + lnx * l_th, cy(p) + lny * l_th),
+       xy(cx(p) - lnx * r_th, cy(p) - lny * r_th))
+    end
   function lr_at(t)
     if t <= 0
       (left_a, right_a)
     elseif t >= 1
       (left_b, right_b)
+    elseif !isnothing(seg.arc)
+      arc_lr_at(t)
     else
       let cx_c = cx(pos_a) + t * (cx(pos_b) - cx(pos_a)),
           cy_c = cy(pos_a) + t * (cy(pos_b) - cy(pos_a))
@@ -1434,6 +1494,21 @@ function segment_mesh(wg, seg_idx, jc)
 
   # Horizontal break points as fractions of seg_len
   breaks = Float64[0.0]
+  #=
+  Arc tessellation: a solid arc with no openings would otherwise be a single
+  strip from t=0 to t=1 — one straight quad between the mitered ends, losing
+  all curvature. Add interior break points so the arc is sampled into
+  arc_segment_count(amplitude) sub-strips (the same density splines/circles
+  use, `path_smoothness_segments` per 2π). Straight segments add no interior
+  breaks here, so their geometry is unchanged.
+  =#
+  if !isnothing(seg.arc)
+    let n = arc_segment_count(seg.arc.amplitude)
+      for k in 1:n-1
+        push!(breaks, k / n)
+      end
+    end
+  end
   op_ranges = Tuple{Float64, Float64, WallSegmentOpening}[]
   for op in sort(seg.openings, by=o -> o.distance)
     let t0 = op.distance / seg_len,

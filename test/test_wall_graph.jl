@@ -940,4 +940,79 @@ end
       @test add_wall_window!(wg, sids[1], at=3.0, sill=1.2).distance ≈ 3.0 atol=TOL
     end
   end
+
+  # WALLGRAPH-4 + WALLGRAPH-10: arc walls are now tessellated along the arc with a
+  # radial offset (was a straight chord quad), and arc miter corners land on the
+  # correct R-h (inner) / R+h (outer) offset circle. Straight walls are unchanged.
+  # NOTE: full visual correctness (watertight rendered joins) needs a rendering
+  # backend; these assert the headless geometry the rewrite guarantees.
+  @testset "Arc wall segment_mesh curvature (WALLGRAPH-4)" begin
+    tri_area(a, b, c) =
+      let ux=cx(b)-cx(a), uy=cy(b)-cy(a), uz=cz(b)-cz(a),
+          vx=cx(c)-cx(a), vy=cy(c)-cy(a), vz=cz(c)-cz(a)
+        0.5*sqrt((uy*vz-uz*vy)^2 + (uz*vx-ux*vz)^2 + (ux*vy-uy*vx)^2)
+      end
+    quad_area(v, q) = tri_area(v[q[1]],v[q[2]],v[q[3]]) + tri_area(v[q[1]],v[q[3]],v[q[4]])
+    C = xy(0, 0); R = 10.0
+    @testset "solid CCW arc curves and faces lie on R-h / R+h" begin
+      wg = wall_graph(level=level(0), height=3.0)
+      ja = junction!(wg, xy(R, 0)); jb = junction!(wg, xy(0, R))
+      s  = arc_segment!(wg, ja, jb; center=C, amplitude=pi/2)
+      seg = wg.segments[s]; seg_len = KhepriBase.segment_length(wg, s)
+      l_th = KhepriBase.l_thickness(seg.offset, seg.family.thickness)
+      r_th = KhepriBase.r_thickness(seg.offset, seg.family.thickness)
+      m = KhepriBase.segment_mesh(wg, s, KhepriBase.compute_junction_corners(wg))
+      @test length(m.quads) > 6
+      @test length(m.quads) == 2*KhepriBase.arc_segment_count(pi/2) + 4
+      for t in (0.2, 0.5, 0.8)
+        p   = in_world(KhepriBase.location_at_length(seg.arc, t*seg_len))
+        rad = unitized(p - in_world(seg.arc.center)); sgn = sign(seg.arc.amplitude)
+        lnx = -sgn*cx(rad); lny = -sgn*cy(rad)
+        left  = xy(cx(p)+lnx*l_th, cy(p)+lny*l_th)
+        right = xy(cx(p)-lnx*r_th, cy(p)-lny*r_th)
+        @test isapprox(distance(C, left),  R - l_th; atol=1e-9)
+        @test isapprox(distance(C, right), R + r_th; atol=1e-9)
+      end
+      @test all(quad_area(m.vertices, q) > 1e-9 for q in m.quads)
+    end
+    @testset "straight segment unaffected (single 6-face strip)" begin
+      wg = wall_graph(level=level(0), height=3.0)
+      a = junction!(wg, xy(0, 0)); b = junction!(wg, xy(5, 0))
+      s = segment!(wg, a, b)
+      m = KhepriBase.segment_mesh(wg, s, KhepriBase.compute_junction_corners(wg))
+      @test length(m.quads) == 6
+    end
+  end
+
+  @testset "WALLGRAPH-10 arc-corner offset sign" begin
+    # A face on the arc's INNER side lands on R-h, the OUTER face on R+h. The
+    # left/right -> inner/outer mapping flips with sweep orientation, so assert
+    # via the orientation-independent radial test.
+    let R = 5.0, C = xy(0, 0), a1 = pi/3, tol = 1e-4
+      pA = xy(R, 0.0)
+      pB = xy(R*cos(a1), R*sin(a1))
+      tanb = vxy(-sin(a1), cos(a1))          # CCW arc tangent leaving pB
+      pCc = xy(cx(pB) + 2*cx(tanb), cy(pB) + 2*cy(tanb))
+      wg = wall_graph()
+      jA = junction!(wg, pA); jB = junction!(wg, pB); jC = junction!(wg, pCc)
+      s_arc = arc_segment!(wg, jA, jB; center=C, amplitude=a1)
+      segment!(wg, jB, jC)
+      h = wg.segments[s_arc].family.thickness / 2
+      cs = KhepriBase.compute_junction_corners(wg)
+      (r_arc, l_arc) = cs[jB][s_arc]
+      ds = sort([distance(C, l_arc), distance(C, r_arc)])
+      @test isapprox(ds[1], R - h; atol=tol)   # inner face on R-h (was R+h: the bug)
+      @test isapprox(ds[2], R + h; atol=tol)   # outer face on R+h
+      @test ds[2] - ds[1] > h                   # faces non-degenerate
+    end
+    # Straight-only L-corner unchanged (line/line branch untouched).
+    let wg = wall_graph()
+      q1 = junction!(wg, xy(0,0)); q2 = junction!(wg, xy(4,0)); q3 = junction!(wg, xy(4,3))
+      sa = segment!(wg, q1, q2); segment!(wg, q2, q3)
+      cs = KhepriBase.compute_junction_corners(wg)
+      (r1, l1) = cs[q2][sa]
+      @test isapprox(cx(r1), 3.9; atol=1e-9) && isapprox(cy(r1), 0.1; atol=1e-9)
+      @test isapprox(cx(l1), 4.1; atol=1e-9) && isapprox(cy(l1), -0.1; atol=1e-9)
+    end
+  end
 end
