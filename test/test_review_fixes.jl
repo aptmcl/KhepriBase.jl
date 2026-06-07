@@ -42,6 +42,21 @@
 
   @testset "stair step count" begin
     @test KhepriBase.stair_step_count(3.0, 0.18) == Int(round(3.0 / 0.18))
+    # BIM-7: clamp to >= 1 so a zero/short total height can't divide-by-zero in b_stair.
+    @test KhepriBase.stair_step_count(0.0, 0.18) == 1
+    @test KhepriBase.stair_step_count(0.05, 0.18) == 1
+  end
+
+  @testset "used_materials(TableChairFamily) is a flat tuple (BIM-3)" begin
+    f = KhepriBase.default_table_chair_family()
+    ms = KhepriBase.used_materials(f)
+    @test ms isa Tuple
+    # No element may be a nested Tuple: the missing chair splat produced
+    # (table_mat, (chair_mat,)), and pushing a Tuple into a Set{Material}
+    # crashed material collection on local backends.
+    @test all(m -> !(m isa Tuple), ms)
+    @test length(ms) == length(KhepriBase.used_materials(f.table_family)) +
+                        length(KhepriBase.used_materials(f.chair_family))
   end
 
   @testset "fallback frustum and circular curve extrusion" begin

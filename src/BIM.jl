@@ -373,6 +373,22 @@ backend_family(b::Backend, family::Family) =
     end
   end
 
+# Like backend_family, but returns `nothing` instead of erroring when no
+# implementation is found — for call sites (Door/Window/Table/Chair realize) that
+# fall back to a generic geometry branch. Crucially it walks based_on/default
+# delegation, so an OBJ family installed on a base family is honoured (the bare
+# `get(implemented_as, typeof(b), nothing)` it replaces did not).
+maybe_backend_family(b::Backend, family::Family) =
+  get(family.implemented_as, typeof(b)) do
+    if !isnothing(family.based_on)
+      maybe_backend_family(b, family.based_on)
+    else
+      let default = _default_family_for(typeof(family))
+        default !== nothing && default !== family ? maybe_backend_family(b, default) : nothing
+      end
+    end
+  end
+
 # Backends will install their own families on top of the default families, e.g.,
 # set_backend_family(default_beam_family(), revit, revit_beam_family)
 set_backend_family(family::Family, backend::Backend, backend_family::Family) =
@@ -728,7 +744,7 @@ used_materials(f::WindowFamily) = (f.right_material, f.left_material, f.side_mat
 @defproxy(window, BIMShape, wall::Wall=required(), loc::Loc=u0(), flip_x::Bool=false, flip_y::Bool=false, angle::Real=0, family::WindowFamily=default_window_family())
 
 realize(b::Backend, s::Union{Door, Window}) =
-  let bf = get(s.family.implemented_as, typeof(b), nothing)
+  let bf = maybe_backend_family(b, s.family)
     if bf isa OBJFamily
       let base_height = s.wall.bottom_level.height + s.loc.y,
           sp = subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width),
@@ -933,15 +949,18 @@ meta_program(w::Wall) =
       has_doors = !isempty(w.doors),
       has_windows = !isempty(w.windows)
     if has_doors || has_windows
-      has_doors && push!(kwargs,
-        Expr(:kw, :doors,
-             Expr(:vect, [Expr(:tuple, meta_program(d.loc), meta_program(d.family))
-                          for d in w.doors]...)))
-      has_windows && push!(kwargs,
-        Expr(:kw, :windows,
-             Expr(:vect, [Expr(:tuple, meta_program(wn.loc), meta_program(wn.family))
-                          for wn in w.windows]...)))
-      Expr(:call, :wall_with_openings, path, kwargs...)
+      # Portable reconstruction: build the wall, then add each opening. Emitting
+      # `wall_with_openings` (defined only in some backends, with differing
+      # signatures, and absent from KhepriBase) is non-portable and crashes with
+      # UndefVarError when the generated program is eval'd in plain Khepri.
+      Expr(:let,
+           Expr(:(=), :__wall, Expr(:call, :wall, path, kwargs...)),
+           Expr(:block,
+                (Expr(:call, :add_door, :__wall, meta_program(d.loc), meta_program(d.family))
+                 for d in w.doors)...,
+                (Expr(:call, :add_window, :__wall, meta_program(wn.loc), meta_program(wn.family))
+                 for wn in w.windows)...,
+                :__wall))
     else
       Expr(:call, :wall, path, kwargs...)
     end
@@ -1186,14 +1205,14 @@ used_materials(f::ChairFamily) = (f.material, )
   spacing::Real=0.7)
 
 used_materials(f::TableChairFamily) =
-  (used_materials(f.table_family)..., used_materials(f.chair_family))
+  (used_materials(f.table_family)..., used_materials(f.chair_family)...)
 
 
 @defproxy(table, BIMShape, loc::Loc=u0(), level::Level=default_level(), family::TableFamily=default_table_family())
 table(loc::Loc, angle::Real, level=default_level(), family::TableFamily=default_table_family()) =
   table(loc_from_o_phi(loc, angle), level, family)
 realize(b::Backend, s::Table) =
-  let bf = get(s.family.implemented_as, typeof(b), nothing)
+  let bf = maybe_backend_family(b, s.family)
     if bf isa OBJFamily
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(add_z(s.loc, s.level.height), bf))
     else
@@ -1210,7 +1229,7 @@ realize(b::Backend, s::Table) =
 chair(loc::Loc, angle::Real, level::Level=default_level(), family::ChairFamily=default_chair_family()) =
   chair(loc_from_o_phi(loc, angle), level, family)
 realize(b::Backend, s::Chair) =
-  let bf = get(s.family.implemented_as, typeof(b), nothing)
+  let bf = maybe_backend_family(b, s.family)
     if bf isa OBJFamily
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(add_z(s.loc, s.level.height), bf))
     else
@@ -1296,8 +1315,8 @@ realize(b::Backend, s::Sink) =
 @deffamily(closet_family, Family,
   )
 
-@defproxy(closet, BIMShape, cb::Loc=u0(), host::BIMShape=slab(), family::ClosetFamily=default_closet_family())
-closet(cb::Loc, Angle::Real=0, Host::BIMShape=slab(), Family::ClosetFamily=default_closet_family(); 
+@defproxy(closet, BIMShape, cb::Loc=u0(), host::BIMShape=missing_slab(), family::ClosetFamily=default_closet_family())
+closet(cb::Loc, Angle::Real=0, Host::BIMShape=missing_slab(), Family::ClosetFamily=default_closet_family(); 
        angle::Real=Angle, host::BIMShape=Host, family::ClosetFamily=Family) =
   closet(loc_from_o_phi(cb, angle), host, family)
 
@@ -1524,7 +1543,7 @@ process_bars(bars, processed_nodes) =
 export view_truss_deformation
 view_truss_deformation(
   results::Any=nothing,
-  visualizer::Backend=autocad;
+  visualizer::Backend=top_backend();
   factor::Real=100) =
   let disp = node_displacement_function(results),
       b = top_backend()
@@ -1547,7 +1566,7 @@ view_truss_deformation(
 public show_truss_deformation
 show_truss_deformation(
     results::Any=nothing,
-    visualizer::Backend=autocad;
+    visualizer::Backend=top_backend();
     node_radius::Real=0.08, bar_radius::Real=0.02, factor::Real=100,
     deformation_name::String="Deformation",
     deformation_color::RGB=rgb(1, 0, 0),

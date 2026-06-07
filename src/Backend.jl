@@ -1883,7 +1883,7 @@ b_ramp(b::Backend, path, bottom_level, top_level, family) =
 
 public stair_step_count
 stair_step_count(total_h, riser_height) =
-  Int(round(total_h / riser_height))
+  max(1, Int(round(total_h / riser_height)))
 
 #=
 `base_point` is the bottom-left corner when looking up the stair (along
