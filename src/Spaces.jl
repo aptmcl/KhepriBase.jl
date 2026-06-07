@@ -456,6 +456,12 @@ polygon_edges(vertices) =
 
 "Shoelace-formula polygon area using world-space xy coordinates."
 polygon_area(vertices) =
+  # An empty boundary has zero area. Guarding here is mandatory, not
+  # cosmetic: with n == 0 the edge wrap `mod1(i + 1, 0)` divides by zero
+  # and `sum(... for i in 1:0)` reduces over an empty collection and
+  # throws. Returning 0.0 matches `_space_bbox`, which likewise reports
+  # zeros for an empty boundary.
+  isempty(vertices) ? 0.0 :
   let n = length(vertices),
       ws = [in_world(v) for v in vertices]
     abs(sum(cx(ws[i]) * cy(ws[mod1(i + 1, n)]) -
@@ -552,6 +558,11 @@ end
 space_perimeter(space::Space) =
   let vs = path_vertices(space.boundary),
       n = length(vs)
+    # An empty boundary has zero perimeter. Without this guard the edge
+    # wrap `mod1(i + 1, 0)` divides by zero and `sum(... for i in 1:0)`
+    # reduces over an empty collection and throws. Returning 0.0 mirrors
+    # `_space_bbox`, which reports zeros for an empty boundary.
+    n == 0 ? 0.0 :
     sum(distance(vs[i], vs[mod1(i + 1, n)]) for i in 1:n)
   end
 

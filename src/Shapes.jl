@@ -1402,7 +1402,19 @@ revolve(profile=point(x(1)), args...; kargs...) =
 @defshape(Shape3D, loft_surface_point, profile::Shape2D=surface_circle(), point::Shape0D=point(z(1)))
 
 loft(profiles::Shapes=Shape[], args...; kargs...) =
-  if all(is_point, profiles)
+  #= A loft interpolates a solid/surface/curve BETWEEN cross sections, so it
+     needs at least two of them. The dispatch below keys on `all(is_point,
+     profiles)`, `all(is_curve, profiles)`, etc., and `all` is VACUOUSLY TRUE
+     on an empty vector: an empty `profiles` therefore silently routes to
+     `loft_points`, which either throws an opaque `MethodError` (when the
+     element type cannot convert to `Shape0D`, e.g. `loft(Shape[])`) or
+     silently builds a degenerate zero-point spline (`loft(Shape0D[])`). A
+     single profile is likewise geometrically meaningless. Guard up front so
+     callers get an actionable message instead of a downstream MethodError or
+     silent garbage. `loft_ruled` delegates here, so it is covered too. =#
+  if length(profiles) < 2
+    error("loft requires at least two cross sections; got $(length(profiles))")
+  elseif all(is_point, profiles)
     loft_points(profiles, args...; kargs...)
   elseif all(is_curve, profiles)
     loft_curves(profiles, args...; kargs...)
@@ -1499,6 +1511,12 @@ bounding_rectangle(s::Union{Line, Polygon}) =
     bounding_rectangle(s.vertices)
 
 bounding_rectangle(pts::Locs) =
+    #= A bounding rectangle is seeded from pts[1]; with no points there is no
+    corner to seed min/max from. Fail loudly with an actionable message rather
+    than throwing a raw BoundsError on pts[1] (e.g. when an empty Line/Polygon
+    or an empty selection flows in through bounding_rectangle(ss::Shapes)). =#
+    isempty(pts) ?
+        error("Cannot compute a bounding rectangle of an empty set of points") :
     let min_p = pts[1]
         max_p = min_p
         for i in 2:length(pts)
@@ -1904,7 +1922,10 @@ capture_shape(s=select_shape("Select shape to be captured")) =
   end
 
 capture_shapes(ss=select_shapes("Select shapes to be captured")) =
-    generate_captured_shapes(ss, backend(ss[1]))
+    # A cancelled/empty selection yields no shapes; nothing to capture (cf. capture_shape's isnothing guard).
+    if ! isempty(ss)
+        generate_captured_shapes(ss, backend(ss[1]))
+    end
 
 export register_for_changes
 register_for_changes(shapes::Shapes) =
@@ -1919,6 +1940,8 @@ unregister_for_changes(shapes::Shapes) =
   end
 
 waiting_for_changes(shapes::Shapes) =
+  # No shapes to watch -> never waiting; lets on_change's loop exit cleanly instead of indexing shapes[1] (cf. bounding_box's isempty guard).
+  isempty(shapes) ? false :
   waiting_for_changes(shapes[1], backend(shapes[1]))
 
 export on_change

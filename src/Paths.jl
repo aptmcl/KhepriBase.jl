@@ -279,7 +279,13 @@ is_closed_path(path::Path) = false
 is_closed_path(path::ClosedPath) = true
 is_open_path(path::Path) = ! is_closed_path(path)
 # To avoid duplicate convertions, we also deal with Locs
-is_closed_path(pts::Locs) = coincident_path_location(pts[1], pts[end])
+#= A point list with fewer than two vertices is not a closed path: an empty
+list has no endpoints to compare (and would raise a BoundsError on pts[1]),
+and a lone point trivially satisfies pts[1] == pts[end] yet encloses no loop.
+Reporting such a degenerate list as closed is what drives an empty
+vertices[1:end-1] into closed_polygonal_path (-> BoundsError). =#
+is_closed_path(pts::Locs) =
+  length(pts) >= 2 && coincident_path_location(pts[1], pts[end])
 
 # Default path domain, probably only makes sense for Splines.
 path_domain(path::Path) = (0, 1)
@@ -411,7 +417,13 @@ closed_polygonal_path(vertices=[u0(), x(), xy(), y()]) =
 
 PolygonalPath = Union{OpenPolygonalPath, ClosedPolygonalPath}
 
+#= A polygonal path needs at least two vertices to span a segment. A single
+vertex with coincident endpoints would otherwise route into
+closed_polygonal_path(vertices[1:end-1]) on an empty list and raise a
+BoundsError deep inside ensure_no_repeated_locations; fail early and clearly. =#
 polygonal_path(vertices::Locs=[u0(), x(), xy(), y(), u0()]) =
+  length(vertices) < 2 ?
+    throw(ArgumentError("A polygonal path needs at least two vertices.")) :
   coincident_path_location(vertices[1], vertices[end]) ?
     closed_polygonal_path(vertices[1:end-1]) :
     open_polygonal_path(vertices)
@@ -430,9 +442,21 @@ path_domain(path::PolygonalPath) = (0, path_length(path))
 location_at(path::PolygonalPath, ϕ::Real) = location_at_length(path, ϕ)
 planar_path_normal(path::PolygonalPath) = vertices_normal(path_vertices(path))
 
+#=
+When the two paths meet end-to-start, the shared vertex is dropped to avoid a
+zero-length segment. The collinearity test is a further optimisation: if the
+vertex before the join (p1.vertices[end-1]), the shared vertex, and the vertex
+after the join (p2.vertices[2]) are collinear, the shared vertex itself is
+redundant and removed too. That test indexes [end-1] and [2], so a single-vertex
+path (e.g. an open_polygonal_path with one location, which the constructor does
+not forbid) would index vertices[0] / vertices[2] and raise a BoundsError. Guard
+it with the length checks: when either path is too short there is no middle
+vertex to elide, so fall through to plain concatenation keeping the shared vertex.
+=#
 join_paths(p1::OpenPolygonalPath, p2::OpenPolygonalPath) =
     coincident_path_location(p1.vertices[end], p2.vertices[1]) ?
-      collinear_points(p1.vertices[end-1], p1.vertices[end], p2.vertices[2]) ?
+      length(p1.vertices) >= 2 && length(p2.vertices) >= 2 &&
+        collinear_points(p1.vertices[end-1], p1.vertices[end], p2.vertices[2]) ?
         polygonal_path([p1.vertices[1:end-1]..., p2.vertices[2:end]...]) :
         polygonal_path([p1.vertices[1:end-1]..., p2.vertices...]) :
       polygonal_path([p1.vertices..., p2.vertices...])
@@ -1069,6 +1093,7 @@ location_at_length(path::OpenSplinePath, d::Real) =
 location_at_length(path::ClosedSplinePath, d::Real) =
   location_at_length(convert(ClosedPolygonalPath, path), d)
 path_length(ps::Locs) =
+  isempty(ps) ? 0.0 : # an empty point list has zero length (avoids ps[1] BoundsError)
   let p = ps[1]
       l = 0.0
     for i in 2:length(ps)
@@ -2036,20 +2061,29 @@ curve_knots(interpolator) =
 
 convert(::Type{ClosedPolygonalPath}, path::CompositePath{true}) =
   let paths = path.pieces,
-      vertices = []
+      vertices = Loc[]
     for path in paths
       append!(vertices, convert(OpenPolygonalPath, path).vertices[1:end-1])
     end
+    #= A composite whose every piece is degenerate (zero-length) contributes no
+       vertices, so `vertices` ends up empty. Constructing closed_polygonal_path([])
+       would BoundsError in ensure_no_repeated_locations (it reads locs[1]/locs[end]).
+       Match the constructor style of closed_path_sequence and refuse explicitly. =#
+    isempty(vertices) && throw(ArgumentError("Cannot convert a degenerate composite path (no vertices) to a ClosedPolygonalPath."))
     closed_polygonal_path(vertices)
   end
 
 convert(::Type{OpenPolygonalPath}, path::CompositePath{false}) =
   let paths = path.pieces,
-      vertices = []
+      vertices = Loc[]
     for path in paths[1:end-1]
       append!(vertices, convert(OpenPolygonalPath, path).vertices[1:end-1])
     end
     append!(vertices, convert(OpenPolygonalPath, paths[end]).vertices)
+    #= If every piece is degenerate the accumulator stays empty; open_polygonal_path([])
+       yields an OpenPolygonalPath with no vertices that BoundsErrors downstream
+       (path_start/.vertices[1]). Refuse explicitly, mirroring the closed variant. =#
+    isempty(vertices) && throw(ArgumentError("Cannot convert a degenerate composite path (no vertices) to an OpenPolygonalPath."))
     open_polygonal_path(vertices)
   end
 convert(::Type{OpenPolygonalPath}, path::CompositePath{true}) =
@@ -2062,8 +2096,27 @@ convert(::Type{ClosedPath}, paths::Vector{<:Path}) =
 # It is possible to convert a PathSet to a singleton path
 # by considering the first path as the outer path and all the
 # others as inner paths
+#=
+The foldl below needs at least one path and only yields a ClosedPath when
+`subtract_paths` actually runs (2+ paths). Two degenerate inputs reach
+here — both produced by `_analytic_trim`/`path_set()` (GeometryOperations)
+and by `flatten_paths` over a single-element CSG result (Shapes):
+
+- An empty PathSet would make `foldl` reduce over an empty collection
+  ("reduce over empty collection"), since there is no `init`. There is no
+  outer boundary to build a closed path from, so we error — matching
+  `closed_path_sequence`, the analogous closed-path-from-list constructor.
+- A singleton PathSet would make `foldl` return the held path verbatim,
+  bypassing `subtract_paths`; that path can be open (e.g. a LinePath from
+  a trim), violating the declared ClosedPath return type. We convert it
+  explicitly so the result is always a ClosedPath.
+=#
 convert(::Type{ClosedPath}, pset::PathSet) =
-  foldl(subtract_paths, pset.paths)
+  isempty(pset.paths) ?
+    throw(ArgumentError("Cannot convert an empty PathSet to a ClosedPath: there is no outer boundary.")) :
+    length(pset.paths) == 1 ?
+      convert(ClosedPath, pset.paths[1]) :
+      foldl(subtract_paths, pset.paths)
 
 #### Utilities
 path_vertices(path::Union{PolygonalPath,InterpolatingSplinePath}) =

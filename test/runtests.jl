@@ -32,6 +32,7 @@ using Test
     include("test_geometry_operations.jl")
     include("test_tolerances.jl")
     include("test_review_fixes.jl")
+    include("test_degenerate_inputs.jl")
   end
 
   # Phase 3: Shape System tests
