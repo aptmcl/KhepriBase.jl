@@ -407,9 +407,14 @@ gen_addition(C, c, Vc, vc) =
     p.cs === v.cs ? xyz(getfield(p, :raw) - getfield(v, :raw), p.cs) : p - in_cs(v, p.cs)
 (-)(p::Pol, v::Union{VX,VXY,VPol,VPold}) =
     pol(xy(p) - v)
-(-)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VSph}) =
+#= Mirror the vector Union of the matching (+) methods above: a cylindrical
+   location must accept subtraction of a cylindrical vector (VCyl), and a
+   spherical location a spherical vector (VSph). The work is done in world
+   cartesian space (xyz(p) - v) and reprojected, so every Vec subtype is valid;
+   omitting the matching curvilinear type only caused a spurious MethodError. =#
+(-)(p::Cyl, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
     cyl(xyz(p) - v)
-(-)(p::Sph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl}) =
+(-)(p::Sph, v::Union{VX,VXY,VXYZ,VPol,VPold,VCyl,VSph}) =
     sph(xyz(p) - v)
 (-)(p::X, q::X) =
     p.cs === q.cs ? vx(p.x - q.x, p.cs) : p - in_cs(q, p.cs)

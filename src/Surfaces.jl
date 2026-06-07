@@ -289,10 +289,49 @@ surface_points(s::SurfaceGeometry; mode::Symbol=:sample, u_count::Integer=path_s
   mode === :sample ? sample_surface_points(s, u_count, v_count) :
   throw(ArgumentError("$(typeof(s)) has no control-point grid."))
 
+#=
+Closedness predicates for the sampling/tessellation grid.
+
+A `SurfacePatch{ClosedU,ClosedV}` carries, in its type, whether each parameter
+direction is periodic (a "seam" where `u1` maps back to `u0` — see
+`surface_parameter`, which wraps via `mod`). Sampling and tessellation must know
+this to avoid emitting a duplicated seam row/column. Any surface that does not
+expose these type parameters (e.g. `Mesh`, `TrimmedSurface`) is treated as open;
+`TrimmedSurface` has its own tessellation method that culls faces by trim region
+and must never wrap, so the open default is the correct fallback for it too.
+See also: surface_parameter, sample_surface_points, tessellate_surface.
+=#
+surface_closed_u(::SurfaceGeometry) = false
+surface_closed_v(::SurfaceGeometry) = false
+surface_closed_u(::SurfacePatch{ClosedU,ClosedV}) where {ClosedU,ClosedV} = ClosedU
+surface_closed_v(::SurfacePatch{ClosedU,ClosedV}) where {ClosedU,ClosedV} = ClosedV
+
+#=
+Half-open sampling along closed (periodic) directions.
+
+`range(t0, t1; length=count+1)` samples the CLOSED interval `[t0,t1]` inclusive,
+which is correct for an open surface but wrong for a closed one: there the seam
+makes `t1` map to the same physical point as `t0` (`surface_parameter` wraps via
+`mod`), so the first and last rows/columns coincide. Tessellating that grid
+produces a redundant strip of duplicated/zero-area quads along the seam.
+
+For a closed direction we therefore drop the duplicated endpoint and keep only
+the `count` interior-plus-start samples over the HALF-OPEN interval `[t0,t1)`.
+Because we reuse the same `count+1` partition and merely discard its last point,
+every retained sample is byte-identical to the corresponding open-surface sample
+(no resampling drift). The omitted point is re-supplied at tessellation time by
+wrapping the face indices modulo `count`, which closes the seam with a single
+band of non-degenerate quads. See also: tessellate_surface, surface_closed_u.
+=#
+sample_axis(t0::Real, t1::Real, count::Integer, closed::Bool) =
+  let ts = collect(range(t0, t1; length=Int(count) + 1))
+    closed ? ts[1:end-1] : ts
+  end
+
 function sample_surface_points(s::SurfaceGeometry, u_count::Integer, v_count::Integer)
   u0, u1, v0, v1 = surface_domain(s)
-  us = collect(range(u0, u1; length=Int(u_count) + 1))
-  vs = collect(range(v0, v1; length=Int(v_count) + 1))
+  us = sample_axis(u0, u1, u_count, surface_closed_u(s))
+  vs = sample_axis(v0, v1, v_count, surface_closed_v(s))
   [surface_location(s, u, v) for u in us, v in vs]
 end
 
@@ -341,9 +380,26 @@ trimmed_surface_contains(s::TrimmedSurface, u::Real, v::Real) =
 function tessellate_surface(s::SurfaceGeometry; u_count::Integer=path_smoothness_segments(), v_count::Integer=path_smoothness_segments())
   pts = sample_surface_points(s, u_count, v_count)
   nu, nv = size(pts)
+  closed_u, closed_v = surface_closed_u(s), surface_closed_v(s)
+  #=
+  Cell counts and wrapped indexing close the seam without a duplicate row.
+
+  An open direction has `n` samples and `n-1` cells between consecutive rows.
+  A closed direction has `n` samples (the duplicated endpoint was dropped) and
+  `n` cells: the extra cell bridges the last sample back to the first. We wrap
+  the "next" index with `mod1`, so on the seam cell `i+1` (or `j+1`) refers to
+  sample 1 again instead of running off the grid. For open directions the
+  cell count is `n-1` and no wrap ever fires, reproducing the original mesh
+  byte-for-byte. See also: sample_surface_points, surface_closed_u.
+  =#
+  ncu = closed_u ? nu : nu - 1
+  ncv = closed_v ? nv : nv - 1
+  wu(i) = closed_u ? mod1(i, nu) : i
+  wv(j) = closed_v ? mod1(j, nv) : j
   idx(i, j) = (j - 1) * nu + (i - 1)
-  faces = [[idx(i, j), idx(i + 1, j), idx(i + 1, j + 1), idx(i, j + 1)]
-           for j in 1:nv-1 for i in 1:nu-1]
+  faces = [[idx(wu(i), wv(j)), idx(wu(i + 1), wv(j)),
+            idx(wu(i + 1), wv(j + 1)), idx(wu(i), wv(j + 1))]
+           for j in 1:ncv for i in 1:ncu]
   mesh(vec(pts), faces)
 end
 

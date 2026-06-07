@@ -199,12 +199,36 @@ closest_vertices_indexes(pts1, pts2) =
     min_i, min_j
   end
 
+#=
+`point_in_segment` decides whether `r` lies on the closed segment p--q
+(endpoints included). The previous implementation compared the per-axis
+ratios cx(pr)/cx(pq), cy(pr)/cy(pq), cz(pr)/cz(pq): for ANY axis-aligned
+segment one component of pq is 0, turning a ratio into 0/0 (NaN) or k/0
+(Inf), so a point genuinely ON a horizontal, vertical or planar segment
+was rejected — silently corrupting `subtract_polygon_vertices` on the
+axis-aligned edges that dominate building polygons. The ratio test also
+ignored the segment bounds, accepting collinear points beyond an endpoint.
+
+Instead we project r onto the segment's line by the parameter
+  t = dot(pr, pq) / dot(pq, pq)  (t = 0 at p, t = 1 at q),
+clamp t to [0, 1] so the foot of the projection stays on the *segment*
+(this is what keeps the endpoints in and points past them out), and accept
+r iff its distance to that foot is within coincidence_tolerance() — the
+codebase's length-valued "same point" tolerance (1e-10 m), used here exactly
+as in `coincident_path_location`. A zero-length segment (dot(pq, pq) == 0)
+has no line to project onto, so r is in it iff it coincides with p.
+
+See also: coincidence_tolerance, distance, collinear_segments.
+=#
 point_in_segment(r, p, q) =
-  let pr = r-p,
-      pq = q-p,
-      rx = cx(pr)/cx(pq),
-      ry = cy(pr)/cy(pq)
-    isapprox(rx, ry) && isapprox(ry, cz(pr)/cz(pq))
+  let pq = q-p,
+      pr = r-p,
+      d2 = dot(pq, pq)
+    d2 == 0 ?
+      distance(r, p) <= coincidence_tolerance() :
+      let t = clamp(dot(pr, pq)/d2, 0, 1)
+        distance(p + pq*t, r) <= coincidence_tolerance()
+      end
   end
 
 collinear_segments(p1, p2, q1, q2) =

@@ -744,18 +744,30 @@ function _line_circle_points(line::LinePath, circle::Union{ArcPath,CircularPath}
   if abs(z0) <= opts.tolerance && abs(z1) <= opts.tolerance
     fx = p0.x - c.x
     fy = p0.y - c.y
+    #= `a` is the squared in-plane length of the segment. When it vanishes the
+       segment projects to a single in-plane point (a zero-length line, or one
+       normal to the circle plane), so the quadratic a·t²+b·t+q is singular and
+       -b/(2a) is 0/0 = NaN. Guard against that: only solve when the in-plane
+       length exceeds the coincidence tolerance (compared squared, hence
+       tolerance^2), otherwise treat the segment as its point p0 and test
+       point-on-circle directly so a degenerate line lying on the circle still
+       yields its single intersection instead of being dropped as NaN. =#
     a = dx*dx + dy*dy
-    b = 2 * (fx*dx + fy*dy)
-    q = fx*fx + fy*fy - _circle_radius(circle)^2
-    disc = b*b - 4*a*q
-    if disc >= -opts.tolerance
-      if abs(disc) <= opts.tolerance
-        push!(ts, -b / (2*a))
-      else
-        root = sqrt(max(0.0, disc))
-        push!(ts, (-b - root) / (2*a))
-        push!(ts, (-b + root) / (2*a))
+    if a > opts.tolerance^2
+      b = 2 * (fx*dx + fy*dy)
+      q = fx*fx + fy*fy - _circle_radius(circle)^2
+      disc = b*b - 4*a*q
+      if disc >= -opts.tolerance
+        if abs(disc) <= opts.tolerance
+          push!(ts, -b / (2*a))
+        else
+          root = sqrt(max(0.0, disc))
+          push!(ts, (-b - root) / (2*a))
+          push!(ts, (-b + root) / (2*a))
+        end
       end
+    elseif abs(hypot(fx, fy) - _circle_radius(circle)) <= opts.tolerance
+      push!(ts, 0.0)
     end
   elseif abs(dz) > opts.tolerance
     t = -z0 / dz
@@ -1040,6 +1052,15 @@ end
 
 function _polygon_signed_area(pts)
   n = length(pts)
+  #= A polygon needs at least 3 vertices to enclose any area; with fewer it is a
+     point or a segment whose signed area is exactly 0. Guarding here is also a
+     correctness fix, not just a niceness: with n = 0 the shoelace `sum` below is
+     an empty reduction and throws ArgumentError. Some callers (e.g. _dedupe_holes
+     on path_vertices of an arbitrary hole) reach this without an upstream n >= 3
+     filter, so the degenerate case must be handled here. Returning 0.0 keeps the
+     sign-based dispatch in the callers correct: such loops are subsequently
+     dropped by _polygon_area_large_enough (area > tol^2 fails at 0). =#
+  n < 3 && return 0.0
   sum(pts[i].x * pts[mod1(i + 1, n)].y - pts[mod1(i + 1, n)].x * pts[i].y
       for i in 1:n) / 2
 end
