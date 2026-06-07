@@ -2,6 +2,7 @@
 
 using Test
 using KhepriBase
+using LinearAlgebra
 
 @testset "Coords" begin
 
@@ -568,6 +569,31 @@ using KhepriBase
     ps = sph(p4)
     @test ps.ρ ≈ 1 atol=1e-10
     @test ps.ψ ≈ 0 atol=1e-10
+  end
+
+  @testset "Audit regression: rigid rotation & curvilinear vector negation" begin
+    # COORDS-1: rotated_around_p_v_cs must be a rigid rotation about its axis
+    # point. The (3,4) translation slot previously held a duplicate of m32
+    # instead of m34, producing a sheared, non-orthogonal transform.
+    # (Mat4f is Float32, so tolerances are ~1e-5, still far below the bug.)
+    let n = 1/√3, cs = rotated_around_p_v_cs(world_cs, 1, 2, 3, n, n, n, 0.7)
+      R = cs.transform[1:3, 1:3]
+      @test R'R ≈ Matrix(I, 3, 3) atol=1e-5         # orthonormal: no shear
+      @test det(R) ≈ 1 atol=1e-5                     # proper rotation, not a reflection
+      @test (cs.transform * [1.0, 2, 3, 1])[1:3] ≈ [1, 2, 3] atol=1e-5  # axis point fixed
+    end
+    # COORDS-3 & 4: negating a polar/cyl/sph vector must flip its world
+    # coordinates and preserve its reference frame. The cs argument was dropped
+    # (frame leak) and the spherical case used -ψ instead of π-ψ (wrong sign).
+    let cs = KhepriBase.translated_cs(world_cs, 10, 20, 30)
+      for v in (KhepriBase.vpol(2, 0.5, cs),
+                KhepriBase.vcyl(2, 0.5, 1.3, cs),
+                KhepriBase.vsph(2, 0.5, 0.9, cs))
+        nv = -v
+        @test all(abs.((nv.x, nv.y, nv.z) .- (-v.x, -v.y, -v.z)) .< 1e-6)
+        @test nv.cs === v.cs
+      end
+    end
   end
 
 end

@@ -168,7 +168,7 @@ rotated_around_p_v_cs(cs::CS, a::Real, b::Real, c::Real, u::Real, v::Real, w::Re
     CS(cs.transform * Mat4f([
           m11 m12 m13 m14;
           m21 m22 m23 m24;
-          m31 m32 m33 m32;
+          m31 m32 m33 m34;
           0 0 0 1]))
   end
 
@@ -429,9 +429,18 @@ gen_addition(C, c, Vc, vc) =
 (-)(v::VX) = vx(-v.x, v.cs)
 (-)(v::VXY) = vxy(-v.x, -v.y, v.cs)
 (-)(v::VXYZ) = vxyz(-v.x, -v.y, -v.z, v.cs)
-(-)(v::VPol) = vpol(v.ρ, v.ϕ+π)
-(-)(v::VCyl) = vcyl(v.ρ, v.ϕ+π, -v.z)
-(-)(v::VSph) = vsph(v.ρ, v.ϕ+π, -v.ψ)
+#=
+Negation must preserve the vector's reference frame (`v.cs`); the curvilinear
+constructors default `cs` to `current_cs()`, so omitting it silently
+reinterprets a negated polar/cyl/sph vector in whatever frame happens to be
+current. For the spherical case, with the convention vsph builds
+(ρ·cϕ·sψ, ρ·sϕ·sψ, ρ·cψ), negating (x,y,z) needs ϕ→ϕ+π (flips cϕ,sϕ) AND
+ψ→π−ψ (keeps sψ, flips cψ). Using −ψ instead flips sψ as well, which leaves x
+and y positive — i.e. −v ≠ v off the z=0 plane.
+=#
+(-)(v::VPol) = vpol(v.ρ, v.ϕ+π, v.cs)
+(-)(v::VCyl) = vcyl(v.ρ, v.ϕ+π, -v.z, v.cs)
+(-)(v::VSph) = vsph(v.ρ, v.ϕ+π, π-v.ψ, v.cs)
 
 
 (*)(v::VX, r::Real) =

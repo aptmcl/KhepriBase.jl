@@ -688,11 +688,16 @@ b_surface_ring(b::Backend, c, ri, ro, mat) =
     [regular_polygon_vertices(64, c, ri, 0, true)],
     mat)
 
+# Mirrors b_arc (see its prose block above): abs(Δα) so clockwise (negative-Δα)
+# arcs sample by their true span instead of collapsing to the 2-sample floor,
+# and the same near-coincident degenerate guard that emits void_ref.
 b_surface_arc(b::Backend, c, r, α, Δα, mat) =
-  b_ngon(b,
-         [c + vpol(r, a, c.cs)
-          for a in division(α, α + Δα, max(ceil(Int, Δα*32/2/π), 2), true)],
-         c, false, mat)
+  abs(Δα)*r < coincidence_tolerance() ?
+    void_ref(b) :
+    b_ngon(b,
+           [c + vpol(r, a, c.cs)
+            for a in division(α, α + Δα, max(ceil(Int, abs(Δα)*32/2/π), 2), true)],
+           c, false, mat)
 
 @bdef(b_surface_closed_spline(ps, mat))
 
@@ -1345,9 +1350,10 @@ b_stroke(b::Backend, path::Region, mat) =
   [b_stroke(b, path, mat) for path in path.paths]
 b_stroke(b::Backend, path::Mesh, mat) =
   let vs = path.vertices
-    for face in path.faces
-      b_line(b, vs[face.+1], mat) #1-indexed
-    end
+    # Collect and unite the per-face line refs (see the prose block below): a
+    # bare for-loop would discard each ref and return `nothing`, breaking any
+    # downstream consumer of the stroked-mesh ref.
+    b_stroke_unite(b, [b_line(b, vs[face.+1], mat) for face in path.faces], mat) #1-indexed
   end
 #=
 CompositePath stroke must return a single ref so downstream consumers (e.g.

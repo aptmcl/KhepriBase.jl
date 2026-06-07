@@ -84,4 +84,28 @@
     c1 = surface_circle(xy(0.5, 0), 1)
     @test_throws ArgumentError KhepriBase.shape_path(union(c0, c1))
   end
+
+  @testset "b_surface_arc samples clockwise arcs (BACKEND-1)" begin
+    # The default sample count dropped abs(Δα), so a negative (clockwise) span
+    # clamped to the 2-sample floor and rendered as a coarse triangle fan.
+    b = mock_backend()
+    reset_mock_backend!(b)
+    b_surface_arc(b, u0(), 5, 0, 2π, nothing)
+    pos = length(b.triangles)
+    reset_mock_backend!(b)
+    b_surface_arc(b, u0(), 5, 0, -2π, nothing)
+    neg = length(b.triangles)
+    @test neg == pos      # clockwise span sampled like the counter-clockwise one
+    @test neg > 3         # not collapsed to the 2-sample floor
+  end
+
+  @testset "b_stroke(::Mesh) returns a usable ref (BACKEND-3)" begin
+    # The Mesh stroke was a bare for-loop returning `nothing`, discarding every
+    # per-face line ref; it must unite and return them like the other strokes.
+    b = mock_backend()
+    reset_mock_backend!(b)
+    r = b_stroke(b, mesh([u0(), ux(), uxy(), uy()], [[0, 1, 2], [0, 2, 3]]), nothing)
+    @test r !== nothing
+    @test length(b.lines) == 2   # one polyline per face
+  end
 end

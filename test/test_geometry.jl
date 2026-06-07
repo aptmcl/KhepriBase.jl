@@ -246,6 +246,17 @@ using KhepriBase
       idxs_closed_u = quad_grid_indexes(3, 3, true, false)
       @test length(idxs_closed_u) > length(quad_grid_indexes(3, 3, false, false))
     end
+
+    @testset "quad_grid closed_u has no degenerate seam quad" begin
+      # COORDS-2: the closed-U seam previously emitted
+      # quad(pts[si,j], pts[1,j], pts[si,j+1], pts[si,j+1]) — a duplicated
+      # vertex — instead of pts[1,j+1], collapsing every seam quad.
+      pts = [xyz(cos(2π*i/3), sin(2π*i/3), Float64(j)) for i in 0:2, j in 0:3]
+      quads = Tuple{Any,Any,Any,Any}[]
+      quad_grid((a, b, c, d) -> push!(quads, (a, b, c, d)), pts, true, false)
+      @test !isempty(quads)
+      @test all(q -> length(unique([q...])) == 4, quads)
+    end
   end
 
   @testset "Vector helpers" begin

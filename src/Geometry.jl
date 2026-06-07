@@ -413,7 +413,7 @@ quad_grid(quad, points, closed_u, closed_v) =
     end
     if closed_u
       for j in 1:sj-1
-        quad(pts[si,j], pts[1,j], pts[si,j+1], pts[si,j+1])
+        quad(pts[si,j], pts[1,j], pts[1,j+1], pts[si,j+1])
       end
       if closed_v
         quad(pts[si,sj], pts[1,sj], pts[1,1], pts[si,1])
