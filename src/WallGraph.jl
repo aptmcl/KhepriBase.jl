@@ -151,16 +151,43 @@ function arc_segment!(wg::WallGraph, j_a::Int, j_b::Int;
   end
 end
 
+#=
+An opening occupies the arc-length interval [dist, dist + family.width] measured
+from junction_a along the segment centerline. `segment_length` returns the true
+arc length for curved segments and the chord length for straight ones, so this
+single check is geometry-agnostic: it guards straight and arc walls alike. The
+interval must lie inside [0, seg_len]. An oversized opening — e.g. a default 1 m
+door on a 0.6 m partition wall — otherwise produces a negative `distance`, and
+`segment_mesh` maps it to fractions t0 < 0 / t1 > 1, emitting reveal strips that
+start or end outside the wall. The slack is `coincidence_tolerance` (a length,
+~1e-10 m): it absorbs only floating-point round-off — e.g. a door exactly as wide
+as the wall, dist == 0 — not real overflow.
+
+See also: `segment_length`, `segment_mesh` (consumes `distance` as t0/t1),
+`WallSegmentOpening`.
+=#
+"Error unless an opening of `width` placed at `dist` fits inside a `seg_len` segment."
+function validate_opening_fit(seg_len, dist, width)
+  let tol = coincidence_tolerance()
+    dist < -tol &&
+      error("Opening starts before the wall: distance $dist < 0 (segment length $seg_len)")
+    dist + width > seg_len + tol &&
+      error("Opening does not fit: distance ($dist) + width ($width) exceeds segment length $seg_len")
+  end
+end
+
 # Add door to a segment by index. at = distance from junction_a; nothing = centered.
 function add_wall_door!(wg::WallGraph, seg_idx::Int;
                         at=nothing,
                         family=default_door_family())
   let seg = wg.segments[seg_idx],
       seg_len = segment_length(wg, seg_idx),
-      dist = isnothing(at) ? (seg_len - family.width) / 2 : at,
-      op = WallSegmentOpening(:door, dist, 0.0, family)
-    push!(seg.openings, op)
-    op
+      dist = isnothing(at) ? (seg_len - family.width) / 2 : at
+    validate_opening_fit(seg_len, dist, family.width)
+    let op = WallSegmentOpening(:door, dist, 0.0, family)
+      push!(seg.openings, op)
+      op
+    end
   end
 end
 
@@ -171,10 +198,12 @@ function add_wall_window!(wg::WallGraph, seg_idx::Int;
                           family=default_window_family())
   let seg = wg.segments[seg_idx],
       seg_len = segment_length(wg, seg_idx),
-      dist = isnothing(at) ? (seg_len - family.width) / 2 : at,
-      op = WallSegmentOpening(:window, dist, sill, family)
-    push!(seg.openings, op)
-    op
+      dist = isnothing(at) ? (seg_len - family.width) / 2 : at
+    validate_opening_fit(seg_len, dist, family.width)
+    let op = WallSegmentOpening(:window, dist, sill, family)
+      push!(seg.openings, op)
+      op
+    end
   end
 end
 
@@ -644,13 +673,39 @@ function abutment_extension(wg::WallGraph, seg_idx::Int, at_junction::Int)
   end
 end
 
-# Find the most collinear pair among segments at a junction
+# Find the most collinear pair among segments at a junction.
+#
+# A "through-pair" is two segments whose tangents leave the junction
+# nearly back-to-back, so the junction is treated as a wall passing
+# straight through (the T-junction case). The match is on TANGENT
+# direction only, which is geometrically meaningful for two straight
+# walls but NOT for an arc: an arc's near face is a circular offset of
+# its centerline, so its tangent at the junction says nothing about
+# where its face actually lies a finite distance away.
+#
+# Down-stream, the through-pair routes the junction to
+# `t_junction_corners`, whose abutting branch intersects the abutting
+# wall's offset lines with a STRAIGHT face line through the junction in
+# the through-wall's tangent direction. For an arc through-wall that
+# straight line is the tangent to the face circle, not the face itself,
+# so the abutting wall would get a flat-faced corner sitting off the arc
+# (corrupting the centerline-adjacent geometry). `abutment_extension`
+# already refuses arc through-walls for the same reason. Until the exact
+# line/arc (and arc/arc) face intersection is wired into
+# `t_junction_corners`, we exclude any pair containing an arc here so
+# the junction falls back to the fully arc-aware `miter_corners` /
+# `junction_cap_polygon` path. See also: `abutment_extension`,
+# `t_junction_corners`, `wall_corner`.
 function find_through_pair_at(wg::WallGraph, seg_indices, at_junction)
   length(seg_indices) < 2 && return nothing
   let best_pair = nothing,
       best_score = pi/6  # threshold: must be within 30 degrees of straight
     for i in 1:length(seg_indices)
       for j in i+1:length(seg_indices)
+        # Skip arc members: tangent-collinearity does not justify the
+        # straight-face T-junction treatment for curved walls.
+        (!isnothing(wg.segments[seg_indices[i]].arc) ||
+         !isnothing(wg.segments[seg_indices[j]].arc)) && continue
         let di = segment_direction(wg, seg_indices[i], at_junction),
             dj = segment_direction(wg, seg_indices[j], at_junction),
             ai = atan(cy(di), cx(di)),
@@ -942,7 +997,41 @@ end
 
 #=== Backend Dispatch ===#
 
+#=
+Does a backend resolve wall joins itself?
+
+Two wall-build pipelines exist (see `build_walls` below):
+
+  - `HasWallJoins{false}` (the DEFAULT, and the only value any
+    shipped backend currently selects): KhepriBase resolves every
+    junction here and emits a fused junction-aware mesh via
+    `render_wall_graph`. Non-BIM backends (TikZ, POVRay, GL,
+    Three.js, …) and the socket BIM backends all ride this path —
+    they receive ready-made triangles, not wall proxies.
+
+  - `HasWallJoins{true}` is OPT-IN and, as of this writing, is
+    registered by NO backend in the tree. It is the natural
+    representation for a true BIM backend that does its own
+    wall-joining and supports native circular walls + openings
+    (e.g. a Revit/AutoCAD integration): one `wall(path, …)` proxy
+    per segment, arcs passed through as `wall(arc_path, …)` so the
+    backend draws a native circular wall, and `add_door` /
+    `add_window` for the openings.
+
+A backend should override this to `{true}` only after verifying it
+actually realizes native arc walls and wall openings correctly —
+flipping the switch changes that backend's entire wall-build path.
+Because no backend registers `{true}` today, the `{true}` branch is
+not reachable in production; it is kept alive (and guarded against
+regressions) by a mock-backend test that registers
+`has_wall_joins(::Type{MockBackend}) = HasWallJoins{true}()`
+(see test/test_wall_graph.jl, "HasWallJoins{true} build path").
+
+See also: `build_walls`, `render_wall_graph`.
+=#
 struct HasWallJoins{T} end
+
+"Trait: does this backend resolve wall joins itself (`{true}`) or rely on KhepriBase's fused mesh (`{false}`, default)?"
 has_wall_joins(::Type{<:Backend}) = HasWallJoins{false}()
 
 #=== Build ===#
@@ -958,10 +1047,19 @@ build_walls(wg::WallGraph) =
 build_walls(::HasWallJoins{false}, wg::WallGraph) =
   render_wall_graph(wg)
 
-# BIM backends: one wall per segment, let backend handle joins.
-# Arc segments emit a curved `wall(arc_path, …)` so backends like
-# AutoCAD and Revit draw a native circular wall instead of a
-# polyline approximation.
+# Opt-in BIM path (HasWallJoins{true}): one `wall(path, …)` proxy
+# per segment, letting the backend resolve the joins. Arc segments
+# pass their `ArcPath` straight into `wall(arc_path, …)` so a BIM
+# backend that supports native circular walls draws one instead of
+# a polyline approximation; the half-thickness offset is left to the
+# backend's wall primitive (this path computes no arc face offsets).
+#
+# NOTE: no shipped backend registers `HasWallJoins{true}()` (see the
+# `has_wall_joins` prose above), so in production `build_walls`
+# always takes the `{false}` mesh path and this branch is reached
+# only by the mock-backend regression test. A backend wanting this
+# representation must override `has_wall_joins` AND actually handle
+# native arc walls + openings.
 function build_walls(::HasWallJoins{true}, wg::WallGraph)
   walls = []
   doors = []
@@ -1399,18 +1497,35 @@ function segment_mesh(wg, seg_idx, jc)
   WallMesh(vertices, quads, mats)
 end
 
-# Junction cap polygon: the central area at a miter junction not covered by
-# any segment's top/bottom face. Returns the polygon vertices in CCW order,
-# or nothing if no cap is needed (valence < 3, or T-junction with through-pair).
-function junction_cap_polygon(wg, j_idx, jc)
+# Junction cap polygon, mesh-pipeline variant. Same N-gon as the
+# `junction_cap_polygon(wg, j_idx, [corners])` method above, but
+# consumes the *whole-graph* corner dict produced once by
+# `compute_junction_corners` (nested `j_idx → seg → (right, left)`),
+# so `resolve_geometry` can reuse a single computation across every
+# junction instead of recomputing per junction.
+#
+# Returns the cap vertices in CCW angular order, or an empty
+# `Loc[]` when no cap is needed (valence < 3, or a valence-3
+# through-pair T-junction). The empty-vector sentinel matches the
+# typed method so both callers test with `isempty` — there is no
+# longer a divergent `nothing` sentinel, and no longer an arity-3
+# overlap with the typed `junction_cap_polygon` (they now differ by
+# name, so dispatch no longer depends on the argument's dict type).
+#
+# Note the tuple index: `compute_junction_corners` stores
+# `(right, left)`, so the left corner — the shared CCW corner that
+# is also the CCW-neighbour's right corner — is element `[2]` here,
+# whereas in the typed method (which receives `(left, right)` tuples
+# from `junction_face_corners`) the same corner is element `[1]`.
+function junction_cap_polygon_for_chain(wg, j_idx, jc)
   j = wg.junctions[j_idx]
   segs = j.segments
   n = length(segs)
-  n < 3 && return nothing
+  n < 3 && return Loc[]
   # T-junctions (valence 3 with through-pair): through-wall is continuous, no cap
   if n == 3
     through = find_through_pair_at(wg, segs, j_idx)
-    !isnothing(through) && return nothing
+    !isnothing(through) && return Loc[]
   end
   # Collect left corner of each segment in sorted angle order → cap polygon
   sorted = sort([(s, segment_direction(wg, s, j_idx)) for s in segs],
@@ -1459,8 +1574,8 @@ resolve_geometry(wg::WallGraph) =
       seg_meshes = [segment_mesh(wg, i, jc) for i in 1:length(wg.segments)],
       cap_meshes = WallMesh[]
     for j in 1:length(wg.junctions)
-      let poly = junction_cap_polygon(wg, j, jc)
-        !isnothing(poly) && push!(cap_meshes, junction_cap_mesh(wg, j, poly))
+      let poly = junction_cap_polygon_for_chain(wg, j, jc)
+        !isempty(poly) && push!(cap_meshes, junction_cap_mesh(wg, j, poly))
       end
     end
     [seg_meshes; cap_meshes]

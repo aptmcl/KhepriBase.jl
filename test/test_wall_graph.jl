@@ -913,4 +913,31 @@ end
       end
     end
   end
+
+  @testset "WALLGRAPH-9 opening fit validation" begin
+    # Oversized centered door on a small partition wall errors and pushes nothing.
+    let wg = wall_graph()
+      j1 = junction!(wg, xy(0, 0)); j2 = junction!(wg, xy(0.6, 0))
+      s = segment!(wg, j1, j2)                       # 0.6 m wall, default door width 1.0
+      @test_throws ErrorException add_wall_door!(wg, s)
+      @test isempty(wg.segments[s].openings)
+    end
+    # Normal centered door still works and stays inside the wall.
+    let wg = wall_graph()
+      sids = wall_path!(wg, xy(0, 0), xy(10, 0))
+      op = add_wall_door!(wg, sids[1])
+      @test op.distance ≈ 4.5 atol=TOL               # (10 - 1.0)/2
+      sl = KhepriBase.segment_length(wg, sids[1])
+      @test op.distance / sl ≥ -TOL
+      @test (op.distance + op.family.width) / sl ≤ 1 + TOL
+    end
+    # Explicit out-of-range placement errors; in-range works (door + window).
+    let wg = wall_graph()
+      sids = wall_path!(wg, xy(0, 0), xy(10, 0))
+      @test_throws ErrorException add_wall_door!(wg, sids[1], at=-0.1)
+      @test_throws ErrorException add_wall_door!(wg, sids[1], at=9.5)   # 9.5+1.0 > 10
+      @test add_wall_door!(wg, sids[1], at=2.0).distance ≈ 2.0 atol=TOL
+      @test add_wall_window!(wg, sids[1], at=3.0, sill=1.2).distance ≈ 3.0 atol=TOL
+    end
+  end
 end
