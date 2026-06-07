@@ -71,12 +71,8 @@ Look up a canonical architectural material by short name:
 `:basic, :metal, :glass, :wood, :concrete, :plaster, :grass, :clay`.
 """
 function architectural_material_spec(name::Symbol)
-  target = Symbol("material_$(name)")
   for m in architectural_materials
-    if Symbol("material_$(m.name)") == Symbol("material_$(lowercase(m.name))") &&
-       Symbol(lowercase(m.name)) == name
-      return architectural_material_spec(m)
-    end
+    Symbol(lowercase(m.name)) == name && return architectural_material_spec(m)
   end
   error("Unknown architectural material $name. Valid: :basic, :metal, :glass, :wood, :concrete, :plaster, :grass, :clay")
 end

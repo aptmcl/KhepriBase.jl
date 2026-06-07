@@ -77,3 +77,14 @@ end
     @test isdefined(KhepriBase, sym)
   end
 end
+
+@testset "architectural_material_spec(::Symbol) resolves canonical names" begin
+  # Regression: a tautological guard (material_<Name> == material_<name>, always
+  # false for capitalized canonical names) made every Symbol lookup error.
+  for sym in (:basic, :metal, :glass, :wood, :concrete, :plaster, :grass, :clay)
+    @test architectural_material_spec(sym) isa NamedTuple
+  end
+  @test architectural_material_spec(:metal) ==
+        architectural_material_spec(KhepriBase.material_metal)
+  @test_throws ErrorException architectural_material_spec(:nonexistent)
+end

@@ -452,7 +452,7 @@ struct OpenInterpolatingSplinePath <: InterpolatingSplinePath{false}
     vertices::Locs
     v0::Union{Bool,Vec}
     v1::Union{Bool,Vec}
-    interpolator
+    interpolator::ParametricSpline
     OpenInterpolatingSplinePath(vs, v0, v1) = new(vs, v0, v1, curve_interpolator(vs, false))
 end
 const OpenSplinePath = OpenInterpolatingSplinePath
@@ -463,7 +463,7 @@ open_spline_path(vertices=[u0(), x(), xy(), y()], v0=false, v1=false) =
 
 struct ClosedInterpolatingSplinePath <: InterpolatingSplinePath{true}
     vertices::Locs
-    interpolator
+    interpolator::ParametricSpline
     ClosedInterpolatingSplinePath(vs) = new(vs, curve_interpolator(vs, true))
 end
 const ClosedSplinePath = ClosedInterpolatingSplinePath

@@ -425,7 +425,7 @@ function dolly_effect(camera, target, lens, new_camera)
   cur_dist = distance(camera, target)
   new_dist = distance(new_camera, target)
   new_lens = lens*new_dist/cur_dist
-  view(new_camera, target, new_lens)
+  set_view(new_camera, target, new_lens)
 end
 
 dolly_effect_pull_back(delta) = begin

@@ -2842,7 +2842,7 @@ purge_backends() =
         end
         push!(ok_bs, b)
       catch e
-        @info("Backend $(b.name) is dead!")
+        @info("Backend $(backend_name(b)) is dead!")
       end
     end
     current_backends((ok_bs...,))
