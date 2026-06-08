@@ -509,30 +509,6 @@ function _chainable_segments(s1::WallSegment, s2::WallSegment)
   end
 end
 
-# At a T-junction, find the segment that is roughly collinear with from_seg
-# (angle difference closest to pi), has the same family, and is
-# chainable with it (straight+straight or co-circular arc+arc).
-function through_partner(wg::WallGraph, from_seg::Int, at_junction::Int,
-                         family::WallFamily, offset::Real, visited)
-  let from_dir = segment_direction(wg, from_seg, at_junction),
-      from_angle = atan(cy(from_dir), cx(from_dir)),
-      cur = wg.segments[from_seg],
-      candidates = [(s, segment_direction(wg, s, at_junction))
-                     for s in wg.junctions[at_junction].segments
-                     if s != from_seg && !visited[s] &&
-                        wg.segments[s].family == family &&
-                        wg.segments[s].offset == offset &&
-                        _chainable_segments(cur, wg.segments[s])]
-    isempty(candidates) && return nothing
-    let scored = [(s, abs(angle_diff(atan(cy(d), cx(d)), from_angle) - pi))
-                  for (s, d) in candidates],
-        (min_score, best_idx) = findmin(last, scored)
-      # Only accept if roughly collinear (within ~30 degrees of straight)
-      min_score < pi/6 ? scored[best_idx][1] : nothing
-    end
-  end
-end
-
 # Signed angle difference in [0, 2pi)
 angle_diff(a, b) =
   let d = mod(a - b, 2pi)
@@ -872,27 +848,6 @@ Degeneracies:
 See also: `line_intersection_2d`, `line_arc_intersection_2d`,
 `arc_arc_intersection_2d` (the underlying primitives per segment type).
 =#
-
-# Offset-face line at a junction. `side ∈ (:left, :right)` names the
-# face relative to the wall's *outgoing* direction at that junction.
-# Returns `(point_on_line, direction_vector)` — a parametric line in
-# world coordinates. Arc segments currently fall back to their tangent
-# line; exact arc-aware intersections are delegated to the caller.
-function wall_face_line_at(wg::WallGraph, seg_idx::Int, at_junction::Int, side::Symbol)
-  let seg = wg.segments[seg_idx],
-      d   = segment_direction(wg, seg_idx, at_junction),
-      J   = wg.junctions[at_junction].position,
-      th  = seg.family.thickness,
-      off = seg.offset,
-      l_t = l_thickness(off, th + seg.family.left_coating_thickness),
-      r_t = r_thickness(off, th + seg.family.right_coating_thickness),
-      n_ccw = vxy(-cy(d),  cx(d)),   # +90° (left of outgoing)
-      n_cw  = vxy( cy(d), -cx(d))    # -90° (right of outgoing)
-    side == :left  ? (J + n_ccw * l_t, d) :
-    side == :right ? (J + n_cw  * r_t, d) :
-    error("wall_face_line_at: side must be :left or :right, got $(side)")
-  end
-end
 
 # Segments at a junction sorted by their outgoing-direction angle
 # (atan2), counter-clockwise from +X. Empty at orphan junctions.
@@ -1370,15 +1325,6 @@ See also: `_clamp_corner`, `clamped_miter`, `wall_corner`.
 "Dimensionless cap (× max half-thickness) on a miter corner's distance from its junction."
 const MITER_LIMIT = 10.0
 
-# Compute a miter corner with clamping. When the miter distance exceeds the
-# limit, scale the corner toward the limit distance (preserving direction from
-# junction) instead of collapsing to the midpoint of the offset lines.
-function clamped_miter(pos, p_left, dir_left, p_right, dir_right, l_th, r_th)
-  _clamp_corner(pos,
-                line_intersection_2d(p_left, dir_left, p_right, dir_right),
-                p_left, p_right, l_th, r_th)
-end
-
 # Arc-aware miter: dispatches through `wall_corner` so line/arc and
 # arc/arc junctions use the right intersection geometry.
 function clamped_miter(pos,
@@ -1542,10 +1488,6 @@ function segment_quad_2d(wg, seg_idx, jc)
     (right_a, left_from_b, right_from_b, left_a)
   end
 end
-
-# Linearly interpolate between two 2D points.
-lerp2d(a, b, t) = xy(cx(a) + (cx(b) - cx(a)) * t,
-                     cy(a) + (cy(b) - cy(a)) * t)
 
 # Generate the 3D mesh for one wall segment with junction-aware corners.
 function segment_mesh(wg, seg_idx, jc)

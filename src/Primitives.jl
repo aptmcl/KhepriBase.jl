@@ -552,20 +552,7 @@ encode(::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO, 
   write(c, str)
 end
 
-#=
-decode(::Val{:CS}, ::Val{:string}, c::IO) = begin
-  loop(size::Int, shift::Int) = begin
-    b = convert(Int, read(c, UInt8))
-    size = size | ((b & 0x7f) << shift)
-    if (b & 0x80) == 0
-      String(read(c, size))
-    else
-      loop(size, shift + 7)
-    end
-  end
-  loop(0, 0)
-end
-=#
+
 decode(ns::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO) = begin
   size::Int = 0
   shift::Int = 0

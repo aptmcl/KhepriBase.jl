@@ -375,10 +375,6 @@ receive(b::WebSocketBackend) =
 mutable struct WebSocketServer
   server::HTTP.Server
   router::HTTP.Router
-  handlers::Vector{Function}
-
-  WebSocketServer(server, router) =
-    new(server, router, Function[])
 end
 
 public register_http_handler
@@ -715,7 +711,7 @@ queue would force every backend to commit a transaction at the
 right moment and for the right reasons, which historically ended
 up forgotten in the SVG and TikZ pipelines.
 
-The narrower-typed accessors (`save_shape_local!`, etc.) take
+The local-shape accessors (`local_shape_storage`, etc.) take
 `Proxy` rather than `Shape` so an `Annotation` flows through the
 same path; backends that want to special-case annotations can still
 filter on `is_illustration(...)` or `isa Annotation` when they
@@ -739,72 +735,6 @@ end
 @kwdef mutable struct IOState
   io::IO = IOBuffer()
 end
-
-# Standalone functions that operate on field-group structs.
-# These are used by @defbackend-generated default operations, and can also
-# be called directly by backends that override only part of an operation.
-
-public save_shape_local!, delete_all_local!, delete_shape_local!,
-       set_realistic_sky_local!, set_ground_local!,
-       realize_shapes_local!, used_materials_local!
-
-save_shape_local!(ls::LocalShapes, s::Proxy) =
-  begin
-    push!(ls.shapes, s)
-    if !isnothing(ls.current_layer)
-      push!(get!(ls.layers, ls.current_layer, Proxy[]), s)
-    end
-    s
-  end
-
-delete_all_local!(ls::LocalShapes) =
-  begin
-    empty!(ls.shapes)
-    for ss in values(ls.layers)
-      empty!(ss)
-    end
-    nothing
-  end
-
-delete_shape_local!(ls::LocalShapes, shape::Proxy) =
-  let f(s) = s !== shape
-    filter!(f, ls.shapes)
-    for ss in values(ls.layers)
-      filter!(f, ss)
-    end
-  end
-
-set_realistic_sky_local!(rs::RenderState, date, latitude, longitude, elevation, meridian, turbidity, sun) =
-  begin
-    rs.date = date
-    rs.place = GeographicLocation(latitude, longitude, elevation, meridian)
-    rs.render_env = RealisticSkyEnvironment(turbidity, sun)
-  end
-
-set_ground_local!(rs::RenderState, level, mat) =
-  begin
-    rs.ground_level = level
-    rs.ground_material = mat
-  end
-
-realize_shapes_local!(b, ls::LocalShapes) =
-  for s in ls.shapes
-    reset_ref(b, s)
-    force_realize(b, s)
-  end
-
-used_materials_local!(ls::LocalShapes, rs::RenderState) =
-  let materials = Set{Material}()
-    for s in ls.shapes
-      for m in used_materials(s)
-        push!(materials, m)
-      end
-    end
-    if !isnothing(rs.ground_material)
-      push!(materials, rs.ground_material)
-    end
-    materials
-  end
 
 # Mixin registry: maps mixin name to (field_name, struct_type, forwarded_field_names)
 const MIXIN_REGISTRY = Dict{Symbol, @NamedTuple{field::Symbol, type::Any, fields::Vector{Symbol}}}(

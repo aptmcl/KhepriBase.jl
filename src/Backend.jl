@@ -2129,7 +2129,27 @@ b_wall_no_openings(b::Backend, w_path, w_height, l_thickness, r_thickness, famil
   b_wall_no_openings(b, w_path, w_height, l_thickness, r_thickness,
                      family.left_material, family.right_material, family.side_material)
 
-# Per-segment wall geometry with inline hole punching for backends without boolean ops
+#=
+Backend extension hook (not a `b_*` op): punch an opening out of one
+wall segment's two face paths. Given the closed-for-height right/left
+wall face paths and the closed right/left opening paths, returns the
+two `region`s with the opening as a hole.
+
+The DEFAULT `_b_wall_with_openings_impl` (below) does NOT use this — it
+emits explicit rectangles via `_emit_wall_face_rects!` /
+`_emit_opening_jacket!` because most backends (AutoCAD, Revit, ...) either
+have boolean ops or need coplanar geometry. This helper exists for
+backends WITHOUT boolean ops that render walls as Region-with-hole
+surfaces instead: it is imported and called by
+`KhepriBase.b_wall_with_openings(b::THR, ...)` in
+KhepriThreejs/src/Threejs.jl (the only caller). Keep it: removing it
+breaks KhepriThreejs at module-load time (`import KhepriBase: ...
+subtract_wall_paths`) and at render time. Override it in a backend to
+change how the hole is subtracted.
+
+See also: b_wall_with_openings, _b_wall_with_openings_impl, region.
+=#
+"Backend hook: subtract opening paths from a wall segment's face paths, returning Region-with-hole pairs. Used by boolean-op-less backends (e.g. KhepriThreejs)."
 subtract_wall_paths(b::Backend, c_r_w_path, c_l_w_path, c_r_op_path, c_l_op_path) =
   region(c_r_w_path, c_r_op_path), region(c_l_w_path, c_l_op_path)
 
@@ -3023,15 +3043,11 @@ b_curtain_wall_element(b::Backend, path, bottom, height, l_thickness, r_thicknes
 
 #@bdef curtain_wall(s, path, bottom, height, thickness, kind)
 
-backend_fill(b, path) =
-  backend_fill_curves(b, backend_stroke(b, path))
-
+# Generic fallback for the surface-frame query. `frame_at` (Shapes.jl) routes
+# Shape1D/Shape2D frame queries through `backend_frame_at`; backends with a
+# remote curve/surface evaluator (AutoCAD) override it. Backends without one
+# inherit this UnimplementedBackendOperation signal.
 backend_frame_at(b, c, t) = throw(UndefinedBackendException())
-backend_fill_curves(b, ids) = throw(UndefinedBackendException())
-
-#@bdef fill(path::CompositePath)
-backend_fill(b::Backend, path::CompositePath{true}) =
-  backend_fill_curves(b, map(path->backend_stroke(b, path), path.pieces))
 
 
 @bdef ground(level::Loc, color::RGB)
@@ -3269,48 +3285,6 @@ b_right_cuboid(b::Backend, cb, width, height, h, mat) =
   b_box(b, add_xy(cb, -width/2, -height/2), width, height, h, mat)
 
 
-backend_stroke(b::Backend, path::CompositePath) =
-  backend_stroke_unite(b, map(path->backend_stroke(b, path), path.pieces))
-backend_stroke(b::Backend, path::PathOps) =
-  begin
-      start, curr, refs = path.start, path.start, new_refs(b)
-      for op in path.ops
-          start, curr, refs = backend_stroke_op(b, op, start, curr, refs)
-      end
-      if path.closed
-          push!(refs, backend_stroke_line(b, [curr, start]))
-      end
-      backend_stroke_unite(b, refs)
-  end
-
-backend_stroke(b::Backend, path::PathSet) =
-    for p in path.paths
-        backend_stroke(b, p)
-    end
-
-@bdef stroke_op(op::LineXThenYOp, start::Loc, curr::Loc, refs)
-@bdef stroke_op(op::LineYThenXOp, start::Loc, curr::Loc, refs)
-#@bdef stroke_op(op::MoveOp, start::Loc, curr::Loc, refs)
-#@bdef stroke_op(op::MoveToOp, start::Loc, curr::Loc, refs)
-
-#@bdef stroke_op(op::LineOp, start::Loc, curr::Loc, refs)
-backend_stroke_op(b::Backend, op::LineOp, start::Loc, curr::Loc, refs) =
-  (start, curr + op.vec, push!(refs, backend_stroke_line(b, [curr, curr + op.vec])))
-
-#backend_stroke_op(b::Backend, op::CloseOp, start::Loc, curr::Loc, refs) =
-#    (start, start, push!(refs, backend_stroke_line(b, [curr, start])))
-
-#@bdef stroke_op(op::ArcOp, start::Loc, curr::Loc, refs)
-backend_stroke_op(b::Backend, op::ArcOp, start::Loc, curr::Loc, refs) =
-  let center = curr - vpol(op.radius, op.start_angle)
-    (start, center + vpol(op.radius, op.start_angle + op.amplitude),
-     push!(refs, backend_stroke_arc(b, center, op.radius, op.start_angle, op.amplitude)))
-  end
-
-
-#
-
-@bdef stroke_unite(refs)
 #@bdef surface_boundary(s::Shape2D)
 #@bdef surface_domain(s::Shape2D)
 
