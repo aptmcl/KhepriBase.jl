@@ -1153,7 +1153,16 @@ end
 
 function _polygon_intersection_pieces(a::Region, b::Region, tol)
   pieces = Vector{Loc}[]
-  for ta in _region_triangles(a, tol), tb in _region_triangles(b, tol)
+  #= _region_triangles is a pure function of (region, tol): it cleans the vertices
+     and runs triangulate_polygon, none of which depend on the loop state. The old
+     `for ta in _region_triangles(a,tol), tb in _region_triangles(b,tol)` form
+     re-triangulated b for EVERY outer ta, turning an O(n_a + n_b) prep cost into
+     O(n_a * n_b). Hoist both calls so each region is triangulated exactly once;
+     iteration order over the cached vectors is unchanged, so the output (and its
+     order) is bit-identical to the old form. =#
+  tris_a = _region_triangles(a, tol)
+  tris_b = _region_triangles(b, tol)
+  for ta in tris_a, tb in tris_b
     pts = _clean_polygon_vertices(_convex_polygon_intersection(ta, tb, tol), tol)
     _polygon_area_large_enough(pts, tol) || continue
     _polygon_signed_area(pts) < 0 && reverse!(pts)

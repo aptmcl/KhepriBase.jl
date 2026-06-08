@@ -739,18 +739,104 @@ function _arc_subsegment(arc::ArcPath, θ_lo, θ_hi, forward)
   (path_start(sub), path_end(sub), sub)
 end
 
-# Classify every edge of every space in a storey. Interior (shared)
-# sub-segments are deduplicated — one record per shared boundary —
-# and the resulting list carries arc information when the boundary
-# came from an arc component.
+#=
+Spatial pre-filter for edge classification. The brute-force
+`classify_all_edges` tested every boundary edge against every edge of
+every *other* space — O(S²·E²) overlap tests plus an O(S²·E) rebuild of
+the cross-space edge list once per space. Two edges can only share a
+wall when their extents are within `tol` of touching, so the vast
+majority of those pairs are wasted work in any realistic plan (a room
+only ever shares walls with its handful of neighbours).
+
+`_edge_bbox` is the edge's axis-aligned bounding box inflated by `tol`
+on every side, in metres — the same length tolerance `collinear_overlap`
+/ `cocircular_overlap` use for the centre-distance, radius and gap
+tests. Inflating by `tol` guarantees the prefilter never drops a pair
+the brute force would have matched: if two edges share boundary within
+`tol`, their tol-inflated boxes necessarily overlap, so the grid (whose
+cells are keyed off the same inflated boxes) returns the pair as a
+candidate. Arc edges use the full enclosing-circle box (a superset of
+the true arc box), so any two arcs that *could* be cocircular are always
+co-located as candidates and then accepted/rejected by
+`cocircular_overlap` exactly as before.
+
+The grid cell size is the mean inflated-box extent (floored to a tiny
+positive value so degenerate all-zero-length input can't divide by
+zero): with that scale most edges touch O(1) cells, so building and
+querying the index is near-linear in the edge count while remaining an
+exact superset of the brute-force candidate set.
+
+See also: collinear_overlap, cocircular_overlap, coincidence_tolerance.
+=#
+_edge_bbox(e::LineEdge, tol) =
+  let x1 = cx(e.p1), y1 = cy(e.p1), x2 = cx(e.p2), y2 = cy(e.p2)
+    (min(x1, x2) - tol, min(y1, y2) - tol, max(x1, x2) + tol, max(y1, y2) + tol)
+  end
+_edge_bbox(e::ArcEdge, tol) =
+  let c = path_center(e.arc), r = path_radius(e.arc)
+    (cx(c) - r - tol, cy(c) - r - tol, cx(c) + r + tol, cy(c) + r + tol)
+  end
+
+_bbox_overlap(a, b) =
+  a[1] <= b[3] && b[1] <= a[3] && a[2] <= b[4] && b[2] <= a[4]
+
+# Uniform grid over the tol-inflated edge boxes. `entries` is the flat
+# `(edge, space)` list; the grid maps a cell to the indices of every box
+# covering it. `_grid_cells` enumerates the integer cell range a box
+# spans. Returns `(grid, bboxes, cell, x0, y0)`.
+_grid_cells(bb, cell, x0, y0) =
+  (floor(Int, (bb[1] - x0) / cell):floor(Int, (bb[3] - x0) / cell),
+   floor(Int, (bb[2] - y0) / cell):floor(Int, (bb[4] - y0) / cell))
+
+function _build_edge_grid(entries, tol)
+  bboxes = [_edge_bbox(e, tol) for (e, _) in entries]
+  isempty(bboxes) &&
+    return (Dict{Tuple{Int,Int},Vector{Int}}(), bboxes, 1.0, 0.0, 0.0)
+  spans = [max(bb[3] - bb[1], bb[4] - bb[2]) for bb in bboxes]
+  cell = max(sum(spans) / length(spans), 1e-6)   # mean box extent (metres)
+  x0 = minimum(bb[1] for bb in bboxes)
+  y0 = minimum(bb[2] for bb in bboxes)
+  grid = Dict{Tuple{Int,Int},Vector{Int}}()
+  for (i, bb) in enumerate(bboxes)
+    cis, cjs = _grid_cells(bb, cell, x0, y0)
+    for ci in cis, cj in cjs
+      push!(get!(() -> Int[], grid, (ci, cj)), i)
+    end
+  end
+  (grid, bboxes, cell, x0, y0)
+end
+
+# Indices (ascending, deduplicated) of every edge whose cells intersect
+# `bb`'s cell range. Ascending order reproduces the brute-force global
+# iteration order so the downstream parametric sort in `_emit_edge_segments`
+# (stable, ties broken by input order) yields byte-identical segments.
+function _grid_candidates(grid, bb, cell, x0, y0)
+  cis, cjs = _grid_cells(bb, cell, x0, y0)
+  seen = Set{Int}()
+  for ci in cis, cj in cjs, idx in get(grid, (ci, cj), Int[])
+    push!(seen, idx)
+  end
+  sort!(collect(seen))
+end
+
+# Classify every edge of every space in a storey. A single flat
+# `(edge, space)` list is built once (instead of rebuilt per space), and
+# a tol-inflated spatial grid restricts each edge's comparisons to the
+# handful of edges whose boxes can actually touch it. Interior (shared)
+# sub-segments are deduplicated — one record per shared boundary — and
+# the resulting list carries arc information when the boundary came from
+# an arc component. Output is identical to the brute-force version.
 function classify_all_edges(storey, tol)
   space_edges = Dict(s => boundary_components(s.boundary) for s in storey.spaces)
+  all_edges = [(e, s) for s in storey.spaces for e in space_edges[s]]
+  grid, bboxes, cell, x0, y0 = _build_edge_grid(all_edges, tol)
   segments = []
   for space in storey.spaces
-    other_edges = [(e, s)
-                   for s in storey.spaces if s !== space
-                   for e in space_edges[s]]
     for edge in space_edges[space]
+      ebb = _edge_bbox(edge, tol)
+      other_edges = [all_edges[i]
+                     for i in _grid_candidates(grid, ebb, cell, x0, y0)
+                     if all_edges[i][2] !== space && _bbox_overlap(ebb, bboxes[i])]
       for seg in classify_edge(edge, space, other_edges, tol)
         _, _, kind, sp_a, sp_b, _ = seg
         if kind == :interior

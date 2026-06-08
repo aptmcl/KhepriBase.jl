@@ -70,6 +70,26 @@ mutable struct WallGraph
   segments::Vector{WallSegment}
   bottom_level::Level
   top_level::Level
+  #=
+  Spatial hash over junction positions, used by `find_or_create_junction!`
+  to avoid an O(J) distance scan per insert (O(J^2) to build a whole graph).
+
+  Keys are world-coordinate cells of edge `junction_index_cell` metres; the
+  value is the list of junction indices whose position falls in that cell.
+  The cell edge equals `junction_coincidence_tolerance()` at the moment the
+  index was built, recorded in `junction_index_cell`. Two points within that
+  tolerance differ by < one cell on every axis, so probing the 3x3x3 (27)
+  neighbour cells is guaranteed to surface every junction the linear scan
+  would have -- no merge is ever missed.
+
+  `junction_index_cell == 0` means the index is inactive (empty graph, or the
+  tolerance changed); the next probe rebuilds it. Junction indices are stable
+  (junctions are only ever appended), so cached indices never go stale.
+
+  See also: find_or_create_junction!, junction_coincidence_tolerance.
+  =#
+  junction_index::Dict{NTuple{3,Int}, Vector{Int}}
+  junction_index_cell::Float64
 end
 
 #=
@@ -108,11 +128,19 @@ end
 wall_graph(; level=default_level(),
              height=default_level_to_level_height()) =
   WallGraph(WallJunction[], WallSegment[],
-            level, upper_level(level, height))
+            level, upper_level(level, height),
+            Dict{NTuple{3,Int}, Vector{Int}}(), 0.0)
 
 function junction!(wg::WallGraph, position)
   push!(wg.junctions, WallJunction(position, Int[]))
-  length(wg.junctions)
+  let idx = length(wg.junctions)
+    # File the new junction into the spatial index when one is active, so the
+    # next find_or_create_junction! probe sees it. (Inactive index => plain
+    # append, identical to the previous behaviour.)
+    wg.junction_index_cell > 0 &&
+      push!(get!(wg.junction_index, junction_cell_key(wg, position), Int[]), idx)
+    idx
+  end
 end
 
 function segment!(wg::WallGraph, j_a::Int, j_b::Int;
@@ -244,11 +272,55 @@ function wall_path!(wg::WallGraph, points...;
   end
 end
 
-function find_or_create_junction!(wg::WallGraph, pos, tol)
+#=
+Cell key for a position in the junction spatial hash: the world-coordinate
+cell of edge `wg.junction_index_cell` containing `pos`. `floor` (not `round`)
+so a point and any other point within one cell-edge of it land in the same
+or an immediately adjacent cell on each axis.
+=#
+junction_cell_key(wg::WallGraph, pos) =
+  (floor(Int, cx(pos) / wg.junction_index_cell),
+   floor(Int, cy(pos) / wg.junction_index_cell),
+   floor(Int, cz(pos) / wg.junction_index_cell))
+
+# (Re)build the junction spatial hash with cell edge = tol. Cheap O(J); only
+# triggered on the first probe of a graph or when the tolerance changes.
+function rebuild_junction_index!(wg::WallGraph, tol)
+  wg.junction_index_cell = tol
+  empty!(wg.junction_index)
   for (i, j) in enumerate(wg.junctions)
-    distance(j.position, pos) < tol && return i
+    push!(get!(wg.junction_index, junction_cell_key(wg, j.position), Int[]), i)
   end
-  junction!(wg, pos)
+  wg
+end
+
+#=
+Return the index of an existing junction within `tol` of `pos`, creating a new
+one if none exists. Equivalent to the linear distance scan it replaces -- same
+metric (3D Euclidean), same strict `< tol`, and same FIRST-MATCH tie-break:
+when several junctions lie within `tol`, the lowest index wins, exactly as the
+in-insertion-order scan returned the first match. The spatial hash makes each
+call O(1) on average instead of O(J), so building a J-junction graph is O(J)
+instead of O(J^2).
+
+See also: rebuild_junction_index!, WallGraph.junction_index.
+=#
+function find_or_create_junction!(wg::WallGraph, pos, tol)
+  # Lazily (re)bucket if the tolerance changed since the index was built.
+  wg.junction_index_cell == tol || rebuild_junction_index!(wg, tol)
+  let (bx, by, bz) = junction_cell_key(wg, pos),
+      best = 0
+    for dx in -1:1, dy in -1:1, dz in -1:1
+      let cell = get(wg.junction_index, (bx + dx, by + dy, bz + dz), nothing)
+        isnothing(cell) && continue
+        for i in cell
+          distance(wg.junctions[i].position, pos) < tol &&
+            (best == 0 || i < best) && (best = i)
+        end
+      end
+    end
+    best == 0 ? junction!(wg, pos) : best
+  end
 end
 
 #=== Helpers ===#

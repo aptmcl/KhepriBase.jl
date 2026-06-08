@@ -642,6 +642,85 @@ function location_at(seg::BezierSpan, t::Real)
   norm(tangent) <= zero_vector_tolerance() ? p : loc_from_o_vz(p, tangent)
 end
 
+#= bezier_eval allocates a fresh `collect(values)` on every call, and
+location_at(::BezierSpan, t) calls it twice (point + tangent) while also
+rebuilding the derivative control points each time. Flattening a Bezier path
+samples max(path_smoothness_segments(), spans*8)+1 points, so those temporaries
+dominate. bezier_eval! does the same de Casteljau reduction into a caller-owned
+buffer (identical arithmetic and update order, hence bit-identical results) so
+the buffer can be reused across all samples of a span.
+See also: bezier_eval, bezier_uniform_frames. =#
+function bezier_eval!(buf, cps, t::Real)
+  n = length(cps)
+  @inbounds for i in 1:n
+    buf[i] = cps[i]
+  end
+  for k in 1:max(n - 1, 0)
+    for i in 1:n-k
+      @inbounds buf[i] = buf[i] + (buf[i + 1] - buf[i]) * t
+    end
+  end
+  @inbounds buf[1]
+end
+
+#= Batch form of location_at(::BezierSpan, t): the derivative control points and
+the two de Casteljau buffers (one for the point, one for the tangent) are built
+once for the whole vector of parameters instead of once per sample. Each frame
+is computed by exactly the same expression as the scalar method, so the result
+is bit-identical. =#
+location_at(seg::BezierSpan, ts::AbstractVector{<:Real}) =
+  let cps = seg.control_points,
+      pbuf = similar(cps),
+      dvs = bezier_derivative_control_points(seg),
+      dbuf = isempty(dvs) ? dvs : similar(dvs)
+    map(ts) do t
+      tc = clamp(Float64(t), 0.0, 1.0)
+      p = bezier_eval!(pbuf, cps, tc)
+      tangent = isempty(dvs) ? vz(0, p.cs) : bezier_eval!(dbuf, dvs, tc)
+      norm(tangent) <= zero_vector_tolerance() ? p : loc_from_o_vz(p, tangent)
+    end
+  end
+
+#= Uniform flatten of a Bezier path that reuses each span's derivative control
+points and buffers. It samples the same n+1 parameters as
+uniform_path_frames(path, t0, t1, n) and, because the samples are monotonic in
+t, each span owns one contiguous run; evaluating that run as a single batch
+(via the batch location_at above) yields the same Loc for every sample. The
+result element type is the typejoin of the per-span batch element types, which
+matches the type the per-sample comprehension in uniform_path_frames would
+infer, with identical values. =#
+function bezier_uniform_frames(path::BezierPath, t0, t1, n)
+  ts = range(t0, t1; length=n+1)
+  nspans = length(path.spans)
+  closed = is_closed_path(path)
+  idxs = Vector{Int}(undef, length(ts))
+  locals = Vector{Float64}(undef, length(ts))
+  @inbounds for (j, t) in enumerate(ts)
+    u = closed && nspans > 0 ? mod(Float64(t), nspans) : clamp(Float64(t), 0.0, nspans)
+    idx = min(floor(Int, u) + 1, nspans)
+    idxs[j] = idx
+    locals[j] = idx == nspans && u == nspans ? 1.0 : u - (idx - 1)
+  end
+  ranges = Tuple{Int,Int,Int}[]
+  start = 1
+  while start <= length(ts)
+    span_i = idxs[start]
+    stop = start
+    while stop < length(ts) && idxs[stop + 1] == span_i
+      stop += 1
+    end
+    push!(ranges, (span_i, start, stop))
+    start = stop + 1
+  end
+  batches = map(r -> location_at(path.spans[r[1]], @view locals[r[2]:r[3]]), ranges)
+  T = reduce(typejoin, map(eltype, batches))
+  result = Vector{T}(undef, length(ts))
+  for (b, r) in zip(batches, ranges)
+    copyto!(result, r[2], b, 1, length(b))
+  end
+  result
+end
+
 path_domain(path::BezierPath) = (0.0, Float64(length(path.spans)))
 function _bezier_segment_at_parameter(path::BezierPath, t::Real)
   n = length(path.spans)
@@ -1880,12 +1959,12 @@ convert(::Type{OpenPolygonalPath}, path::ClosedSplinePath) =
 convert(::Type{OpenPolygonalPath}, path::BezierPath{false}) =
   let (t0, t1) = path_domain(path),
       n = max(path_smoothness_segments(), length(path.spans) * 8)
-    open_polygonal_path(uniform_path_frames(path, t0, t1, n))
+    open_polygonal_path(bezier_uniform_frames(path, t0, t1, n))
   end
 convert(::Type{ClosedPolygonalPath}, path::BezierPath{true}) =
   let (t0, t1) = path_domain(path),
       n = max(path_smoothness_segments(), length(path.spans) * 8)
-    closed_polygonal_path(uniform_path_frames(path, t0, t1, n)[1:end-1])
+    closed_polygonal_path(bezier_uniform_frames(path, t0, t1, n)[1:end-1])
   end
 convert(::Type{OpenPolygonalPath}, path::BezierPath{true}) =
   let p = convert(ClosedPolygonalPath, path)
