@@ -315,10 +315,12 @@ length-valued coincidence_tolerance used for the companion plane-distance test
 in _circle_plane_relation.
 
 The default 1e-7 (≈ 4.5e-4 rad ≈ 0.026°) is intentionally looser than the
-length tolerance it replaced (1e-10): these normals come from `vz(1, cs)` on
-coordinate frames whose transforms are Float32 (Mat4f), so they accumulate
-angular error that a length-valued tolerance rejects for genuinely coplanar
-geometry. Tighten it for high-precision analytic work.
+length tolerance it replaced (1e-10): each normal is built by
+`unitized(in_world(vz(1, cs)))`, and the repeated coordinate-frame
+compositions accumulate ordinary Float64 rounding error (the transforms are
+Float64 — Mat4f is an SMatrix{4,4,Float64}, the `f` is historical) that a
+1e-10 length-valued tolerance would reject for genuinely coplanar geometry.
+Tighten it for high-precision analytic work.
 
 See also: parallelism_tolerance, coincidence_tolerance.
 =#
