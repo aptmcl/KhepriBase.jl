@@ -87,7 +87,7 @@ Annotations are transparent to layout — they only affect downstream
 element generation:
 
 ```julia
-plan |> d -> connect(d, :a, :b, kind=:door)  # wraps in Annotated node
+plan |> d -> connect_spaces(d, :a, :b, kind=:door)  # wraps in Annotated node
 ```
 
 ## Subdivision Nodes

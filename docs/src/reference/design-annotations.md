@@ -9,7 +9,7 @@ spaces opt out of automatic windows.
 ```julia
 house = (room(:living, :living_room, 5.0, 4.0) |
          room(:kitchen, :kitchen, 3.5, 4.0)) |>
-  d -> connect(d, :living, :kitchen; kind=:arch, width=1.8) |>
+  d -> connect_spaces(d, :living, :kitchen; kind=:arch, width=1.8) |>
   d -> connect_exterior(d, :living; kind=:door, face=:south) |>
   d -> no_windows(d, :kitchen)                 # kitchen is an interior galley
 
@@ -21,7 +21,7 @@ Nested `Annotated` wrappers compose transparently: layout walks
 through them and `collect_annotations` gathers them for downstream
 use.
 
-`connect` marks an interior boundary as needing a door / arch:
+`connect_spaces` marks an interior boundary as needing a door / arch:
 
 ![connect annotation](../assets/reference/designs-annotation_connect.svg)
 
@@ -42,7 +42,7 @@ NoWindowsAnnotation
 ## Functions
 
 ```@docs
-connect
+connect_spaces
 connect_exterior
 disconnect
 no_windows

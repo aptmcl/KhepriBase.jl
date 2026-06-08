@@ -221,6 +221,7 @@ struct LinePath <: PrimitiveOpenPath
   p1::Loc
 end
 
+"Open path: the straight segment from location `p0` to `p1`."
 line_path(p0::Loc=u0(), p1::Loc=ux()) =
   LinePath(p0, p1)
 
@@ -232,6 +233,7 @@ struct EllipticArcPath <: PrimitiveOpenPath
   amplitude::Real
 end
 
+"Open path: elliptic arc centered at `center`, with semi-axes `r1`/`r2`, swept from `start_angle` through `amplitude` (angles in radians)."
 elliptic_arc_path(Center::Loc=u0(), R1::Real=1, R2::Real=1,
                   StartAngle::Real=0, Amplitude::Real=pi*1.0;
                   center::Loc=Center, r1::Real=R1, r2::Real=R2,
@@ -328,6 +330,7 @@ struct ArcPath <: PrimitiveOpenPath
     start_angle::Real
     amplitude::Real
 end
+"Open path: circular arc of `radius` centered at `center`, swept from `start_angle` through `amplitude` (angles in radians; a negative amplitude sweeps clockwise)."
 arc_path(center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi*1.0) =
   # pi*1.0 just to circunvent a Julia bug https://github.com/JuliaLang/julia/issues/31949.
   false ? #amplitude < 0 ?
@@ -348,6 +351,7 @@ struct CircularPath <: PrimitiveClosedPath
     center::Loc
     radius::Real
 end
+"Closed path: full circle of `radius` centered at `center`."
 circular_path(Center::Loc=u0(), Radius::Real=1; center::Loc=Center, radius::Real=Radius) =
   CircularPath(center, radius)
 path_domain(path::CircularPath) = (0, 2π)
@@ -363,6 +367,7 @@ struct EllipticPath <: PrimitiveClosedPath
   r1::Real
   r2::Real
 end
+"Closed path: full ellipse centered at `center` with semi-axes `r1` (along x) and `r2` (along y)."
 elliptic_path(Center::Loc=u0(), R1::Real=1, R2::Real=1; center::Loc=Center, r1::Real=R1, r2::Real=R2) =
   EllipticPath(center, r1, r2)
 path_domain(path::EllipticPath) = (0, 2π)
@@ -395,8 +400,10 @@ struct RectangularPath <: PrimitiveClosedPath
     dx::Real
     dy::Real
 end
+"Closed path: axis-aligned rectangle with lower-left `corner` and side lengths `dx` (x) and `dy` (y)."
 rectangular_path(corner::Loc=u0(), dx::Real=1, dy::Real=1) =
   RectangularPath(corner, dx, dy)
+"Closed path: axis-aligned rectangle of side lengths `dx`/`dy` centered on `p`."
 centered_rectangular_path(p, dx, dy) =
   rectangular_path(p-vxy(dx/2, dy/2), dx, dy)
 path_domain(path::RectangularPath) = (0, path_length(path))
@@ -406,12 +413,14 @@ planar_path_normal(path::RectangularPath) = uvz(path.corner.cs)
 struct OpenPolygonalPath <: PrimitiveOpenPath
     vertices::Locs
 end
+"Open path: polyline through `vertices`, joined by straight segments (the path is not closed back to the first vertex)."
 open_polygonal_path(vertices=[u0(), x(), xy(), y()]) =
   OpenPolygonalPath(vertices)
 
 struct ClosedPolygonalPath <: PrimitiveClosedPath
     vertices::Locs
 end
+"Closed path: polygon through `vertices`, joined by straight segments with a final segment back to the first vertex. `vertices` must not already repeat the first location at the end."
 closed_polygonal_path(vertices=[u0(), x(), xy(), y()]) =
   ClosedPolygonalPath(ensure_no_repeated_locations(vertices))
 
@@ -421,6 +430,7 @@ PolygonalPath = Union{OpenPolygonalPath, ClosedPolygonalPath}
 vertex with coincident endpoints would otherwise route into
 closed_polygonal_path(vertices[1:end-1]) on an empty list and raise a
 BoundsError deep inside ensure_no_repeated_locations; fail early and clearly. =#
+"Polyline through `vertices`; closed when the first and last vertices coincide, otherwise open. Needs at least two vertices."
 polygonal_path(vertices::Locs=[u0(), x(), xy(), y(), u0()]) =
   length(vertices) < 2 ?
     throw(ArgumentError("A polygonal path needs at least two vertices.")) :
@@ -453,6 +463,7 @@ not forbid) would index vertices[0] / vertices[2] and raise a BoundsError. Guard
 it with the length checks: when either path is too short there is no middle
 vertex to elide, so fall through to plain concatenation keeping the shared vertex.
 =#
+"Concatenate two open paths into one, sharing the joining endpoint when `p1` ends where `p2` starts."
 join_paths(p1::OpenPolygonalPath, p2::OpenPolygonalPath) =
     coincident_path_location(p1.vertices[end], p2.vertices[1]) ?
       length(p1.vertices) >= 2 && length(p2.vertices) >= 2 &&
@@ -482,6 +493,7 @@ end
 const OpenSplinePath = OpenInterpolatingSplinePath
 open_interpolating_spline_path(vertices=[u0(), x(), xy(), y()], v0=false, v1=false) =
   OpenInterpolatingSplinePath(vertices, v0, v1)
+"Open path: smooth spline interpolating `vertices`. `v0`/`v1` optionally fix the start/end tangent vectors (`false` lets the interpolator choose)."
 open_spline_path(vertices=[u0(), x(), xy(), y()], v0=false, v1=false) =
   open_interpolating_spline_path(vertices, v0, v1)
 
@@ -495,14 +507,17 @@ closed_interpolating_spline_path(vertices=[u0(), x(), xy(), y()]) =
   let vertices = ensure_no_repeated_locations(vertices)
     ClosedInterpolatingSplinePath(vertices)
   end
+"Closed path: smooth periodic spline interpolating `vertices`. `vertices` must not repeat the first location at the end."
 closed_spline_path(vertices=[u0(), x(), xy(), y()]) =
   closed_interpolating_spline_path(vertices)
 
+"Smooth spline interpolating `vertices`; closed when the first and last vertices coincide, otherwise open."
 interpolating_spline_path(vertices::Locs) =
   coincident_path_location(vertices[1], vertices[end]) ?
     closed_interpolating_spline_path(vertices[1:end-1]) :
     open_interpolating_spline_path(vertices)
 interpolating_spline_path(v::Loc, vs...) = interpolating_spline_path([v, vs...])
+"Smooth spline interpolating `vertices` (alias for `interpolating_spline_path`); closed when the endpoints coincide, otherwise open."
 spline_path(vertices::Locs) = interpolating_spline_path(vertices)
 spline_path(v::Loc, vs...) = spline_path([v, vs...])
 
@@ -598,6 +613,7 @@ closed_bezier_path(span::BezierSpan, spans::BezierSpan...) =
 closed_bezier_path(control_points::Locs=[u0(), x(), xy(), u0()]) =
   closed_bezier_path(BezierSpan(control_points))
 
+"Bezier path from `spans` (or from `control_points` defining a single span); `closed=true` requires the path to end where it starts."
 bezier_path(spans::Vector{BezierSpan}; closed::Bool=false) =
   closed ? closed_bezier_path(spans) : open_bezier_path(spans)
 bezier_path(control_points::Locs=[u0(), x(), xy(), y()]; closed::Bool=false) =
@@ -712,6 +728,7 @@ bspline_domain(knots, degree, n) =
   (Float64(knots[degree + 1]), Float64(knots[n + 1]))
 nurbs_domain(knots, degree, n) = bspline_domain(knots, degree, n)
 
+"Non-rational B-spline path of the given `degree` over `control_points`; `periodic=true` yields a closed path. Optional `knots`/`domain` override the defaults."
 function bspline_path(control_points::Locs; degree::Integer=3, periodic::Bool=false,
                       knots=nothing, domain=nothing)
   degree = Int(degree)
@@ -749,6 +766,7 @@ closed_bspline_path(control_points::Locs=[u0(), x(), xy(), y()]; degree::Integer
   bspline_path(control_points; degree=degree, periodic=true,
                knots=knots, domain=domain)
 
+"Rational B-spline (NURBS) path of the given `degree` over `control_points` with per-point `weights`; `periodic=true` yields a closed path. Optional `knots`/`domain` override the defaults."
 function nurbs_path(control_points::Locs; degree::Integer=3, periodic::Bool=false,
                     knots=nothing, weights=nothing, domain=nothing)
   degree = Int(degree)
@@ -1301,6 +1319,7 @@ divide_curve(curve, count::Integer, include_ends::Bool=true) =
 subpath_starting_at(path::Path, d::Real) = subpath(path, d, path_length(path))
 subpath_ending_at(path::Path, d::Real) = subpath(path, 0, d)
 
+"Open subpath of `path` between arc lengths `a` and `b` (measured in path units from the start)."
 subpath(path::CircularPath, a::Real, b::Real) =
   arc_path(path.center, path.radius, a/path.radius, (b-a)/path.radius)
 subpath(path::ArcPath, a::Real, b::Real) =
@@ -1913,6 +1932,7 @@ convert(::Type{OpenPolygonalPath}, path::PathOps) =
   end
 
 
+"Decompose `path` into a vector of connected open primitive pieces (line/arc/spline segments), in order from start to end."
 path_pieces(path::EmptyPath) = OpenPath[]
 path_pieces(path::PointPath) = OpenPath[]
 path_pieces(path::LinePath) = OpenPath[path]
@@ -2175,6 +2195,7 @@ path_frames(path::ClosedPolygonalPath) =
     path_frames(OpenPolygonalPath([pts[end], pts..., pts[1]]))[begin+1:end-1]
   end
 
+"Split `path` into its individual edge segments as a vector of open paths (a closed path also includes the closing edge)."
 subpaths(path::OpenPolygonalPath) =
   let ps = path.vertices
     map((p0, p1)->open_polygonal_path([p0, p1]), ps[1:end-1], ps[2:end])
@@ -2185,6 +2206,7 @@ subpaths(path::ClosedPolygonalPath) =
   end
 subpaths(path::Path) = path_pieces(path)
 
+"Closed path enclosing the region of closed `path1` with the region of closed `path2` removed (both treated as polygons)."
 subtract_paths(path1::Path, path2::Path) =
   subtract_paths(convert(ClosedPolygonalPath, path1), convert(ClosedPolygonalPath, path2))
 subtract_paths(path1::ClosedPolygonalPath, path2::ClosedPolygonalPath) =

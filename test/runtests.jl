@@ -8,6 +8,7 @@ using Test
 
   @testset "API surface" begin
     include("test_api_surface.jl")
+    include("test_socket_shadow_guard.jl")
   end
 
   @testset "Render view options" begin

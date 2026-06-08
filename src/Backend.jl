@@ -450,7 +450,7 @@ b_closed_spline(b::Backend, ps, mat) =
   end
 
 b_circle(b::Backend, c, r, mat) =
-  b_closed_spline(b, regular_polygon_vertices(32, c, r, 0, true), mat)
+  b_closed_spline(b, regular_polygon_vertices(tessellation_divisions(b), c, r, 0, true), mat)
 
 #=
 Guard against degenerate arcs (zero or near-zero amplitude). The original
@@ -478,7 +478,7 @@ b_arc(b::Backend, c, r, α, Δα, mat) =
 b_ellipse(b::Backend, c, rx, ry, mat) =
   b_closed_spline(b,
     [add_xy(c, rx*cos(ϕ), ry*sin(ϕ))
-     for ϕ in division(0, 2pi, 64, false)], mat)
+     for ϕ in division(0, 2pi, elliptic_arc_segments, false)], mat)
 
 #=
 Sample density for elliptic arc/full-ellipse approximations. 64 segments
@@ -679,13 +679,29 @@ b_surface_regular_polygon(b::Backend, edges, c, r, angle, inscribed, mat) =
   b_ngon(b, regular_polygon_vertices(edges, c, r, angle, inscribed), c, false, mat)
 
 b_surface_circle(b::Backend, c, r, mat) =
-  b_surface_regular_polygon(b, 32, c, r, 0, true, mat)
+  b_surface_regular_polygon(b, tessellation_divisions(b), c, r, 0, true, mat)
+
+#=
+Segment count for the inner and outer boundaries of a tessellated ring.
+A ring renders as a polygon-with-holes, so both rims are regular polygons;
+matching their vertex counts keeps the two boundaries concentric without a
+visible faceting beat between them. 64 segments around a full revolution holds
+chord-deviation under ~0.1% at unit radius - twice the density of the generic
+`tessellation_divisions` solid default (32) because a ring shows its silhouette
+as a flat 2D outline where faceting is most conspicuous, matching the
+`elliptic_arc_segments` choice for the same reason. A vector backend that can
+emit a native annulus (e.g. TikZ via two circle paths) should override
+`b_surface_ring` directly rather than lower this count.
+See also: elliptic_arc_segments, tessellation_divisions, b_surface_circle.
+=#
+"Segment count per boundary for the polygonal approximation of a ring."
+const ring_boundary_segments = 64
 
 b_surface_ring(b::Backend, c, ri, ro, mat) =
   b_surface_polygon_with_holes(
     b,
-    regular_polygon_vertices(64, c, ro, 0, true),
-    [regular_polygon_vertices(64, c, ri, 0, true)],
+    regular_polygon_vertices(ring_boundary_segments, c, ro, 0, true),
+    [regular_polygon_vertices(ring_boundary_segments, c, ri, 0, true)],
     mat)
 
 # Mirrors b_arc (see its prose block above): abs(Δα) so clockwise (negative-Δα)

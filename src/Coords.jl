@@ -790,7 +790,43 @@ intermediate_loc(p::Loc, q::Loc, f::Real=0.5) =
 
 meta_program(x::Any) = x # literals might be self evaluating
 meta_program(x::Int) = x
-meta_program(x::Real) = round(x,sigdigits=8)
+#=
+Coordinate precision for regenerated source code.
+
+`meta_program` turns live geometry back into Julia source (round-tripping
+locations, vectors, colors, and BIM elements; the regenerated source is
+emitted by `internalize_shape`/`internalize_shapes`). Raw Float64
+coordinates carry up to ~17 significant decimal digits, most of which are
+floating-point noise introduced by transforms (rotations, change of
+coordinate system) rather than meaningful design intent. Emitting all 17
+digits makes the regenerated source unreadable and bloats it without
+adding fidelity, so each Real coordinate is rounded before it is printed.
+
+The comparison is `round(x, sigdigits=meta_program_sigdigits())`, counting
+significant decimal digits (unit-independent: it applies equally to metres,
+radians, or dimensionless ratios). The default 8 keeps roughly millimetre
+precision on kilometre-scale models and sub-micron precision on metre-scale
+models — well beyond any real fabrication or modelling tolerance — while
+discarding the noisy tail of the mantissa. Float64 itself carries ~15-16
+reliable digits, so 8 is a deliberate readability trade-off, not a hardware
+limit.
+
+Override (e.g. `meta_program_sigdigits(15)`) when round-tripping must
+preserve coordinates to near machine precision — for instance regression
+fixtures that compare regenerated geometry byte-for-byte, or workflows that
+feed the emitted source back through exact transforms. Raising it yields
+verbose but higher-fidelity source; lowering it yields terser, lossier
+source.
+
+See also: meta_program (the emitter that consumes this), internalize_shape,
+internalize_shapes.
+=#
+
+"Significant decimal digits kept when `meta_program` rounds a Real coordinate while regenerating source. Override via `meta_program_sigdigits(n)`."
+const meta_program_sigdigits = Parameter(8)
+export meta_program_sigdigits
+
+meta_program(x::Real) = round(x, sigdigits=meta_program_sigdigits())
 meta_program(x::Bool) = x
 meta_program(x::DataType) = Symbol(x)
 meta_program(x::Vector{T}) where T = 

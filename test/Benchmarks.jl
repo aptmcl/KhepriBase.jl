@@ -115,7 +115,7 @@ function bench_floor_plan(n)
     # Connect adjacent spaces with doors
     spaces = plan.spaces
     for i in 2:length(spaces)
-      connect(plan, spaces[i-1], spaces[i], :door)
+      connect_spaces(plan, spaces[i-1], spaces[i], :door)
     end
     build(plan)
   end

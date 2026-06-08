@@ -1099,6 +1099,33 @@ struct WallMesh
   quad_materials::Vector{Material}
 end
 
+#=
+`extent` is the half-length, in model metres, of the temporary unbounded
+"construction line" laid through junction point `p` along direction `d` so the
+generic `intersections` machinery can locate where two wall faces (or a face and
+an arc's offset circle) cross. The line is the segment `p - d·extent … p + d·extent`,
+standing in for an infinite line, so `extent` must comfortably exceed any real
+distance from `p` to the true intersection — the segment only fails when it is
+too short to reach the crossing.
+
+It is compared against the model coordinates of `p` (also metres). The fixed
+floor 1.0e3 (1 km) covers ordinary buildings drawn near the origin, while the
+`100.0·max(|x|,|y|,1)` term scales the line up for models authored far from the
+origin (e.g. georeferenced site coordinates) so the segment still reaches the
+intersection. Both constants are deliberately generous, not tight:
+overshooting is free because only the intersection point is kept (see
+`line_intersection_2d`, `_nearest`), whereas undershooting silently drops a
+valid corner.
+
+Override `extent` only for a model whose coordinates are so large that even the
+scaled value underflows the needed reach, or so large that an enormous extent
+provokes floating-point precision loss inside `intersections`; pass an `extent`
+sized to that model.
+
+See also: `line_intersection_2d`, `line_arc_intersection_2d`,
+`arc_arc_intersection_2d`, `_nearest`.
+=#
+"Build an unbounded construction line through `p` along `d`; `extent` is its half-length in metres."
 function _wall_construction_line(p::Loc, d; extent::Real=max(1.0e3, 100.0 * max(abs(cx(p)), abs(cy(p)), 1.0)))
   v = vxy(cx(d) * extent, cy(d) * extent)
   line_path(p - v, p + v)
@@ -1246,6 +1273,29 @@ function wall_corner(pos::Loc,
   end
 end
 
+#=
+Dimensionless cap on how far a mitered wall corner may sit from the junction,
+expressed as a multiple of the larger of the two meeting half-thicknesses
+(`max(l_th, r_th)`, a length in model metres). At a sharp junction the offset
+faces of two walls meet far outside the walls themselves — as the angle between
+them approaches 0, the true miter point runs off to infinity — so the corner is
+clamped to at most `MITER_LIMIT · max(l_th, r_th)` away from the junction
+position (see `_clamp_corner`).
+
+The value 10 is a spike-versus-fidelity trade-off measured in half-thicknesses:
+it lets a genuinely acute corner extend up to ~10× the wall's half-thickness
+(visibly pointed, as real mitered trim is) while bounding the runaway spike that
+a near-degenerate angle would otherwise produce. It matches the conventional
+miter-limit range used by 2D stroke renderers (SVG/PostScript default 10) and by
+CAD wall-join tools.
+
+Lower it (toward ~2-4) to bevel sharp corners sooner — fewer long spikes at the
+cost of clipping legitimately pointed joints; raise it for models that
+intentionally use very acute wall angles and want the full miter preserved.
+
+See also: `_clamp_corner`, `clamped_miter`, `wall_corner`.
+=#
+"Dimensionless cap (× max half-thickness) on a miter corner's distance from its junction."
 const MITER_LIMIT = 10.0
 
 # Compute a miter corner with clamping. When the miter distance exceeds the
@@ -1679,14 +1729,38 @@ function render_wall_graph(wg::WallGraph)
   end
 end
 
+#=
+Small vertical inset, in model metres, applied to a door/window panel so its
+top and bottom faces do not land exactly on the surrounding wall geometry. The
+panel is raised by this amount at its base (`+ wall_opening_z_epsilon`) and
+shortened by the same amount at its top (`- wall_opening_z_epsilon`), pulling
+both faces just inside the opening.
+
+It is compared against a length: the panel's vertical extent and the wall
+height around it (metres). Without the inset, the panel's base would be coplanar
+with the sill / floor and its top coplanar with the lintel, and the GPU depth
+buffer cannot decide which surface is in front — the two flicker (z-fighting).
+The default 1e-4 m (0.1 mm) is far below any visible architectural tolerance, so
+the geometric shift is imperceptible, yet large enough to separate the two
+planes well beyond single-precision depth-buffer resolution at building scale.
+
+Raise it (e.g. towards 1e-3) only if z-fighting still appears on a backend with a
+coarser or more distant depth buffer; lower it if the 0.1 mm gap is ever visible
+at very small model scales.
+
+See also: `render_opening_frame`, `render_wall_graph`.
+=#
+"Vertical inset (metres) keeping an opening panel's faces off the wall to avoid z-fighting."
+const wall_opening_z_epsilon = 0.0001
+
 # Render a door/window panel and frame for an opening in a wall segment.
 function render_opening_frame(wg, seg, op, b)
   let pos_a = wg.junctions[seg.junction_a].position,
       pos_b = wg.junctions[seg.junction_b].position,
       zbot = wg.bottom_level.height,
       dir = unitized(pos_b - pos_a),
-      base_height = zbot + op.sill + 0.0001,
-      height = op.family.height - 0.0001,
+      base_height = zbot + op.sill + wall_opening_z_epsilon,
+      height = op.family.height - wall_opening_z_epsilon,
       start_pos = pos_a + dir * op.distance,
       end_pos = pos_a + dir * (op.distance + op.family.width),
       subpath = translate(open_polygonal_path([start_pos, end_pos]), vz(base_height)),

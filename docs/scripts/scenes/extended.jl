@@ -509,7 +509,7 @@ register_scene(
     surface_rectangle(xy(4 - 0.12, 1.0), 0.24, 1.0,
                       material=_highlight_material)
     _label(":door", xy(4.4, 1.3); h=0.28)
-    text("connect(desc, :living, :kitchen; kind=:door)",
+    text("connect_spaces(desc, :living, :kitchen; kind=:door)",
          xy(0, -1), 0.3, material=_label_material)
   end,
 )

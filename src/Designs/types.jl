@@ -246,13 +246,16 @@ end
 """
     Repeated <: SpaceDesc
 
-Repeats a unit space `count` times along `axis` (`:x` or `:y`).
-When `mirror_alternate` is true, every other copy is mirrored.
+Repeats a unit space `count` times along `axis` (`:x`, `:y`, or `:z`).
+For `:x`/`:y` the copies tile in the plan; for `:z` each copy is stacked
+on the next storey up (see [`desc_height`](@ref) and the layout engine).
+When `mirror_alternate` is true, every other copy is mirrored — this is
+ignored for `:z`, where mirroring a vertical stack has no meaning.
 """
 struct Repeated <: SpaceDesc
   unit::SpaceDesc
   count::Int
-  axis::Symbol        # :x or :y
+  axis::Symbol        # :x, :y, or :z
   mirror_alternate::Bool
 end
 

@@ -243,15 +243,48 @@ end
 surface_location(s::TrimmedSurface, u::Real, v::Real) =
   surface_location(s.base, u, v)
 
+#=
+Finite-difference step for surface tangents.
+
+`surface_tangent` has no closed-form derivative for the general
+`SurfaceGeometry` (NURBS, trimmed, mesh-backed patches), so it estimates the
+partial derivative by a central difference of `surface_location`. The step
+`h` must be small enough that the secant approximates the tangent, yet large
+enough that subtracting two nearby surface points does not lose all its
+significant digits to catastrophic cancellation.
+
+`h` is a fraction of the parameter-domain extent in the chosen direction
+(`(u1 - u0)` or `(v1 - v0)`), so it is expressed in units of the surface's
+parameter domain and scales automatically to domains of any size. The
+default fraction 1e-6 sits near the classic optimum for a central difference
+in Float64: truncation error grows as h^2 while rounding error grows as
+eps/h, and their balance lands a few orders of magnitude below 1, so 1e-6 of
+the domain keeps both error terms small for smooth patches.
+
+The relative step is floored at `sqrt(eps(Float64))` (~1.5e-8) so that on a
+degenerate or near-zero-width domain the step never collapses to a value
+where `u +/- h == u` in floating point, which would make the secant
+identically zero. Raise this when a surface is so finely parameterised that a
+1e-6 relative step still falls inside floating-point noise; lower it for
+highly curved patches where the truncation error of a larger step dominates.
+
+See also: zero_vector_tolerance (used by `normal_at`/`location_at` to reject
+the degenerate tangents this step can still produce), parallelism_tolerance.
+=#
+
+"Relative central-difference step (fraction of the parameter-domain extent) used by `surface_tangent`; floored at `sqrt(eps(Float64))`."
+const surface_fd_relative_step = Parameter(1e-6)
+export surface_fd_relative_step
+
 function surface_tangent(s::SurfaceGeometry, u::Real, v::Real, axis::Symbol)
   u0, u1, v0, v1 = surface_domain(s)
   if axis === :u
-    h = max((u1 - u0) * 1e-6, sqrt(eps(Float64)))
+    h = max((u1 - u0) * surface_fd_relative_step(), sqrt(eps(Float64)))
     a, b = max(u0, Float64(u) - h), min(u1, Float64(u) + h)
     b == a && return vx(0)
     (surface_location(s, b, v) - surface_location(s, a, v)) / (b - a)
   elseif axis === :v
-    h = max((v1 - v0) * 1e-6, sqrt(eps(Float64)))
+    h = max((v1 - v0) * surface_fd_relative_step(), sqrt(eps(Float64)))
     a, b = max(v0, Float64(v) - h), min(v1, Float64(v) + h)
     b == a && return vy(0)
     (surface_location(s, u, b) - surface_location(s, u, a)) / (b - a)

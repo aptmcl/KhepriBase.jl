@@ -51,8 +51,8 @@ const render_floor_height = Parameter(1000)
 
 render_size() =
   (render_width(), render_height())
-render_size(width::Integer, heigth::Integer) =
-  (render_width(width), render_height(heigth))
+render_size(width::Integer, height::Integer) =
+  (render_width(width), render_height(height))
 
 export film_active,
        film_filename,

@@ -1029,11 +1029,22 @@ Return the chain-segment with the longest straight span that is
 wider than `min_width` — the preferred host for an opening so its
 frame stays flat. Returns `nothing` if no single segment fits.
 
+Returns the widest qualifying segment ELEMENT, not an index, so it is
+deliberately NOT named after `Base.argmax` (which returns the maximiser's
+key). Spans (`s[3]-s[2]`) and `min_width` are lengths in meters, matching
+`conn.family.width` / `opening_width` at the call site. Equivalent to
+`argmax(s -> s[3]-s[2], filter(s -> s[3]-s[2] >= min_width, segs))` guarded
+for an empty set; kept as a loop so the width gate and nothing-fallback
+read at a glance. Ties keep the first-encountered widest segment.
+
 `segs` is the chain-segment tuple list used by
 `place_interior_connection!` / `place_exterior_connection!`:
 `(edge_idx, t_start, t_end, p1, p2, forward?)`.
+
+See also: `place_exterior_connection!`, `place_interior_connection!`.
 =#
-function argmax_or_nothing(segs, min_width)
+"Widest chain-segment whose span (meters) is >= min_width, or nothing; the preferred straight host for an opening."
+function widest_hostable_segment(segs, min_width)
   best = nothing
   best_len = 0.0
   for s in segs
@@ -1137,7 +1148,7 @@ function place_interior_connection!(conn, segments, edge_to_seg, walls,
     # the widest sub-segment on the chain that can host the full
     # opening; fall back to the chain midpoint only if no single
     # segment is wide enough.
-    straight = argmax_or_nothing(best_segs, opening_width)
+    straight = widest_hostable_segment(best_segs, opening_width)
     if !isnothing(straight)
       (s_i, s_t0, s_t1, _, _, _) = straight
       s_t0 + ((s_t1 - s_t0) - opening_width) / 2

@@ -4,7 +4,7 @@
 # A `Design` is an immutable tree whose leaves are rooms, voids, and
 # envelopes, and whose internal nodes are composition (`beside`,
 # `above`, `grid`, `repeat_unit`), transformation (`scale`, `mirror`,
-# `with_height`, `with_props`), annotation (`connect`, `disconnect`,
+# `with_height`, `with_props`), annotation (`connect_spaces`, `disconnect`,
 # `no_windows`), and top-down subdivision (`subdivide_x`,
 # `partition_x`, `carve`, `refine`, `assign`, `subdivide_remaining`,
 # `split_x`). The tree compiles to a Level 1 `Layout` through the
@@ -47,7 +47,7 @@ export beside, beside_x, beside_y, above
 export repeat_unit
 export scale, mirror_x, mirror_y, with_height, with_props
 export tag_wall_family, tag_slab_family
-export connect, connect_exterior, disconnect, no_windows
+export connect_spaces, connect_exterior, disconnect, no_windows
 
 # ---- Subdivision ----
 export subdivide_x, subdivide_y, split_x, split_y, partition_x, partition_y

@@ -1781,6 +1781,27 @@ shape_locs(s::Circle) =
   let c = s.center, r = s.radius
     [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r)]
   end
+#=
+`shape_locs` feeds the conservative bounding-box approximation in
+`shapes_bbox` (Backend.jl): the box is the AABB of the returned points,
+so every point of the real shape must be enclosed by them.
+
+For an Arc we deliberately return the four cardinal extents of the FULL
+circle (center ± radius along x and y) rather than the true extrema of the
+swept sub-arc derived from `start_angle`/`amplitude` (both in radians). This
+is an intentional, safe over-approximation: the full-circle box always
+contains the arc, so bounds stay correct; it merely makes them looser (e.g.
+a 30° arc still reports the whole circle's box). We keep it because the tight
+extrema (the two endpoints plus every cardinal axis crossed within the
+sweep) cost extra trig per query for a 1D curve that rarely dominates a
+scene's bounds, and because some backends realize an Arc through a native op
+that keeps this proxy while others fall back to a SurfacePolygon whose own
+`shape_locs` already yields the tighter box — both are valid framings.
+Switch to true extrema only if a use-case needs tight arc bounds and can
+absorb the reframing of any auto-fit camera.
+See also: shape_locs(::Circle), shapes_bbox, surface_arc stress test.
+=#
+"Key bbox locations for an Arc: the full circle's cardinal extents — a conservative over-approximation that ignores start_angle/amplitude (radians) on purpose."
 shape_locs(s::Arc) =
   let c = s.center, r = s.radius
     [add_x(c, r), add_x(c, -r), add_y(c, r), add_y(c, -r)]

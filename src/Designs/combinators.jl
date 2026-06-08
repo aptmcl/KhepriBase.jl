@@ -74,8 +74,10 @@ above(a, b, rest...; slab_between=true) =
 """
     repeat_unit(unit, n; axis=:x, mirror_alternate=false)
 
-Repeat `unit` `n` times along `axis`. When `mirror_alternate` is true,
-even-indexed copies are mirrored.
+Repeat `unit` `n` times along `axis` (`:x`, `:y`, or `:z`). `:x`/`:y` tile
+the copies in the plan; `:z` stacks each copy on the next storey up. When
+`mirror_alternate` is true, even-indexed copies are mirrored, except for
+`:z`, where mirroring is ignored.
 """
 function repeat_unit(unit, n; axis=:x, mirror_alternate=false)
   n < 1 && error("repeat_unit: count must be >= 1, got $n")
@@ -157,11 +159,16 @@ tag_slab_family(s, family_name) = with_props(s, (slab_family=Symbol(family_name)
 # ---- Annotation combinators ----
 
 """
-    connect(desc, from, to; kind=:door, width=nothing, height=nothing)
+    connect_spaces(desc, from, to; kind=:door, width=nothing, height=nothing)
 
 Annotate a connection (e.g. door or opening) between zones `from` and `to`.
+
+Named `connect_spaces` rather than `connect` so the export does not shadow
+`Sockets.connect` inside the KhepriBase module (a bare `connect` there would
+otherwise resolve to this 5-arg design combinator and silently break socket
+backend setup). See also `connect_exterior`, `disconnect`.
 """
-connect(desc, from, to; kind=:door, width=nothing, height=nothing) =
+connect_spaces(desc, from, to; kind=:door, width=nothing, height=nothing) =
   Annotated(desc, ConnectAnnotation(from, to, kind,
     isnothing(width) ? nothing : Float64(width),
     isnothing(height) ? nothing : Float64(height)))

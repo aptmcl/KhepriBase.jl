@@ -189,11 +189,11 @@ mutable struct SocketBackend{K,T} <: RemoteBackend{K,T}
   refs::References{K,T}
 end
 
-SocketBackend{K,T}(name, port, remote) where {K,T} =
-  SocketBackend{K,T}(name, port, missing, remote)
+SocketBackend{K,T}(name, port, static_remote) where {K,T} =
+  SocketBackend{K,T}(name, port, missing, static_remote)
 
-SocketBackend{K,T}(name, port, connection, remote) where {K,T} =
-  SocketBackend{K,T}(name, port, connection, remote, remote_functions(remote), Parameter{Transaction}(AutoCommitTransaction()), References{K,T}())
+SocketBackend{K,T}(name, port, connection, static_remote) where {K,T} =
+  SocketBackend{K,T}(name, port, connection, static_remote, remote_functions(static_remote), Parameter{Transaction}(AutoCommitTransaction()), References{K,T}())
 
 # AML: replace with the Base.retry function?
 #=
