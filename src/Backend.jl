@@ -997,6 +997,17 @@ public b_set_environment
 b_surface(b::Backend, path::ClosedPath, mat) =
   b_surface_polygon(b, path_vertices(path), mat)
 
+#=
+The surface_path shape (Shapes.jl) is the filled interior of a single closed
+path. Its @defshape-generated realize calls b_surface_path; a closed path is
+already a valid b_surface input, so the operation is just a thin, backend-
+agnostic alias. Defining it here (once) means every backend that implements
+b_surface realizes surface_path for free, with no per-backend method.
+See also: b_surface(::ClosedPath) above, surface_path in Shapes.jl.
+=#
+b_surface_path(b::Backend, path, mat) =
+  b_surface(b, path, mat)
+
 b_surface(b::Backend, region::Region, mat) =
   b_surface_polygon_with_holes(
     b,

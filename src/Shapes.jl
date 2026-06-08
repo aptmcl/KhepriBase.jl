@@ -472,12 +472,34 @@ delete_all()             # Deletes all shapes and the underlying resources (e.g.
 @defcbs delete_all_shapes()
 @defcbs delete_all()
 
+#=
+Deleting one annotation can, as a side effect, delete others it depends on, so a
+later shape in the iteration may already be gone. The previous code expressed this
+with an empty `catch`, which silently swallowed *every* exception — not just the
+benign already-deleted case — hiding genuine failures (a retired/transport-broken
+backend, a malformed ref, a bug in delete_shape) while `empty!(refs)` below still
+wiped the annotation dict, orphaning the backend's real objects.
+
+Two deliberate choices avoid that:
+  - We snapshot `keys(refs)` before iterating, because delete_shape mutates this
+    very dict (via reset_ref/really_mark_deleted) and mutating a Dict mid-iteration
+    is undefined in Julia. The snapshot also makes the already-deleted skip meaningful.
+  - `marked_deleted(b, shape)` makes the "already deleted" intent explicit and is
+    exception-free (delete_shape on a gone shape is a no-op via maybe_delete's
+    `realized` guard, not an error), so any exception that *does* escape delete_shape
+    is a real failure and is routed to handle_backend_error, which retires a dead
+    RemoteBackend on the transport-error set and rethrows everything else — the same
+    policy used by maybe_realize and the @defcbs/@defcb frontend wrappers.
+See also: marked_deleted, maybe_delete, handle_backend_error.
+=#
 b_delete_all_annotations(b::Backend) =
   let refs = annotation_refs_storage(b)
-    for (shape, _) in refs
-      try # It might have been deleted already
+    for shape in collect(keys(refs))
+      marked_deleted(b, shape) && continue
+      try
         delete_shape(shape)
       catch e
+        handle_backend_error(e, b)
       end
     end
     empty!(refs)
@@ -1168,11 +1190,23 @@ surface(c0::Shape, cs...) = surface([c0, cs...])
 #To be removed
 surface_from = surface
 
-@defproxy(surface_path, Shape2D, path::ClosedPath=[circular_path()])
 #=
-realize(b::Backend, s::SurfacePath) =
-  backend_fill(b, s.path)
+A surface_path is the filled region bounded by a single closed path. Unlike the
+bare @defproxy it used to be, it is now a @defshape so it carries a `material`
+field like every other Shape2D surface (surface_circle, surface_polygon, ...);
+without it, the same colored-surface script could fill a surface_polygon but not
+a surface_path, breaking backend portability.
+
+@defshape generates `realize(b,s) = b_surface_path(b, s.path, material_ref(b,s))`,
+so the backend operation b_surface_path must exist. It is provided once, backend-
+agnostically, in Backend.jl as `b_surface_path(b, path, mat) = b_surface(b, path,
+mat)`: a ClosedPath is already a valid b_surface input, so no per-backend method
+is needed. The previous hand-written `realize` (commented out) routed through the
+legacy backend_fill path, which throws UndefinedBackendException in modern b_*
+backends; it is intentionally dropped.
+See also: b_surface (Backend.jl), surface (this file).
 =#
+@defshape(Shape2D, surface_path, path::ClosedPath=[circular_path()])
 surface_boundary(s::Shape2D, backend::Backend=top_backend()) =
   backend_surface_boundary(backend, s)
 
@@ -1692,7 +1726,18 @@ convert(::Type{Matrix{XYZ}}, ptss::Vector{Vector{<:Loc}}) =
 
 surface_domain(s::SurfaceGrid) = (0.0, 1.0, 0.0, 1.0)
 frame_at(s::SurfaceGrid, u::Real, v::Real) = evaluate(s, u, v)
-map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int, backend::Backend=top_backend()) =
+#=
+No `backend` parameter here, unlike `surface_domain`/`surface_boundary` above.
+A SurfaceGrid is an analytically-known surface: `frame_at(s, u, v)` resolves to
+`evaluate(s, u, v)`, a local interpolation over the grid's stored control points,
+so sampling needs no backend round-trip. The earlier signature carried an unused
+`backend::Backend=top_backend()` that was silently dropped — a caller passing a
+backend would have seen it ignored. Dropping it keeps this method consistent with
+its more general sibling `map_division(f, s::Shape2D, nu, nv)`, which likewise
+takes no explicit backend and derives one via `backend(s)` when one is needed.
+See also: frame_at(s::SurfaceGrid, ...), surface_domain(s::SurfaceGrid).
+=#
+map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int) =
   let (u1, u2, v1, v2) = surface_domain(s)
     map_division(u1, u2, nu) do u
       map_division(v1, v2, nv) do v

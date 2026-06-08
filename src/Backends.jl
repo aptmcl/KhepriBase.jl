@@ -649,6 +649,26 @@ b_current_layer_ref(b::Backend, layer) = b.current_layer = layer
 # every concrete `b.layers` value type (Vector{Proxy} or Vector{Shape}).
 b_all_shapes_in_layer(b::Backend, layer) = get(b.layers, layer, Proxy[])
 b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_in_layer(b, layer))
+#=
+The three layer-property setters below are *deliberate* no-ops in the
+generic fallback, not unfinished stubs.  Layer styling is an optional
+capability: many backends model layer visibility/opacity but have no
+per-layer *material* concept (Blender, Three.js, Unity and Unreal
+override `b_set_layer_visible`/`b_set_layer_opacity` yet intentionally
+leave `b_set_layer_material` at this default), and pure-geometry or
+file-output backends may expose no layer styling at all.  For those a
+styling request must be silently ignored rather than raised: under the
+backend-portability rule the *same* script has to render on every
+backend, so an unsupported style should degrade to "unstyled", never
+to an error.  This mirrors `b_view_settings` (Frontend.jl), whose
+`nothing` fallback is documented the same way.
+
+A backend that genuinely supports a property overrides the matching
+method (see AutoCAD/Rhino `b_set_layer_material`, and
+`b_set_layer_visible`/`b_set_layer_opacity` in most socket backends);
+a backend that must *reject* unsupported styling can override with an
+`error(...)`.  The base default chooses portability over noise.
+=#
 b_set_layer_material(b::Backend, layer_ref, material_ref) = nothing
 b_set_layer_visible(b::Backend, layer, visible) = nothing
 b_set_layer_opacity(b::Backend, layer, opacity) = nothing
@@ -960,5 +980,31 @@ abstract type LazyBackend{K,T} <: Backend{K,T} end
 # to the transaction-based maybe_realize(b, s) in Shapes.jl.
 maybe_realize(b::LazyBackend, s::Shape) = save_shape!(b, s)
 
-# Default save_shape! for LazyBackend - backends should specialize this
-save_shape!(b::LazyBackend, s::Shape) = s
+#=
+A LazyBackend overrides realization entirely (see maybe_realize above): instead
+of going through the transaction/force_realize path, every Shape is handed to
+`save_shape!` for deferred batch processing.  A backend therefore MUST decide,
+per shape type, what happens to it.  The historical default silently returned
+the shape unstored (`= s`), which meant any shape type a LazyBackend forgot to
+handle was dropped without a trace — exactly the silent-no-op stub the project's
+stub policy forbids (CLAUDE.md: a default that discards input must error() or
+carry a prose block stating the silence is deliberate).
+
+We make the unhandled case a loud, actionable error.  Backends that genuinely
+want to ignore some shape types (e.g. a structural-analysis backend dropping
+decorative geometry) can still do so — but they must opt in explicitly with a
+documented catch-all `save_shape!(b::MyBackend, s::Shape) = s`, which makes the
+discard a visible design decision rather than an accident.  Specialised methods
+for handled types (e.g. Frame4DD's TrussNode/TrussBar) win by dispatch and never
+reach this fallback.
+
+See also: maybe_realize(b::LazyBackend, s::Shape) above; save_shape!(b::LocalBackend, s::Proxy);
+KhepriFrame4DD/src/Frame4DD.jl (save_shape! for TrussNode/TrussBar).
+=#
+save_shape!(b::LazyBackend, s::Shape) =
+  error("Backend $(backend_name(b)) (a LazyBackend) received a $(nameof(typeof(s))) " *
+        "but defines no save_shape! method for it. A LazyBackend stores shapes for " *
+        "later batch processing; an unhandled shape type would be silently dropped. " *
+        "Add a `save_shape!(b::$(typeof(b)), s::$(nameof(typeof(s))))` method, or an " *
+        "explicit catch-all `save_shape!(b::$(typeof(b)), s::Shape) = s` if discarding " *
+        "such shapes is intended.")
