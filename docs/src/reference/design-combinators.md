@@ -11,7 +11,7 @@ same behaviour in a compact syntax.
 # then a second storey above the first (^).
 ground = room(:living, :living_room, 5.0, 4.0) | room(:kitchen, :kitchen, 3.0, 4.0)
 second = room(:bed1, :bedroom, 4.0, 3.0) | room(:bed2, :bedroom, 4.0, 3.0)
-house = second ^ ground                           # axis precedence: ^ > / > |
+house = ground ^ second                           # bottom-to-top; precedence: ^ > / > |
 
 # A 3-wide column of identical studios:
 studios = repeat_unit(room(:u, :studio, 6.0, 5.0), 3; axis=:x)

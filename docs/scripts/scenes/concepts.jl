@@ -137,7 +137,7 @@ register_scene(
     line(xy(4, 0), xy(4, 1.6))
     line(xy(4.6, 0.8), xy(4.6, 2.4))
     line(xy(0.6, 0.8), xy(0.6, 2.4))
-    text("b ^ a  -  above", xy(0, -0.8), 0.5)
+    text("a ^ b  -  above", xy(0, -0.8), 0.5)
   end,
 )
 

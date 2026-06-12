@@ -49,7 +49,7 @@ and `^` expand to.
 
 - `BesideX` — two children laid out along x (`a | b`).
 - `BesideY` — two children laid out along y (`a / b`).
-- `Above` — two children stacked along z (`b ^ a`, with `a` on top).
+- `Above` — two children stacked along z (`a ^ b`, with `b` on top).
   `slab_between` controls whether the compiler emits a dividing
   slab.
 - `Repeated` — one unit replicated `count` times along an axis, with

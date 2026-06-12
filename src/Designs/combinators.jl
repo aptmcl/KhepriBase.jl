@@ -55,9 +55,11 @@ beside(a, b, rest...; axis=:x, shared_wall=true, align=:start) =
     above(a, b; slab_between=true)
     above(a, b, rest...; slab_between=true)
 
-Stack two or more spaces vertically. `a` sits on top of `b`. A zero-sized
-`void()` on either side is elided, so `above(void(), a) === a`.
-The variadic form folds left over all arguments.
+Stack two or more spaces vertically: `b` is placed on top of `a`, so the
+arguments read bottom-to-top (`above(ground, first)` puts `first` above
+`ground`). A zero-sized `void()` on either side is elided, so
+`above(void(), a) === a`. The variadic form folds left over all arguments,
+keeping the bottom-to-top reading.
 """
 above(a, b; slab_between=true) =
   _is_identity_void(a) ? b :

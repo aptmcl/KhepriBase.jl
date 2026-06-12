@@ -10,7 +10,7 @@ Three infix operators provide concise spatial composition:
 | `a / b` | [`beside_y`](@ref) | y (front to back) | middle |
 | `a ^ b` | [`above`](@ref) | z (stack vertically) | highest |
 
-| `a \| b` | `a / b` | `b ^ a` |
+| `a \| b` | `a / b` | `a ^ b` |
 |:---:|:---:|:---:|
 | ![beside_x](../assets/concepts/composition-beside_x.svg) | ![beside_y](../assets/concepts/composition-beside_y.svg) | ![above](../assets/concepts/composition-above.svg) |
 

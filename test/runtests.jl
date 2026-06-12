@@ -55,6 +55,7 @@ using Test
     include("test_family_lifecycle.jl")
     include("test_wall_graph.jl")
     include("test_constraints.jl")
+    include("test_design_layout.jl")
   end
 
   # Legacy tests (from original Test.jl)

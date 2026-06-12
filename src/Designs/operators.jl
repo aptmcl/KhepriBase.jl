@@ -23,7 +23,10 @@ Julia precedence: `/` binds tighter than `|` but looser than `^`.
 """
     a ^ b
 
-Stack two space descriptions vertically (`above`).
+Stack two space descriptions vertically (`above`): `b` is placed on top
+of `a`, so the operands read bottom-to-top. Since `^` is right-associative
+in Julia, `ground ^ first ^ second` is `above(ground, above(first, second))`
+— still bottom-to-top, with `second` as the highest storey.
 Julia precedence: `^` binds tightest of the three layout operators.
 """
 (^)(a::SpaceDesc, b::SpaceDesc) = above(a, b)
