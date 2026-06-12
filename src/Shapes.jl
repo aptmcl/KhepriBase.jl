@@ -1362,6 +1362,41 @@ cylinder(cb::Loc, r::Real, ct::Loc, _material=default_material(); material=_mate
   end
 
 #=
+Transformation proxies wrap an existing shape with a deferred transformation.
+They SHOULD be type-parametric — moving a Shape3D should yield a Shape3D —
+but `@defproxy` cannot parameterize the declared supertype on a field, so all
+five wrappers lie and declare `Shape1D` regardless of what they wrap. Until
+that parametric redesign, the `shape_dim` trait (Types.jl) — not the type
+parameter — carries the truth: the Union method below recurses into the
+wrapped shape (handling nesting such as `move(rotate(...))`), and all
+dimension classification (`is_curve`/`is_surface`/`is_solid`, hence the
+`extrusion`/`sweep`/`revolve`/CSG dispatchers) must go through it instead of
+dispatching on `Shape{D}`. Wrapper fields are `shape::Shape`, so Paths and
+Regions cannot be wrapped; CSG results (e.g. UnitedSolids <: Shape3D)
+classify via the parametric `shape_dim` default. Known follow-up gaps:
+`loft` of transformed surfaces now reaches `loft_surfaces`, whose `Shapes2D`
+field still rejects wrappers, and `extruded_point` does not accept wrapped
+points.
+
+See also: shape_dim (Types.jl); the extruded_surface/swept_surface profile
+fields below, which accept TransformedShape.
+=#
+@defproxy(move, Shape1D, shape::Shape=point(), v::Vec=vx())
+@defproxy(scale, Shape1D, shape::Shape=point(), s::Real=1, p::Loc=u0())
+@defproxy(rotate, Shape1D, shape::Shape=point(), angle::Real=0, p::Loc=u0(), v::Vec=vz(1,p.cs))
+@defproxy(transform, Shape1D, shape::Shape=point(), xform::Loc=u0())
+@defproxy(mirror, Shape1D, shape::Shape=point(), p::Loc=u0(), n::Vec=vx())
+
+"Union of the five transformation proxies; their dimension comes from `shape_dim`."
+const TransformedShape = Union{Move,Rotate,Scale,Mirror,Transform}
+
+shape_dim(s::TransformedShape) = shape_dim(s.shape)
+
+export union_mirror
+union_mirror(shape, p, v) =
+  union(shape, mirror(shape, p, v))
+
+#=
 The profile fields below are deliberately Union types instead of plain Path /
 Region. With a strictly-typed field, the @defproxy constructor would call
 `convert(Path, profile)` (resp. `convert(Region, profile)`), which deletes the
@@ -1378,9 +1413,18 @@ KhepriRhino/src/Rhino.jl line 579) and walk the existing refs via `map_ref`.
 Backends without such overrides still see Path/Region inputs through the
 default fallback chain.
 =#
+#=
+TransformedShape joins the surface-profile Unions (here and in swept_surface)
+because the wrappers are declared Shape1D regardless of what they wrap: a
+Move-wrapped surface routed here by the `extrusion`/`sweep` dispatchers —
+which classify via `is_surface`/`shape_dim`, not via the field type — would
+otherwise be rejected at construction. Same precedent as the CSG operand
+fields (loosened to `Shape` for the wrappers' sake); the dimension check is
+the dispatcher's job.
+=#
 @defshape(Shape1D, extruded_point, profile::Union{PointPath,Shape0D}=point_path(), v::Vec=vz(1), cb::Loc=u0())
 @defshape(Shape2D, extruded_curve, profile::Union{Path,Shape1D}=circular_path(), v::Vec=vz(1), cb::Loc=u0())
-@defshape(Shape3D, extruded_surface, profile::Union{Region,Shape2D}=region(circular_path()), v::Vec=vz(1), cb::Loc=u0())
+@defshape(Shape3D, extruded_surface, profile::Union{Region,Shape2D,TransformedShape}=region(circular_path()), v::Vec=vz(1), cb::Loc=u0())
 
 extrusion(profile, h::Real, args...; kargs...) = extrusion(profile, vz(h), args...; kargs...)
 extrusion(profile, v::Vec, args...; kargs...) =
@@ -1399,7 +1443,7 @@ extrusion(profile, v::Vec, args...; kargs...) =
 # 619) reach the native plugin sweep without re-realizing through path frames.
 @defshape(Shape1D, swept_point, path::Union{Path,Shape1D}=circular_path(), profile::Union{Path,Shape0D}=point_path(), rotation::Real=0, scale::Real=1)
 @defshape(Shape2D, swept_curve, path::Union{Path,Shape1D}=circular_path(), profile::Union{Path,Shape1D}=circular_path(), rotation::Real=0, scale::Real=1)
-@defshape(Shape3D, swept_surface, path::Union{Path,Shape1D}=circular_path(), profile::Union{Region,Shape2D}=region(circular_path()), rotation::Real=0, scale::Real=1)
+@defshape(Shape3D, swept_surface, path::Union{Path,Shape1D}=circular_path(), profile::Union{Region,Shape2D,TransformedShape}=region(circular_path()), rotation::Real=0, scale::Real=1)
 
 sweep(path, profile, args...; kargs...) =
   if profile isa PointPath || is_point(profile)
@@ -1512,20 +1556,31 @@ b_loft_surfaces(b::Backend{K,T}, profiles, rails, ruled, closed, mat) where {K,T
     b_solidify(b, T[top, (sides isa Vector ? sides : [sides])..., bottom])
   end
 
-# THIS SHOULD BE TYPE-PARAMETRIC. Moving a Shape0D should return a Shape0D, etc
-@defproxy(move, Shape1D, shape::Shape=point(), v::Vec=vx())
-@defproxy(scale, Shape1D, shape::Shape=point(), s::Real=1, p::Loc=u0())
-@defproxy(rotate, Shape1D, shape::Shape=point(), angle::Real=0, p::Loc=u0(), v::Vec=vz(1,p.cs))
-@defproxy(transform, Shape1D, shape::Shape=point(), xform::Loc=u0())
-@defproxy(mirror, Shape1D, shape::Shape=point(), p::Loc=u0(), n::Vec=vx())
-
-export union_mirror
-union_mirror(shape, p, v) =
-  union(shape, mirror(shape, p, v))
 #####################################################################
 
 shape_path(s::Move) = translate(shape_path(s.shape), s.v)
 shape_region(s::Move) = translate(shape_region(s.shape), s.v)
+
+#=
+Realize-time plumbing for transformed surface profiles. The widened
+`extruded_surface`/`swept_surface` profile fields accept TransformedShape, so
+the default backend fallbacks must be able to lower a wrapper to a Region.
+These are the TransformedShape companions to Backend.jl's
+`b_extruded_surface(::Backend, ::Shape2D, ...)` and
+`b_swept_surface(::Backend, path, ::Shape2D, ...)`; they live here (not in
+Backend.jl) because Backend.jl is included before this file, where
+TransformedShape is defined. Only Move has a `shape_region`; the other
+wrappers error loudly until their lowering is implemented (follow-up,
+together with the parametric wrapper redesign).
+=#
+convert(::Type{Region}, s::TransformedShape) =
+  and_delete_shape(shape_region(s), s)
+shape_region(s::Union{Rotate,Scale,Mirror,Transform}) =
+  error("shape_region is not yet implemented for $(typeof(s)); only Move-wrapped surfaces can be lowered to a Region")
+b_extruded_surface(b::Backend, profile::TransformedShape, v, cb, bmat, tmat, smat) =
+  b_extruded_surface(b, convert(Region, profile), v, cb, bmat, tmat, smat)
+b_swept_surface(b::Backend, path, profile::TransformedShape, rotation, scaling, mat) =
+  b_swept_surface(b, path, convert(Region, profile), rotation, scaling, mat)
 
 
 # We can also translate some shapes
@@ -1577,7 +1632,7 @@ transformation wrappers — Move, Rotate, Scale, Mirror, Transform — can pass
 through. Those wrappers are declared as `Shape1D` in `@defproxy` regardless
 of the wrapped shape's dimension; without the loosening, dispatch on
 `Shape{D}` rejects e.g. `subtracted_solids(::Box, ::Rotate{Cylinder})`.
-The runtime dimension is recovered via `csg_dim` below.
+The runtime dimension is recovered via the `shape_dim` trait (Types.jl).
 =#
 @defshape(Shape2D, subtracted_surfaces, source::Shape=surface_circle(), mask::Shape=surface_rectangle())
 @defshape(Shape3D, subtracted_solids, source::Shape=sphere(), mask::Shape=box())
@@ -1633,55 +1688,35 @@ shape_path(s::UnitedSurfaces) = unsupported_surface_csg_path("union")
 shape_path(s::SubtractedSurfaces) = unsupported_surface_csg_path("subtraction")
 shape_path(s::IntersectedSurfaces) = unsupported_surface_csg_path("intersection")
 
-#=
-Effective dimension of a shape for boolean dispatch. Unwraps transformation
-proxies to recover the wrapped shape's dimension; nests through chained
-wrappers (e.g. move(rotate(cylinder, ...))).
-=#
-csg_dim(s::Shape0D) = 0
-csg_dim(s::Shape1D) = 1
-csg_dim(s::Shape2D) = 2
-csg_dim(s::Shape3D) = 3
-csg_dim(s::Union{Move,Rotate,Scale,Mirror,Transform}) = csg_dim(s.shape)
-
-_csg_apply(op::Symbol, s::Shape, m::Shape) =
-  let sd = csg_dim(s), md = csg_dim(m)
-    sd == md ||
-      error("Cannot $(op): dimensions differ ($(sd)D vs $(md)D)")
-    sd == 2 ? Symbol(op, "ed_surfaces") :
-    sd == 3 ? Symbol(op, "ed_solids") :
-    error("$(op) not defined for $(sd)D shapes")
-  end
-
 subtraction(shape::Shape, s::empty_shape) = shape
 subtraction(shape::Shape, mask::Shape) =
-  csg_dim(shape) == csg_dim(mask) ?
-    (csg_dim(shape) == 2 ? subtracted_surfaces(shape, mask) :
-     csg_dim(shape) == 3 ? subtracted_solids(shape, mask) :
-     error("subtraction not defined for $(csg_dim(shape))D shapes")) :
-    error("Cannot subtract: dimensions differ ($(csg_dim(shape))D vs $(csg_dim(mask))D)")
+  shape_dim(shape) == shape_dim(mask) ?
+    (shape_dim(shape) == 2 ? subtracted_surfaces(shape, mask) :
+     shape_dim(shape) == 3 ? subtracted_solids(shape, mask) :
+     error("subtraction not defined for $(shape_dim(shape))D shapes")) :
+    error("Cannot subtract: dimensions differ ($(shape_dim(shape))D vs $(shape_dim(mask))D)")
 subtraction(shape::Shape, mask1::Shape, mask2::Shape, masks...) =
   foldl(subtraction, (mask1, mask2, masks...), init=shape)
 subtraction(shapes::Shapes) = subtraction(shapes...)
 
 intersection(shape::Shape, s::universal_shape) = shape
 intersection(shape::Shape, mask::Shape) =
-  csg_dim(shape) == csg_dim(mask) ?
-    (csg_dim(shape) == 2 ? intersected_surfaces(shape, mask) :
-     csg_dim(shape) == 3 ? intersected_solids(shape, mask) :
-     error("intersection not defined for $(csg_dim(shape))D shapes")) :
-    error("Cannot intersect: dimensions differ ($(csg_dim(shape))D vs $(csg_dim(mask))D)")
+  shape_dim(shape) == shape_dim(mask) ?
+    (shape_dim(shape) == 2 ? intersected_surfaces(shape, mask) :
+     shape_dim(shape) == 3 ? intersected_solids(shape, mask) :
+     error("intersection not defined for $(shape_dim(shape))D shapes")) :
+    error("Cannot intersect: dimensions differ ($(shape_dim(shape))D vs $(shape_dim(mask))D)")
 intersection(shape::Shape, mask1::Shape, mask2::Shape, masks...) =
   foldl(intersection, (mask1, mask2, masks...), init=shape)
 intersection(shapes::Shapes) = intersection(shapes...)
 
 union(shape::Shape, s::empty_shape) = shape
 union(shape::Shape, mask::Shape) =
-  csg_dim(shape) == csg_dim(mask) ?
-    (csg_dim(shape) == 2 ? united_surfaces(shape, mask) :
-     csg_dim(shape) == 3 ? united_solids(shape, mask) :
-     error("union not defined for $(csg_dim(shape))D shapes")) :
-    error("Cannot union: dimensions differ ($(csg_dim(shape))D vs $(csg_dim(mask))D)")
+  shape_dim(shape) == shape_dim(mask) ?
+    (shape_dim(shape) == 2 ? united_surfaces(shape, mask) :
+     shape_dim(shape) == 3 ? united_solids(shape, mask) :
+     error("union not defined for $(shape_dim(shape))D shapes")) :
+    error("Cannot union: dimensions differ ($(shape_dim(shape))D vs $(shape_dim(mask))D)")
 union(shape::Shape, mask1::Shape, mask2::Shape, masks...) =
   foldl(union, (mask1, mask2, masks...), init=shape)
 union(shapes::Shapes) = union(shapes...)

@@ -24,6 +24,32 @@ include("TestMockBackend.jl")
         @test KhepriBase.is_solid(s)
       end
     end
+
+    # The transformation-proxy tests run OUTSIDE with_mock_backend: with no
+    # current backend, maybe_realize no-ops, whereas under MockBackend wrapper
+    # construction throws UndefVarError(:b_move) (realization of wrappers is a
+    # known, separate gap).
+    @testset "transformation proxies classify by wrapped shape" begin
+      @test !KhepriBase.is_curve(move(box(), vx(1)))
+      @test KhepriBase.is_solid(move(box(), vx(1)))
+      @test KhepriBase.is_surface(rotate(surface_circle(u0(), 5), pi/4))
+      @test KhepriBase.is_solid(move(rotate(scale(box(), 2), pi/4), vx(1)))
+      @test KhepriBase.shape_dim(move(circle())) == 1
+    end
+
+    @testset "transformed surfaces route to surface operations" begin
+      let e = extrusion(move(surface_circle(), vx(1)), 2)
+        @test e isa KhepriBase.ExtrudedSurface
+        @test KhepriBase.is_solid(e)
+      end
+      let s = sweep(line(xyz(0, 0, 0), xyz(0, 0, 1)), move(surface_circle(), vx(1)))
+        @test s isa KhepriBase.SweptSurface
+        @test KhepriBase.is_solid(s)
+      end
+      let r = revolve(move(surface_circle(u0(), 1), vx(2)))
+        @test r isa KhepriBase.RevolvedSurface
+      end
+    end
   end
 
   @testset "0D Shapes (Points)" begin

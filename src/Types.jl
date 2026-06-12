@@ -98,16 +98,30 @@ const Shape2D = Shape{2}
 const Shape3D = Shape{3}
 
 #=
-Common predicates can be defined for these subtypes
+Common predicates classify shapes by their effective dimension. They cannot
+key on the type parameter (dispatching on Shape1D/Shape2D/Shape3D) because
+some proxies lie about their supertype: the transformation wrappers (Move,
+Rotate, Scale, Mirror, Transform — see Shapes.jl) are all declared `Shape1D`
+regardless of the dimension of the shape they wrap, since `@defproxy` cannot
+parameterize the supertype on a field. Until that parametric redesign, the
+`shape_dim` trait — not the type parameter — carries the truth: the
+parametric method below reads `D` from `Shape{D}`, and the wrappers override
+it (see `shape_dim(s::TransformedShape)` in Shapes.jl) to recurse into the
+wrapped shape. All dimension classification must go through `shape_dim`
+instead of dispatching on `Shape{D}`.
+
+See also: TransformedShape (Shapes.jl).
 =#
+public shape_dim
+"Effective dimension (0 to 3) of a shape, unwrapping transformation proxies."
+shape_dim(s::Shape{D}) where {D} = D
 
 is_curve(::Any) = false
-is_surface(s::Shape) = false
 is_solid(::Any) = false
 
-is_curve(s::Shape1D) = true
-is_surface(s::Shape2D) = true
-is_solid(s::Shape3D) = true
+is_curve(s::Shape) = shape_dim(s) == 1
+is_surface(s::Shape) = shape_dim(s) == 2
+is_solid(s::Shape) = shape_dim(s) == 3
 
 #=
 Vectors of shapes are also useful:
