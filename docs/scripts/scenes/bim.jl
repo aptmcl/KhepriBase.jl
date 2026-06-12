@@ -317,7 +317,7 @@ register_scene(
     upper  = room(:bed1, :bedroom, 4.0, 3.0) |
              room(:bed2, :bedroom, 3.0, 3.0) |
              room(:bath, :bathroom, 3.0, 3.0)
-    desc = upper ^ ground
+    desc = ground ^ upper
     build(layout(desc))
   end,
 )
