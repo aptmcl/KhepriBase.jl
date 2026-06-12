@@ -1535,7 +1535,17 @@ function mint_golden!(name, category, test_path, golden_path;
       height = get(stamp, :height, nothing)
     if ext == ".png" && width !== nothing && height !== nothing
       let PNGFiles = load_pngfiles(),
-          dims = size(PNGFiles.load(test_path))
+          dims = try
+            # Decode from bytes: PNGFiles.load(path) holds the file handle
+            # open when it throws mid-decode, which on Windows blocks the
+            # later deletion of the test output directory.
+            size(PNGFiles.load(IOBuffer(read(test_path))))
+          catch e
+            # An undecodable PNG must refuse like any other sanity failure,
+            # not escape as a testset ERROR.
+            return (:refused,
+                    "PNG failed to decode: $(sprint(showerror, e))")
+          end
         dims == (height, width) ||
           return (:refused,
                   "PNG is $(dims[2])×$(dims[1]) but the run declares " *
@@ -1579,10 +1589,16 @@ told to delete-to-regenerate instead.
 function warn_if_stale(golden_dir, name; width, height, compare)
   let prov = read_provenance(provenance_path(golden_dir, name))
     prov === nothing && return :missing
-    let mismatches = ["$(key): golden minted with $(stamped), this run uses $(current)"
-                      for (key, current) in (("width", width),
-                                             ("height", height),
-                                             ("compare", compare))
+    #=
+    Anonymous comparison closures stamp gensym names ("#3") that differ
+    across sessions, so comparing them would warn spuriously on every run;
+    gensym names opt out of the compare-staleness check (size checks remain).
+    =#
+    let checks = startswith(string(compare), "#") ?
+                   (("width", width), ("height", height)) :
+                   (("width", width), ("height", height), ("compare", compare)),
+        mismatches = ["$(key): golden minted with $(stamped), this run uses $(current)"
+                      for (key, current) in checks
                       for stamped in (get(prov, key, nothing),)
                       if !(stamped === nothing || stamped == current)]
       isempty(mismatches) && return :ok

@@ -154,6 +154,18 @@ using .VisualTests
           @test !isfile(golden_path)
           @test !isfile(VisualTests.provenance_path(golden_dir, "small"))
         end
+        # A corrupt PNG refuses cleanly instead of escaping as an ERROR.
+        let test_path = out("corrupt.png", "not actually a png"),
+            golden_path = joinpath(golden_dir, "corrupt.png"),
+            (result, reason) = VisualTests.mint_golden!(
+              "corrupt", :primitives_2d, test_path, golden_path;
+              backend="TestBackend", width=1920, height=1080,
+              compare="pixel_diff_compare")
+          @test result === :refused
+          @test occursin("decode", reason)
+          @test !isfile(golden_path)
+          @test !isfile(VisualTests.provenance_path(golden_dir, "corrupt"))
+        end
       end
 
       @testset "warn_if_stale" begin
@@ -169,6 +181,13 @@ using .VisualTests
         # into one summary warning instead of warning per file.
         @test (@test_logs VisualTests.warn_if_stale(golden_dir, "no_sidecar";
                  width=1920, height=1080, compare="text_compare")) === :missing
+        # Gensym names from anonymous comparison closures differ across
+        # sessions; they opt out of the compare check instead of warning
+        # spuriously on every run (size checks still apply).
+        @test (@test_logs VisualTests.warn_if_stale(golden_dir, "scene";
+                 width=1920, height=1080, compare="#3")) === :ok
+        @test (@test_logs (:warn, r"may be stale") VisualTests.warn_if_stale(golden_dir, "scene";
+                 width=800, height=1080, compare="#3")) === :stale
       end
 
       @testset "backfill_provenance" begin
