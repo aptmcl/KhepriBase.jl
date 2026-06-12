@@ -35,6 +35,10 @@ using Test
     include("test_review_fixes.jl")
     include("test_degenerate_inputs.jl")
     include("test_geometry_kernel.jl")
+    # Tier 0 correctness oracles (see Docs/TestingStrategy.md)
+    include("test_metamorphic.jl")
+    include("test_topology.jl")
+    include("test_mock_record.jl")
   end
 
   # Phase 3: Shape System tests

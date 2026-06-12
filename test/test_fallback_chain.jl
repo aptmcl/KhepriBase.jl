@@ -89,6 +89,10 @@ end
 @testset "Fallback Chain (MinimalTriangleBackend)" begin
   b = MinimalTriangleBackend()
   vr = void_ref(b)
+  # Curved-shape segment count. Driving the expected triangle counts off this
+  # (rather than magic literals like ">100") keeps the assertions meaningful if
+  # the default density changes, and pins the EXACT decomposition arithmetic.
+  n = KhepriBase.tessellation_divisions(b)   # default 32
 
   @testset "b_trig directly" begin
     reset!(b)
@@ -97,84 +101,86 @@ end
     @test length(b.triangles) == 1
   end
 
-  @testset "b_surface_polygon → triangles" begin
-    reset!(b)
-    # A square polygon should decompose into 2 triangles
-    rs = b_surface_polygon(b, [u0(), ux(), uxy(), uy()], vr)
-    @test length(b.triangles) == 2
-  end
-
-  @testset "b_surface_polygon pentagon → triangles" begin
-    reset!(b)
-    pts = [xyz(cos(2π*i/5), sin(2π*i/5), 0) for i in 0:4]
-    rs = b_surface_polygon(b, pts, vr)
-    @test length(b.triangles) == 3  # 5-gon → 3 triangles
+  @testset "b_surface_polygon: an m-gon triangulates to exactly m-2 triangles" begin
+    # Fan/ear triangulation of a simple polygon yields m-2 triangles — exact and
+    # independent of tessellation density (these are flat polygons, not curves).
+    for m in (3, 4, 5, 6, 10)
+      reset!(b)
+      pts = [xyz(cos(2π*i/m), sin(2π*i/m), 0) for i in 0:m-1]
+      b_surface_polygon(b, pts, vr)
+      @test length(b.triangles) == m - 2
+    end
   end
 
   @testset "b_box → triangles" begin
     reset!(b)
     r = b_box(b, u0(), 5.0, 5.0, 5.0, vr)
-    # A box has 6 faces, each decomposed to 2 triangles = 12 minimum
-    # (quad_strip_closed for sides = 4 faces × 2 trigs = 8, plus 2 caps × 2 trigs = 4)
-    @test length(b.triangles) >= 12
+    # cuboid = 2 caps (4-gon → 2 trigs each) + closed quad strip of 4 sides
+    # (2 trigs each) = 2·2 + 4·2 = 12. Exact, not just a lower bound.
+    @test length(b.triangles) == 12
   end
 
   @testset "b_sphere → triangles" begin
     reset!(b)
     r = b_sphere(b, u0(), 5.0, vr)
-    # A 32-segment sphere should produce many triangles
-    # Top cap: 32 trigs, bottom cap: 32 trigs, 31 bands × 32 quads × 2 = 1984
-    # Total should be well over 100
-    @test length(b.triangles) > 100
+    # 2 polar caps (n-point ngon → n trigs each) + (n-1) closed quad-strip bands
+    # (n quads → 2n trigs each) = 2n + (n-1)·2n = 2n².
+    @test length(b.triangles) == 2*n^2
   end
 
   @testset "b_cylinder → triangles" begin
     reset!(b)
     r = b_cylinder(b, u0(), 3.0, 10.0, vr, vr, vr)
-    # Cylinder with 32 segments: top cap + bottom cap + 32 side quads
-    @test length(b.triangles) > 60
+    # generic prism = 2 caps (n-gon → n-2 trigs each) + closed side strip
+    # (n quads → 2n trigs) = 2(n-2) + 2n = 4n-4.
+    @test length(b.triangles) == 4*n - 4
   end
 
   @testset "b_cone → triangles" begin
     reset!(b)
     r = b_cone(b, u0(), 5.0, 10.0, vr, vr)
-    # Cone: base cap (32 trigs from ngon) + side (32 trigs from ngon)
-    @test length(b.triangles) >= 32
+    # generic pyramid = base cap (n-gon → n-2 trigs) + ngon side fan to apex
+    # (n trigs) = (n-2) + n = 2n-2.
+    @test length(b.triangles) == 2*n - 2
   end
 
   @testset "b_torus → triangles" begin
     reset!(b)
     r = b_torus(b, u0(), 10.0, 3.0, vr)
-    # Torus should produce a grid of quads decomposed to triangles
-    @test length(b.triangles) > 100
+    # Torus tessellates as a closed n×2n grid (smooth-interpolated, which only
+    # refines further). The un-smoothed grid alone gives 2n² quads → 4n² trigs,
+    # so that is a sound parameter-driven floor; the exact count depends on the
+    # smoothing density, which is deliberately not pinned here.
+    @test length(b.triangles) >= 4*n^2
   end
 
   @testset "b_prism → triangles" begin
     reset!(b)
     r = b_prism(b, [u0(), ux(), uxy()], vz(5.0), vr, vr, vr)
-    # Triangle prism: 2 triangular caps + 3 quad sides = 2 + 6 = 8 triangles
-    @test length(b.triangles) >= 8
+    # Triangular prism (m=3): 2 caps (m-gon → m-2 = 1 trig each) + closed side
+    # strip (m quads → 2m trigs) = 2(m-2) + 2m = 2·1 + 6 = 8.
+    @test length(b.triangles) == 8
   end
 
   @testset "high-level sphere() → triangles" begin
     reset!(b)
     backend(b)
     s = sphere(u0(), 5)
-    @test length(b.triangles) > 100
+    @test length(b.triangles) == 2*n^2   # same path as b_sphere
   end
 
   @testset "high-level box() → triangles" begin
     reset!(b)
     backend(b)
     s = box(u0(), 5, 5, 5)
-    @test length(b.triangles) >= 12
+    @test length(b.triangles) == 12
   end
 
   @testset "high-level cylinder() → triangles" begin
     reset!(b)
     backend(b)
     s = cylinder(u0(), 3, 10)
-    @test length(b.triangles) > 60
+    @test length(b.triangles) == 4*n - 4
   end
 
   @testset "high-level surface_polygon() → triangles" begin
