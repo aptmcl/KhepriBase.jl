@@ -219,8 +219,9 @@ connect_spaces(desc, from, to; kind=:door, width=nothing, height=nothing) =
 """
     connect_exterior(desc, space_id; kind=:window, face=:auto, count=nothing, width=nothing, height=nothing)
 
-Annotate a connection from zone `space_id` to the building exterior
-(e.g. a window or vent).
+Annotate a connection from zone `space_id` to the building exterior.
+`kind` must be `:door` or `:window`; anything else raises an
+`ArgumentError` when the layout is built.
 """
 connect_exterior(desc, space_id; kind=:window, face=:auto, count=nothing,
                  width=nothing, height=nothing) =
@@ -239,7 +240,8 @@ disconnect(desc, from, to) = Annotated(desc, DisconnectAnnotation(from, to))
 """
     no_windows(desc, space_id)
 
-Suppress automatic window generation for zone `space_id`.
+Remove every window connection touching zone `space_id` — interior or
+exterior, regardless of where in the description tree it was declared.
 """
 no_windows(desc, space_id) = Annotated(desc, NoWindowsAnnotation(space_id))
 

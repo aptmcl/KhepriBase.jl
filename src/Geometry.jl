@@ -320,9 +320,10 @@ are known to be sloppy.
 A few legacy sites still compare a raw, dimensional cross/determinant
 magnitude against this constant (the collinearity probe in
 circle_from_three_points_2d, the clip denominator in
-_clip_line_intersection, the top-view camera check in Backend.jl);
-keeping the value at 1e-8 leaves them numerically intact — normalizing
-them is a follow-up.
+_clip_line_intersection, the top-view camera check in Backend.jl, and
+the two curvature-normal degeneracy probes in Paths.jl frame
+construction); keeping the value at 1e-8 leaves them numerically
+intact — normalizing them is a follow-up.
 
 See also: coplanarity_tolerance (cosine deviation between unit
 normals); zero_vector_tolerance (for checking that a single vector is
