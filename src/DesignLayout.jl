@@ -48,9 +48,15 @@ function _build_layout(spaces::Dict{Symbol, Space}, annotations)
   for z in zs
     members = groups[z]
     h = isempty(members) ? 0.0 : maximum(sp.height for sp in members)
+    # Keep the Storey's `generate_slabs` flag truthful: when every
+    # member opted out of its floor slab (`above(...; slab_between=
+    # false)` covering the whole level), the storey generates none.
+    # Mixed storeys keep the flag true and rely on the per-space
+    # `:_no_floor_slab` filter in the storey compiler.
+    gen_slabs = !all(sp -> get(sp.props, :_no_floor_slab, false), members)
     push!(storeys,
           Storey(members, SpaceConnection[], level(z), h,
-                 default_wall_family(), default_slab_family(), true))
+                 default_wall_family(), default_slab_family(), gen_slabs))
   end
   Layout(storeys, Constraint[], collect(annotations))
 end
@@ -86,21 +92,67 @@ function _layout!(spaces, e::Envelope, x, y, z, prefix)
   (e.width, e.depth, e.height)
 end
 
+#=
+Cross-axis offset realizing `align` for `BesideX`/`BesideY`: where the
+smaller child sits within the pair's combined cross extent. Extents
+come from the *declared* tree (`desc_depth`/`desc_width`) rather than
+the laid-out result because the offset must be known before the child
+is placed. Polar children declare 0 extents and ignore the Cartesian
+cursor, so they are unaffected. `:start` (the default) keeps the
+historical flush-at-origin behaviour; the unknown-symbol guard backs
+up the combinator-level validation for trees built via the raw
+`BesideX`/`BesideY` constructors.
+
+See also: beside_x, beside_y (Designs/combinators.jl).
+=#
+"Offset of a child of cross extent `extent` within `max_extent` under `align` (:start, :center, :end)."
+_align_offset(align::Symbol, extent, max_extent) =
+  align == :start  ? 0.0 :
+  align == :center ? (max_extent - extent) / 2 :
+  align == :end    ? max_extent - extent :
+  throw(ArgumentError("align must be :start, :center, or :end, got :$align"))
+
 function _layout!(spaces, b::BesideX, x, y, z, prefix)
-  lw, ld, lh = _layout!(spaces, b.left, x, y, z, prefix)
-  rw, rd, rh = _layout!(spaces, b.right, x + lw, y, z, prefix)
-  (lw + rw, max(ld, rd), max(lh, rh))
+  ld, rd = desc_depth(b.left), desc_depth(b.right)
+  max_d = max(ld, rd)
+  lw, _, lh = _layout!(spaces, b.left, x, y + _align_offset(b.align, ld, max_d), z, prefix)
+  rw, _, rh = _layout!(spaces, b.right, x + lw, y + _align_offset(b.align, rd, max_d), z, prefix)
+  (lw + rw, max_d, max(lh, rh))
 end
 
 function _layout!(spaces, b::BesideY, x, y, z, prefix)
-  fw, fd, fh = _layout!(spaces, b.front, x, y, z, prefix)
-  bw, bd, bh = _layout!(spaces, b.back, x, y + fd, z, prefix)
-  (max(fw, bw), fd + bd, max(fh, bh))
+  fw, bw = desc_width(b.front), desc_width(b.back)
+  max_w = max(fw, bw)
+  _, fd, fh = _layout!(spaces, b.front, x + _align_offset(b.align, fw, max_w), y, z, prefix)
+  _, bd, bh = _layout!(spaces, b.back, x + _align_offset(b.align, bw, max_w), y + fd, z, prefix)
+  (max_w, fd + bd, max(fh, bh))
 end
 
+#=
+`slab_between=false` suppresses the floor slab at the interface level
+between the two subtrees: the spaces the upper subtree places at
+exactly `z + bh` — and only those; a multi-storey upper subtree keeps
+its own internal slabs — are re-stamped with a `:_no_floor_slab` prop
+that the storey compiler's slab pass filters on. The re-stamp rebuilds
+the `Space` around its existing boundary (NOT via `_make_space`, which
+would flatten polar boundaries to their bounding rectangle).
+
+See also: `_build_storey` (Spaces.jl) for the per-space filter,
+`_build_layout` for the storey-level `generate_slabs` sync.
+=#
 function _layout!(spaces, a::Above, x, y, z, prefix)
   bw, bd, bh = _layout!(spaces, a.below, x, y, z, prefix)
+  before = a.slab_between ? nothing : Set(keys(spaces))
   aw, ad, ah = _layout!(spaces, a.above, x, y, z + bh, prefix)
+  if !a.slab_between
+    for (id, sp) in spaces
+      (id in before || !(sp.origin_z ≈ z + bh)) && continue
+      spaces[id] = Space(sp.id, sp.kind, sp.boundary;
+                         height=sp.height,
+                         props=merge(sp.props, (_no_floor_slab=true,)),
+                         origin_z=sp.origin_z)
+    end
+  end
   (max(bw, aw), max(bd, ad), bh + ah)
 end
 
