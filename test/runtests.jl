@@ -58,6 +58,7 @@ using Test
     include("test_design_layout.jl")
     include("test_design_annotations.jl")
     include("test_visual_compare.jl")
+    include("test_visual_provenance.jl")
   end
 
   # Legacy tests (from original Test.jl)

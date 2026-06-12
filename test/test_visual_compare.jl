@@ -58,7 +58,38 @@ using .VisualTests
 
       @testset "dimension mismatch fails loudly" begin
         PNGFiles.save(p("small.png"), fill(gray, 5, 5))
+        # Earlier failing comparisons used base.png as test output and so
+        # already emitted base_diff.png; clear it to observe this case.
+        rm(p("base_diff.png"), force=true)
         @test !(@test_logs (:warn, r"dimensions differ") pixel_diff_compare(p("base.png"), p("small.png")))
+        # No per-pixel diff exists for mismatched dimensions.
+        @test !isfile(p("base_diff.png"))
+      end
+
+      @testset "threshold failure emits a saturated diff image" begin
+        let result = @test_logs (:warn, r"differ beyond tolerance") pixel_diff_compare(p("base.png"), p("black.png"))
+          @test !result
+          @test isfile(p("base_diff.png"))
+          # gray (0.5) vs black (0) differs by 0.5 on every channel; the
+          # 1/max_delta scaling saturates the worst pixel to full white,
+          # and alpha is forced opaque.
+          let diff = PNGFiles.load(p("base_diff.png")),
+              px = convert(KhepriBase.RGBA{Float64}, diff[1, 1])
+            @test size(diff) == (10, 10)
+            @test px.r ≈ 1.0 && px.g ≈ 1.0 && px.b ≈ 1.0 && px.alpha ≈ 1.0
+          end
+          rm(p("base_diff.png"))
+        end
+      end
+
+      @testset "emit_diff=false suppresses the diff image" begin
+        @test !(@test_logs (:warn, r"differ beyond tolerance") pixel_diff_compare(p("base.png"), p("black.png"), emit_diff=false))
+        @test !isfile(p("base_diff.png"))
+      end
+
+      @testset "passing compare writes no diff image" begin
+        @test pixel_diff_compare(p("near.png"), p("base.png"))
+        @test !isfile(p("near_diff.png"))
       end
     end
   end

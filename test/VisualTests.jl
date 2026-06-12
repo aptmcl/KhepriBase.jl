@@ -30,7 +30,17 @@ module VisualTests
 
 using KhepriBase
 using Test
-export run_visual_tests, text_compare, pixel_diff_compare
+export run_visual_tests, text_compare, pixel_diff_compare, backfill_provenance
+
+#=
+This module runs inside each backend's test process, whose Project.toml test
+target lists only the backend itself (plus PNGFiles where pixel comparison is
+used).  A bare `using TOML`/`using Dates` here would force a test-target edit
+in every backend repo, so both are reached through KhepriBase, which carries
+them as regular deps.
+=#
+const TOML = KhepriBase.TOML
+const Dates = KhepriBase.Dates
 
 # Detect unimplemented backend operations (thrown as ErrorException wrapping
 # UnimplementedBackendOperationException, or as UndefVarError for undefined b_* ops)
@@ -1369,6 +1379,25 @@ max_channel_delta(a, b) =
   end
 
 #=
+A failed pixel comparison used to give the developer nothing to look at — just
+counts in a warning.  On a threshold failure we now save a diff image next to
+the test output: per-channel |a−b|, scaled by 1/max_delta so the worst pixel
+saturates to full intensity (raw deltas near the 0.02 atol would be invisibly
+dark), alpha forced to 1.0 so the diff is viewable on any background.  Real
+deltas are recoverable from the warning's max_delta.
+See also: pixel_diff_compare (emits it), max_channel_delta (the metric).
+=#
+"Absolute per-channel difference of two pixels, scaled and made opaque."
+scaled_pixel_diff(a, b, scale) =
+  let ca = convert(KhepriBase.RGBA{Float64}, a),
+      cb = convert(KhepriBase.RGBA{Float64}, b)
+    KhepriBase.RGBA{Float64}(min(1.0, abs(ca.r - cb.r) * scale),
+                             min(1.0, abs(ca.g - cb.g) * scale),
+                             min(1.0, abs(ca.b - cb.b) * scale),
+                             1.0)
+  end
+
+#=
 Two tolerances, both needed because renders are not bit-stable:
 - `atol` (per-channel, default 0.02 ≈ 5/255) absorbs anti-aliasing and
   GPU-dithering noise on individual pixels;
@@ -1379,7 +1408,7 @@ more than 2% intensity.  On failure the diagnostics below name which
 gate failed and by how much, so a golden mismatch is actionable instead
 of a bare `false`.
 =#
-function pixel_diff_compare(test_path, golden_path; threshold=0.01, atol=0.02)
+function pixel_diff_compare(test_path, golden_path; threshold=0.01, atol=0.02, emit_diff=true)
   test_bytes = read(test_path)
   golden_bytes = read(golden_path)
   test_bytes == golden_bytes && return true
@@ -1387,6 +1416,7 @@ function pixel_diff_compare(test_path, golden_path; threshold=0.01, atol=0.02)
   test_img = PNGFiles.load(test_path)
   golden_img = PNGFiles.load(golden_path)
   if size(test_img) != size(golden_img)
+    # No per-pixel diff exists for mismatched dimensions, so none is emitted.
     @warn "pixel_diff_compare: image dimensions differ" test_path golden_path size(test_img) size(golden_img)
     return false
   end
@@ -1401,10 +1431,199 @@ function pixel_diff_compare(test_path, golden_path; threshold=0.01, atol=0.02)
     end
     let frac = ndiff / n,
         pass = frac <= threshold
-      pass ||
-        @warn "pixel_diff_compare: images differ beyond tolerance" test_path golden_path n ndiff frac threshold max_delta atol
+      if !pass
+        if emit_diff
+          # max_delta > atol ≥ 0 here (at least one pixel crossed the gate),
+          # so the scale is finite.
+          let diff_path = splitext(test_path)[1] * "_diff.png",
+              scale = 1.0 / max_delta
+            PNGFiles.save(diff_path,
+                          scaled_pixel_diff.(test_img, golden_img, scale))
+            @warn "pixel_diff_compare: images differ beyond tolerance" test_path golden_path n ndiff frac threshold max_delta atol diff_path
+          end
+        else
+          @warn "pixel_diff_compare: images differ beyond tolerance" test_path golden_path n ndiff frac threshold max_delta atol
+        end
+      end
       pass
     end
+  end
+end
+
+# ── Golden provenance ─────────────────────────────────────────────────
+
+#=
+Why sidecars exist (Docs/TestingStrategy.md §1a): minting a golden used to be
+`cp` + `@test true`, so a just-reviewed golden and a never-reviewed one were
+indistinguishable, and a global change (render size, tessellation default)
+silently invalidated many goldens with no staleness signal.  Each golden now
+gets a `<name>.provenance.toml` sidecar recording when it was minted, under
+which settings (render size, comparison function, backend + versions), and —
+crucially — *how it was validated*.  The delete-to-regenerate workflow is
+untouched: deleting a golden is still the deliberate human review act; the
+sidecar makes the regeneration moment trustworthy and staleness detectable.
+
+Sidecar schema (`schema = 1`): `name`, `golden` (file name with extension),
+`created` (ISO-8601 UTC), `khepribase`, `julia`, `backend`, optional
+`backend_version`, `width`, `height`, `compare` (comparison-function name),
+and a `[validation]` table with `method`, `passed`, `detail`.
+See also: mint_golden! (writes them), warn_if_stale (reads them),
+backfill_provenance (for pre-provenance goldens).
+=#
+
+"Path of the provenance sidecar for golden `name` in `golden_dir`."
+provenance_path(golden_dir, name) =
+  joinpath(golden_dir, "$(name).provenance.toml")
+
+"Write a provenance sidecar; `created`/`khepribase`/`julia` are filled in."
+write_provenance(path; meta...) =
+  let doc = Dict{String,Any}(
+        "schema" => 1,
+        "created" => Dates.format(Dates.now(Dates.UTC), Dates.ISODateTimeFormat) * "Z",
+        "khepribase" => string(pkgversion(KhepriBase)),
+        "julia" => string(VERSION))
+    for (k, v) in meta
+      v === nothing && continue
+      doc[string(k)] =
+        v isa NamedTuple ?
+          Dict{String,Any}(string(k2) => v2 for (k2, v2) in pairs(v)) :
+          v
+    end
+    open(path, "w") do io
+      TOML.print(io, doc, sorted=true)
+    end
+    path
+  end
+
+"Parse a sidecar; `nothing` (plus one warning when corrupt) if unusable."
+read_provenance(path) =
+  isfile(path) ?
+    try
+      TOML.parsefile(path)
+    catch e
+      @warn "Ignoring corrupt provenance sidecar" path exception=e
+      nothing
+    end :
+    nothing
+
+#=
+Minting is refused unless the artifact passes validation, in order:
+(a) built-in sanity — the output is non-empty, and a `.png` additionally
+    decodes with exactly the declared render dimensions (this alone would have
+    caught the 225×56 AutoCAD goldens that could never pass a 1920×1080 run);
+(b) the pluggable `validate_golden(name, category, test_path)` slot, returning
+    `nothing` (no oracle applies) or `(ok, method, detail)` — this is the hook
+    where Tier-1 artifact parsers (parse-and-measure of `.pov`/`.tex`) plug in
+    later, per backend or per scene, without hardcoded dispatch here.
+When only sanity ran, the sidecar honestly records `"sanity-only"` (pixels) or
+`"sanity:nonempty"` (text) and a warning is emitted at mint time: nothing has
+checked the *scene*, only the artifact's shape.  No fake oracles.
+See also: run_visual_tests (turns the result into @test/@error).
+=#
+"""
+Validate `test_path` and, on success, install it as `golden_path` plus a
+provenance sidecar.  Returns `(:minted, validation)` or `(:refused, reason)`;
+performs no `@test` so it is headless-testable.
+"""
+function mint_golden!(name, category, test_path, golden_path;
+    validate_golden = (name, category, path) -> nothing,
+    stamp...)
+  filesize(test_path) > 0 ||
+    return (:refused, "test output is empty: $(test_path)")
+  let ext = splitext(golden_path)[2],
+      width = get(stamp, :width, nothing),
+      height = get(stamp, :height, nothing)
+    if ext == ".png" && width !== nothing && height !== nothing
+      let PNGFiles = load_pngfiles(),
+          dims = size(PNGFiles.load(test_path))
+        dims == (height, width) ||
+          return (:refused,
+                  "PNG is $(dims[2])×$(dims[1]) but the run declares " *
+                  "$(width)×$(height) — a golden minted now could never pass")
+      end
+    end
+    let custom = validate_golden(name, category, test_path),
+        validation =
+          if custom === nothing
+            (method = ext == ".png" ? "sanity-only" : "sanity:nonempty",
+             passed = true,
+             detail = "built-in artifact sanity only; no scene oracle applied")
+          else
+            let (ok, method, detail) = custom
+              ok || return (:refused, "validator $(method) failed: $(detail)")
+              (method = method, passed = true, detail = detail)
+            end
+          end
+      custom === nothing &&
+        @warn "Golden minted without a scene oracle — only artifact sanity was checked" name golden_path
+      mkpath(dirname(golden_path))
+      cp(test_path, golden_path, force=true)
+      write_provenance(provenance_path(dirname(golden_path), name);
+                       name=name, golden=basename(golden_path),
+                       validation=validation, stamp...)
+      (:minted, validation)
+    end
+  end
+end
+
+#=
+Staleness compares only the settings that determine the artifact's *content*:
+`width`, `height`, and the comparison-function name.  Versions (khepribase,
+backend_version, julia) are recorded but deliberately excluded — every release
+would otherwise warn on every golden without implying any output change.
+A mismatch is a WARNING, never a test failure: goldens measure stability, and
+a hard red on a render-size bump would poison whole suites; the developer is
+told to delete-to-regenerate instead.
+=#
+"Warn when a golden's sidecar disagrees with the current run's settings; returns `:missing`, `:ok`, or `:stale`."
+function warn_if_stale(golden_dir, name; width, height, compare)
+  let prov = read_provenance(provenance_path(golden_dir, name))
+    prov === nothing && return :missing
+    let mismatches = ["$(key): golden minted with $(stamped), this run uses $(current)"
+                      for (key, current) in (("width", width),
+                                             ("height", height),
+                                             ("compare", compare))
+                      for stamped in (get(prov, key, nothing),)
+                      if !(stamped === nothing || stamped == current)]
+      isempty(mismatches) && return :ok
+      @warn "Golden for $(name) may be stale — provenance disagrees with the current run; delete the golden to re-mint it" golden=get(prov, "golden", name) mismatches
+      :stale
+    end
+  end
+end
+
+#=
+One-shot developer helper for goldens that predate provenance.  It never
+claims a validation that did not happen: backfilled sidecars say
+`validation.method = "legacy-backfill"` with `passed = false`, so they remain
+distinguishable from goldens minted through mint_golden! forever.  Not called
+by any test suite.  `compare = nothing` infers per file: pixels for `.png`,
+bytes otherwise.  LaTeX build junk (`.aux`/`.log`) and existing sidecars are
+skipped.
+=#
+"Write `legacy-backfill` sidecars for goldens in `golden_dir` that lack one."
+function backfill_provenance(golden_dir; backend,
+    width=1920, height=1080, compare=nothing, backend_module=nothing)
+  let backfilled = String[]
+    for file in sort(readdir(golden_dir))
+      let (name, ext) = splitext(file)
+        ext in (".toml", ".aux", ".log") && continue
+        isfile(provenance_path(golden_dir, name)) && continue
+        write_provenance(provenance_path(golden_dir, name);
+          name=name, golden=file,
+          backend=backend,
+          backend_version=backend_module === nothing ? nothing :
+                            string(pkgversion(backend_module)),
+          width=width, height=height,
+          compare=something(compare,
+                            ext == ".png" ? "pixel_diff_compare" : "text_compare"),
+          validation=(method = "legacy-backfill",
+                      passed = false,
+                      detail = "sidecar backfilled for a pre-provenance golden; never validated"))
+        push!(backfilled, name)
+      end
+    end
+    backfilled
   end
 end
 
@@ -1418,8 +1637,17 @@ function run_visual_tests(b;
     height::Int = 1080,
     compare::Function = text_compare,
     skip::Vector{Symbol} = Symbol[],
-    skip_tests::Vector{String} = String[])
+    skip_tests::Vector{String} = String[],
+    validate_golden::Function = (name, category, path) -> nothing,
+    backend_module::Union{Module,Nothing} = nothing)
 
+  #=
+  Goldens that predate provenance produce no per-file warning — dozens of
+  identical warnings would drown real staleness signals — only this list,
+  reported once after the loop with the backfill recipe.
+  =#
+  missing_provenance = String[]
+  compare_name = string(nameof(compare))
   rendering_with(dir=mktempdir(), width=width, height=height) do
     setup_backend()
     for (name, category, test_fn) in VISUAL_TESTS
@@ -1449,15 +1677,31 @@ function run_visual_tests(b;
             @test false
             @warn "Visual regression detected for $name" test_path golden_path
           end
+          warn_if_stale(golden_dir, name;
+                        width=width, height=height, compare=compare_name) === :missing &&
+            push!(missing_provenance, name)
         else
-          mkpath(golden_dir)
-          cp(test_path, golden_path, force=true)
-          @info "Created golden file: $golden_path"
-          @test true
+          let (result, info) = mint_golden!(name, category, test_path, golden_path;
+                validate_golden=validate_golden,
+                backend=KhepriBase.backend_name(b),
+                backend_version=backend_module === nothing ? nothing :
+                                  string(pkgversion(backend_module)),
+                width=width, height=height, compare=compare_name)
+            if result === :minted
+              @info "Created golden file: $golden_path" validation=info.method
+              @test true
+            else
+              @error "Refusing to mint golden for $name" reason=info test_path
+              @test false
+            end
+          end
         end
       end
     end
   end
+  isempty(missing_provenance) ||
+    @warn "Goldens without provenance sidecars — run VisualTests.backfill_provenance(golden_dir; backend=...) once to backfill" golden_dir count=length(missing_provenance) names=missing_provenance
+  nothing
 end
 
 end # module
