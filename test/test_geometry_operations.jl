@@ -15,6 +15,39 @@ using KhepriBase
     @test r[1].point.y ≈ 0 atol=1e-10
     @test r[1].parameters.first ≈ 1 atol=1e-10
     @test r[1].parameters.second ≈ 1 atol=1e-10
+
+    # Scale-invariance regressions: the parallelism test is dimensionless
+    # sin²θ, so mm-scale crossing segments must intersect (the old raw
+    # Gram-determinant threshold returned EMPTY for anything this small).
+    let a = line_path(xy(0, 0), xy(2e-3, 0)),
+        b = line_path(xy(1e-3, -1e-3), xy(1e-3, 1e-3)),
+        r = intersections(a, b)
+      @test length(r) == 1
+      @test r[1].kind == :transversal
+      @test r[1].point.x ≈ 1e-3 atol=1e-12
+      @test r[1].point.y ≈ 0 atol=1e-12
+    end
+    # Near-parallel (~1e-2 rad) mm-scale crossing is still transversal.
+    let a = line_path(xy(0, 0), xy(2e-3, 0)),
+        b = line_path(xy(0, -1e-5), xy(2e-3, 1e-5)),
+        r = intersections(a, b)
+      @test length(r) == 1
+      @test r[1].kind == :transversal
+      @test r[1].point.x ≈ 1e-3 atol=1e-12
+      @test r[1].point.y ≈ 0 atol=1e-12
+    end
+    # Parallel non-collinear mm-scale segments are still empty.
+    @test isempty(intersections(line_path(xy(0, 0), xy(2e-3, 0)),
+                                line_path(xy(0, 1e-3), xy(2e-3, 1e-3))))
+    # Collinear overlapping mm-scale segments still yield the overlap curve.
+    let r = intersections(line_path(xy(0, 0), xy(4e-3, 0)),
+                          line_path(xy(1e-3, 0), xy(3e-3, 0)))
+      @test length(r) == 1
+      @test r[1] isa CurveIntersection
+      @test r[1].kind == :overlap
+      @test path_start(r[1].curve).x ≈ 1e-3 atol=1e-12
+      @test path_end(r[1].curve).x ≈ 3e-3 atol=1e-12
+    end
   end
 
   @testset "line-line overlap" begin
@@ -39,6 +72,26 @@ using KhepriBase
     @test pts[1].y ≈ 0 atol=1e-10
     @test pts[2].x ≈ 1 atol=1e-10
     @test pts[2].y ≈ 0 atol=1e-10
+
+    # Tangency is scale-invariant: the solver pushes candidate roots and
+    # dedupes them in metre space, instead of comparing the m⁴ discriminant
+    # against the metre tolerance.
+    for r in (1e-3, 1e3)
+      hits = intersections(line_path(xy(-2r, r), xy(2r, r)),
+                           circular_path(xy(0, 0), r))
+      @test length(hits) == 1
+      @test hits[1].kind == :tangent
+      @test hits[1].point.x ≈ 0 atol=1e-9*max(r, 1)
+      @test hits[1].point.y ≈ r atol=1e-9*max(r, 1)
+    end
+    # The angular slack derives from the radius (metres → radians), so a hit
+    # at the very endpoint of a small arc is retained.
+    let arc = arc_path(u0(), 0.01, 0, π/2),
+        hits = intersections(line_path(xy(0, 5e-3), xy(0, 1.5e-2)), arc)
+      @test length(hits) == 1
+      @test hits[1].point.x ≈ 0 atol=1e-12
+      @test hits[1].point.y ≈ 0.01 atol=1e-12
+    end
   end
 
   @testset "circle-circle intersections" begin

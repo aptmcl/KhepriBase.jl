@@ -51,6 +51,38 @@ using .Oracles
     end
   end
 
+  @testset "Intersection classification is scale-invariant" begin
+    # Scaling a configuration by k must scale intersection points by k and
+    # leave point counts and kinds unchanged: the kernels classify through
+    # the dimensionless sin²θ parallelism test, metre-space root deduping,
+    # and radius-derived angular slack, none of which depends on absolute
+    # scale. (The old raw thresholds returned EMPTY for mm-scale crossings.)
+    for k in (1e-3, 1.0, 1e3)
+      # Perpendicular crossing segments: one transversal point at k·(1, 0).
+      let r = intersections(line_path(xy(0, 0), xy(2k, 0)),
+                            line_path(xy(k, -k), xy(k, k)))
+        @test length(r) == 1
+        @test r[1].kind == :transversal
+        @test r[1].point.x ≈ k atol=MEASURE_ATOL*max(1, k)
+        @test r[1].point.y ≈ 0 atol=MEASURE_ATOL*max(1, k)
+      end
+      # Tangent line/circle: exactly one point of kind :tangent at any scale.
+      let hits = intersections(line_path(xy(-2k, k), xy(2k, k)),
+                               circular_path(xy(0, 0), k))
+        @test length(hits) == 1
+        @test hits[1].kind == :tangent
+        @test hits[1].point.y ≈ k atol=MEASURE_ATOL*max(1, k)
+      end
+      # Line through an arc endpoint: the endpoint hit survives the
+      # metre→radian conversion of the angular slack at any radius.
+      let hits = intersections(line_path(xy(0, k/2), xy(0, 3k/2)),
+                               arc_path(u0(), k, 0, π/2))
+        @test length(hits) == 1
+        @test hits[1].point.y ≈ k atol=MEASURE_ATOL*max(1, k)
+      end
+    end
+  end
+
   @testset "Signed area: winding, scale (k²), reflection, translation" begin
     ccw = [xy(0, 0), xy(4, 0), xy(4, 3), xy(0, 3)]   # CCW, area 12
     cw  = reverse(ccw)

@@ -187,6 +187,29 @@ using KhepriBase
     l1p1 = xyz(0, 1, 2)
     result = nearest_point_from_lines(l0p0, l0p1, l1p0, l1p1)
     @test result.y ≈ 0.5 atol=1e-10
+
+    # Degenerate (zero-length) second line: the old parallel fallback
+    # divided 0/0 and returned NaN; now the result is the midpoint between
+    # the point and its projection onto the non-degenerate line.
+    let p = nearest_point_from_lines(xyz(0, 0, 0), xyz(2, 0, 0),
+                                     xyz(1, 2, 0), xyz(1, 2, 0))
+      @test isfinite(p.x) && isfinite(p.y) && isfinite(p.z)
+      @test p.x ≈ 1 atol=1e-10
+      @test p.y ≈ 1 atol=1e-10
+    end
+    # Degenerate first line, symmetric expectation.
+    let p = nearest_point_from_lines(xyz(1, 2, 0), xyz(1, 2, 0),
+                                     xyz(0, 0, 0), xyz(2, 0, 0))
+      @test isfinite(p.x) && isfinite(p.y) && isfinite(p.z)
+      @test p.x ≈ 1 atol=1e-10
+      @test p.y ≈ 1 atol=1e-10
+    end
+    # Both degenerate: midpoint of the two points.
+    let p = nearest_point_from_lines(xyz(1, 2, 0), xyz(1, 2, 0),
+                                     xyz(3, 4, 0), xyz(3, 4, 0))
+      @test p.x ≈ 2 atol=1e-10
+      @test p.y ≈ 3 atol=1e-10
+    end
   end
 
   @testset "Collinearity" begin

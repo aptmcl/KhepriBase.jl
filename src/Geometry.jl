@@ -287,23 +287,49 @@ Parallelism tolerance.
 Deciding whether two vectors (or two lines) are parallel cannot be a
 bit-exact test, because numerical construction regularly produces
 vectors that should be parallel but differ by a tiny rotation. The
-canonical signal for non-parallelism is the magnitude of a cross
-product (|u × v|), or equivalently the line determinant (a·c − b²)
-used when solving the closest-points-on-two-lines system below; both
-go to zero exactly when the vectors are parallel.
+canonical signal for non-parallelism is the angle θ between the
+directions, measured through the cross product: |u × v| = |u||v| sin θ.
 
-Compared against |cross(u, v)| (or an analogous determinant), whose
-unit is the product of the input vector units — typically metre² for
-position differences. The default 1e-8 classifies as parallel any
-pair whose cross-product magnitude is smaller than 10 nm² at metre
-scale, i.e. about eight orders of magnitude above Float64 resolution.
-Tighten for precision work, loosen when ingesting noisier input.
+This tolerance is DIMENSIONLESS: it is a threshold on sin²θ, applied
+in multiply form so no square roots or divisions are needed:
 
-See also: zero_vector_tolerance (for checking that a single vector is
+  |u × v|² < parallelism_tolerance() · |u|² · |v|²
+
+or, equivalently, for the Gram determinant D = (u·u)(v·v) − (u·v)²
+(which equals |u × v|²) used when solving the
+closest-points-on-two-lines system:
+
+  D < parallelism_tolerance() · (u·u) · (v·v)
+
+The multiply form makes classification scale-invariant: a raw
+cross-magnitude threshold (the previous semantics) silently classified
+every pair of millimetre-scale segments as parallel (|u × v| ~ 1e-12 m²
+even for perpendicular mm vectors), returning empty intersections.
+
+The default 1e-8 as sin²θ means θ ≲ 1e-4 rad (≈ 0.0057°). Two reasons:
+(a) the plane-plane and circle-plane kernels already compare
+|n₁ × n₂|² of *unit* normals against this constant, i.e. they always
+used it at this dimension, so 1e-8 needs no value change; (b)
+conditioning — the transversal solution of two lines amplifies
+positional noise by ~1/sin θ, which is 1e4 at the threshold, so
+coincidence-tolerance-level coordinate noise (~1e-10 m) yields at most
+~1e-6 m of solution error there. Tighten for precision work; loosen to
+roughly (expected angular noise)² when ingesting data whose directions
+are known to be sloppy.
+
+A few legacy sites still compare a raw, dimensional cross/determinant
+magnitude against this constant (the collinearity probe in
+circle_from_three_points_2d, the clip denominator in
+_clip_line_intersection, the top-view camera check in Backend.jl);
+keeping the value at 1e-8 leaves them numerically intact — normalizing
+them is a follow-up.
+
+See also: coplanarity_tolerance (cosine deviation between unit
+normals); zero_vector_tolerance (for checking that a single vector is
 mathematically zero, as distinct from two vectors being parallel).
 =#
 
-"Cross-product (or line-determinant) magnitude below which two vectors/lines are classified as parallel. `|cross(u, v)| < parallelism_tolerance()`."
+"Dimensionless sin²θ threshold below which two vectors/lines are classified as parallel. `|cross(u, v)|² < parallelism_tolerance() * |u|² * |v|²`."
 const parallelism_tolerance = Parameter(1e-8)
 export parallelism_tolerance, nearest_point_from_lines, circle_from_three_points
 
@@ -338,9 +364,19 @@ nearest_point_from_lines(l0p0::Loc, l0p1::Loc, l1p0::Loc, l1p1::Loc) =
       d = dot(u, w),
       e = dot(v, w),
       D = a*c-b*b,
-      (sc, tc) = D < parallelism_tolerance() ?
-                #almost parallel
-                (0.0, b > c ? d/b : e/c) :
+      #= `<=` (not `<`) so that exactly degenerate inputs (a·c == 0 forces
+         D == 0 by Cauchy-Schwarz) take the guarded branch instead of
+         dividing 0/0 in the transversal solution. The old fallback
+         `(0.0, b > c ? d/b : e/c)` was dropped: it is NaN for a
+         zero-length second line (b == c == 0 picks e/c = 0/0), and for
+         genuinely parallel lines d/b equals e/c anyway, so projecting
+         l0p0 onto line 1 (tc = e/c) covers it; degenerate lines project
+         onto whichever line still has a direction. =#
+      (sc, tc) = D <= parallelism_tolerance()*a*c ?
+                #almost parallel or degenerate
+                (c <= zero_vector_tolerance() ?
+                   ((a <= zero_vector_tolerance() ? 0.0 : -d/a), 0.0) :
+                   (0.0, e/c)) :
                 ((b*e-c*d)/D, (a*e-b*d)/D),
       (p0, p1) = (l0p0+u*sc, l1p0+v*tc)
     intermediate_loc(p0, p1)

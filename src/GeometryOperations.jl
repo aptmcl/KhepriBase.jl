@@ -610,8 +610,14 @@ function _line_line_parameters(a::LinePath, b::LinePath)
   cc = dot(s, s)
   dd = dot(r, w)
   ee = dot(s, w)
+  (aa <= zero_vector_tolerance() || cc <= zero_vector_tolerance()) && return nothing
+  #= The Gram determinant aa·cc − bb² equals |r × s|² = |r|²|s|² sin²θ, so the
+     parallelism test must be the multiply form det < tol·aa·cc (dimensionless
+     sin²θ) — a raw det < tol comparison is m⁴-vs-dimensionless and classified
+     every pair of mm-scale segments as parallel (det ~ 1e-12 even when they
+     cross at right angles), returning EMPTY intersections. =#
   det = aa * cc - bb * bb
-  det < parallelism_tolerance() && return nothing
+  det < parallelism_tolerance() * aa * cc && return nothing
   ((bb * ee - cc * dd) / det, (aa * ee - bb * dd) / det)
 end
 
@@ -621,10 +627,22 @@ function _line_overlap(a::LinePath, b::LinePath, opts::GeometryOperationOptions)
   q1 = in_world(b.p1)
   r = in_world(a.p1) - p
   s = q1 - q0
-  norm(cross(r, s)) < parallelism_tolerance() || return nothing
-  norm(cross(q0 - p, r)) <= opts.overlap_tolerance * max(norm(r), 1.0) || return false
   rr = dot(r, r)
-  rr <= zero_vector_tolerance() && return false
+  ss = dot(s, s)
+  (rr <= zero_vector_tolerance() || ss <= zero_vector_tolerance()) && return false
+  #= Parallelism as dimensionless sin²θ (multiply form, see
+     parallelism_tolerance): |r × s|² < tol·|r|²·|s|². The previous raw
+     |r × s| < tol comparison was m²-vs-dimensionless, flagging any pair of
+     mm-scale segments as parallel regardless of their actual angle. =#
+  cr = cross(r, s)
+  dot(cr, cr) < parallelism_tolerance() * rr * ss || return nothing
+  #= Collinearity probe: |cross(q0 − p, r)| / |r| is the perpendicular
+     distance from b's start to line a, so the squared, properly normalized
+     test |cross(q0 − p, r)|² ≤ tol²·|r|² bounds that distance by
+     overlap_tolerance at any scale. The previous `max(norm(r), 1.0)` factor
+     mixed dimensions and made mm-scale probes ~1e3× too loose. =#
+  cq = cross(q0 - p, r)
+  dot(cq, cq) <= opts.overlap_tolerance^2 * rr || return false
   t0 = dot(q0 - p, r) / rr
   t1 = dot(q1 - p, r) / rr
   lo = max(0.0, min(t0, t1))
@@ -634,8 +652,14 @@ function _line_overlap(a::LinePath, b::LinePath, opts::GeometryOperationOptions)
 end
 
 function _analytic_intersections(a::LinePath, b::LinePath, opts::GeometryOperationOptions)
-  if (overlap = _line_overlap(a, b, opts)) !== nothing
-    overlap === false && return _empty_intersections(a, b, opts)
+  #= Only a collinear-overlap interval (a tuple) takes the overlap branch.
+     `false` (parallel-but-not-collinear, or degenerate segment) falls
+     through to the transversal solver instead of returning empty directly:
+     the solver's own guards reach the same empty verdict for genuinely
+     parallel/degenerate pairs, and the fall-through keeps line-line
+     classification consistent if a user overrides only one of
+     parallelism_tolerance/overlap_tolerance. =#
+  if (overlap = _line_overlap(a, b, opts)) isa Tuple
     lo, hi = overlap
     if abs(hi - lo) * path_length(a) <= opts.overlap_tolerance
       p = _line_point_at_fraction(a, (lo + hi) / 2)
@@ -699,6 +723,22 @@ function _path_parameter_for_angle(path::ArcPath, angle::Real)
     -_angle_delta_ccw(angle, path.start_angle)
 end
 
+#= Angular comparisons (interval membership, seam wrap-around, full-turn
+   detection) need a tolerance in RADIANS, but the geometric tolerances that
+   callers hold (opts.tolerance) are arc-length slacks in METRES. The
+   conversion is the arc-length relation Δs = r·Δθ, so the angular slack is
+   tol/r — a metre-valued slack used directly as radians is r× too tight on
+   small circles and r× too loose on big ones. The radius is floored at
+   zero_vector_tolerance() to keep the division finite for degenerate
+   (zero-radius) circles, and the result capped at π since a slack of half a
+   turn already covers any angular gap.
+
+   See also: _arc_intervals, _angle_in_path, _overlap_angle_intervals. =#
+"Metre-valued tolerance `tol` converted to radians of arc on `path`, capped at π."
+_angular_tolerance(path::Union{ArcPath,CircularPath}, tol::Real) =
+  min(π, tol / max(_circle_radius(path), zero_vector_tolerance()))
+
+# `tol` is in RADIANS (see _angular_tolerance).
 _arc_intervals(path::CircularPath, tol) = [(0.0, 2π)]
 
 function _arc_intervals(path::ArcPath, tol)
@@ -712,12 +752,14 @@ function _arc_intervals(path::ArcPath, tol)
   end
 end
 
+# `tol` is in METRES (all callers pass opts.tolerance); converted internally.
 function _angle_in_path(path::Union{ArcPath,CircularPath}, angle::Real, tol::Real)
+  atol = _angular_tolerance(path, tol)
   a = _normalize_angle(angle)
-  for (lo, hi) in _arc_intervals(path, tol)
-    (lo - tol <= a <= hi + tol ||
-     (lo == 0.0 && abs(a - 2π) <= tol) ||
-     (hi == 2π && abs(a) <= tol)) && return true
+  for (lo, hi) in _arc_intervals(path, atol)
+    (lo - atol <= a <= hi + atol ||
+     (lo == 0.0 && abs(a - 2π) <= atol) ||
+     (hi == 2π && abs(a) <= atol)) && return true
   end
   false
 end
@@ -756,15 +798,26 @@ function _line_circle_points(line::LinePath, circle::Union{ArcPath,CircularPath}
     if a > opts.tolerance^2
       b = 2 * (fx*dx + fy*dy)
       q = fx*fx + fy*fy - _circle_radius(circle)^2
+      #= Solve-and-dedupe instead of thresholding the discriminant: disc has
+         units m⁴ (for unit-length parameters), so comparing it against the
+         metre-valued tolerance made tangency classification scale-dependent.
+         For disc > 0 we push both roots and let _dedupe_points (below) merge
+         a near-tangent pair by metre-space separation; for disc ≤ 0
+         (including small negatives from rounding) the candidate is the
+         vertex of the quadratic, t = -b/(2a), kept only if the resulting
+         point passes the same metric point-on-circle test used by the other
+         branches. Everything stays in metres; no new constant. =#
       disc = b*b - 4*a*q
-      if disc >= -opts.tolerance
-        if abs(disc) <= opts.tolerance
-          push!(ts, -b / (2*a))
-        else
-          root = sqrt(max(0.0, disc))
-          push!(ts, (-b - root) / (2*a))
-          push!(ts, (-b + root) / (2*a))
-        end
+      if disc > 0
+        root = sqrt(disc)
+        push!(ts, (-b - root) / (2*a))
+        push!(ts, (-b + root) / (2*a))
+      else
+        t = -b / (2*a)
+        x = p0.x + dx*t
+        y = p0.y + dy*t
+        abs(hypot(x - c.x, y - c.y) - _circle_radius(circle)) <= opts.tolerance &&
+          push!(ts, t)
       end
     elseif abs(hypot(fx, fy) - _circle_radius(circle)) <= opts.tolerance
       push!(ts, 0.0)
@@ -839,10 +892,13 @@ end
 
 function _overlap_angle_intervals(a::Union{ArcPath,CircularPath}, b::Union{ArcPath,CircularPath}, opts)
   intervals = Tuple{Float64,Float64}[]
-  for (alo, ahi) in _arc_intervals(a, opts.tolerance), (blo, bhi) in _arc_intervals(b, opts.tolerance)
+  # Only called from the _same_circle branch, so a's radius (equal to b's
+  # within opts.tolerance) converts the metre slack to radians for both.
+  atol = _angular_tolerance(a, opts.tolerance)
+  for (alo, ahi) in _arc_intervals(a, atol), (blo, bhi) in _arc_intervals(b, atol)
     lo = max(alo, blo)
     hi = min(ahi, bhi)
-    hi >= lo - opts.tolerance && push!(intervals, (lo, hi))
+    hi >= lo - atol && push!(intervals, (lo, hi))
   end
   intervals
 end
@@ -862,7 +918,8 @@ function _analytic_intersections(a::Union{ArcPath,CircularPath}, b::Union{ArcPat
           parameters=(first=_path_parameter_for_angle(a, (lo + hi)/2),
                       second=_path_parameter_for_angle(b, (lo + hi)/2)),
           kind=:endpoint))
-      elseif abs(hi - lo - 2π) <= opts.tolerance && a isa CircularPath
+      # Full-turn check in metric form: angular gap × radius vs metre slack.
+      elseif abs(hi - lo - 2π) * _circle_radius(a) <= opts.tolerance && a isa CircularPath
         push!(elements, CurveIntersection(a;
           parameters=(first=(0.0, 2π), second=(0.0, 2π)), kind=:overlap))
       else
