@@ -644,7 +644,26 @@ b_current_layer_ref(b::Backend, layer) = b.current_layer = layer
 # both Shapes and Annotations (both <: Proxy), and it is assignment-compatible with
 # every concrete `b.layers` value type (Vector{Proxy} or Vector{Shape}).
 b_all_shapes_in_layer(b::Backend, layer) = get(b.layers, layer, Proxy[])
-b_delete_all_shapes_in_layer(b::Backend, layer) = b_delete_shapes(b_all_shapes_in_layer(b, layer))
+#=
+The default delete-all is composed from the two per-item ops the backend
+already has: `b_all_shapes_in_layer` enumerates and `b_delete_shape`
+handles each shape's ref lifecycle (the generic method routes through
+maybe_delete, which deletes the native refs and resets the proxy's ref
+entry; LocalBackend's override also removes the shape from its local
+storage and layer index).  Backends that can delete a whole layer
+remotely in one call (AutoCAD, Rhino, ...) override this op.
+
+The `copy` is load-bearing: `b_all_shapes_in_layer` returns the *live*
+layer collection on the default and LocalBackend paths, and
+`b_delete_shape` may mutate that very collection (LocalBackend filter!s
+it), so iterating the original would skip every other shape.
+
+See also: delete_all_shapes_in_layer (Shapes.jl), b_delete_shape.
+=#
+b_delete_all_shapes_in_layer(b::Backend, layer) =
+  for s in copy(b_all_shapes_in_layer(b, layer))
+    b_delete_shape(b, s)
+  end
 #=
 The three layer-property setters below are *deliberate* no-ops in the
 generic fallback, not unfinished stubs.  Layer styling is an optional
