@@ -55,8 +55,11 @@ macro defcb(expr)
           catch e
             #= Single-backend dispatch shares one retire policy with @defcbs:
                handle_backend_error retires a RemoteBackend on the transport-
-               class error set Union{IOError, ArgumentError, EOFError} and lets
-               every other error fall through to its rethrowing generic method.
+               class error set Union{BackendDisconnected, IOError, EOFError}
+               (the transport primitives rethrow closed-stream ArgumentErrors
+               as BackendDisconnected, so a plain ArgumentError from a b_*
+               body is a programming error that propagates) and lets every
+               other error fall through to its rethrowing generic method.
                The trailing rethrow() is load-bearing and is what makes this
                differ from the @defcbs loop: that loop swallows after retiring
                so it can proceed to the next backend, but a single-backend op

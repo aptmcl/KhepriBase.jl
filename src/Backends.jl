@@ -162,8 +162,53 @@ retire_dead_backend(b::RemoteBackend) =
     close_connection!(b)
   end
 
+#=
+Julia surfaces a write to a closed socket as
+ArgumentError("stream is closed or unusable") — the SAME exception type as
+the most common generic programming error.  The retire policy used to
+classify by type alone (Union{IOError, ArgumentError, EOFError}), so ANY
+ArgumentError raised inside a b_* implementation — KhepriBase itself throws
+ArgumentError from dozens of geometry-validation sites reachable during
+realize — silently retired the backend: session refs wiped, healthy socket
+closed, and in the @defcbs/maybe_realize loops the error fully swallowed
+while the script kept "succeeding" with degraded output.
+
+The fix is to classify at the transport boundary instead of by type: the
+transport primitives (send/receive on TCPSocket in Primitives.jl and on
+WebSocketBackend below) wrap their bodies in rethrow_disconnected, which
+converts IOError, EOFError, and the closed-stream ArgumentError into
+BackendDisconnected.  Only errors raised by the transport itself can carry
+that type, so handle_backend_error's retire method no longer needs (and no
+longer has) plain ArgumentError in its set — a b_* implementation bug now
+propagates as an error on the backend where it occurred.
+
+See also: handle_backend_error, retire_dead_backend, send/receive
+(Primitives.jl).
+=#
+public BackendDisconnected
+"The connection to a remote backend was lost mid-operation; `cause` holds the underlying transport exception."
+struct BackendDisconnected <: Exception
+  cause::Any
+end
+
+Base.showerror(io::IO, e::BackendDisconnected) =
+  begin
+    print(io, "BackendDisconnected: the connection to the backend was lost (")
+    showerror(io, e.cause)
+    print(io, ")")
+  end
+
+is_disconnection(e::Union{Base.IOError, EOFError}) = true
+is_disconnection(e::ArgumentError) = occursin("stream is closed or unusable", e.msg)
+is_disconnection(e) = false
+
+# To be called from a catch block wrapping a transport primitive: converts
+# transport-death exceptions into BackendDisconnected and rethrows anything else.
+rethrow_disconnected(e) =
+  is_disconnection(e) ? throw(BackendDisconnected(e)) : rethrow()
+
 handle_backend_error(e, b::Backend) = rethrow()
-handle_backend_error(e::Union{Base.IOError, ArgumentError, EOFError}, b::RemoteBackend) =
+handle_backend_error(e::Union{BackendDisconnected, Base.IOError, EOFError}, b::RemoteBackend) =
   retire_dead_backend(b)
 
 public RemoteBackend, before_connecting, after_connecting, start_connection, failed_connecting, retry_connecting,
@@ -360,15 +405,27 @@ connection(b::WebSocketBackend) = b
 close_connection!(b::WebSocketBackend) =
   try close(b.websocket) catch end
 
+# Transport primitives: IOError/EOFError/closed-stream ArgumentError become
+# BackendDisconnected (see the prose block above BackendDisconnected).
+# WebSocketError is deliberately NOT reclassified: process_requests below
+# distinguishes clean closes via WebSockets.isok and must see it raw.
 send(b::WebSocketBackend, buffer) =
-  HTTP.WebSockets.send(b.websocket, take!(buffer))
+  try
+    HTTP.WebSockets.send(b.websocket, take!(buffer))
+  catch e
+    rethrow_disconnected(e)
+  end
 
 receive(b::WebSocketBackend) =
-  let bytes = HTTP.WebSockets.receive(b.websocket)
-    take!(b.buffer) # Clear the buffer
-    write(b.buffer, bytes)
-    seekstart(b.buffer)
-    b.buffer
+  try
+    let bytes = HTTP.WebSockets.receive(b.websocket)
+      take!(b.buffer) # Clear the buffer
+      write(b.buffer, bytes)
+      seekstart(b.buffer)
+      b.buffer
+    end
+  catch e
+    rethrow_disconnected(e)
   end
 
 # Finally, the server

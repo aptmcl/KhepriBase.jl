@@ -57,6 +57,11 @@ end
 KhepriBase.retry_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, Int}) = nothing
 KhepriBase.failed_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, Int}) = nothing
 
+# A b_* implementation bug on a remote backend must PROPAGATE, not retire the
+# backend (regression: ArgumentError used to be classified as transport death).
+KhepriBase.b_delete_all_shapes(b::KhepriBase.SocketBackend{TestSocketBackendKey, Int}) =
+  throw(ArgumentError("simulated b_* implementation bug"))
+
 @testset "Backend" begin
 
   @testset "Backend basic operations" begin
@@ -561,6 +566,87 @@ KhepriBase.failed_connecting(::KhepriBase.SocketBackend{TestSocketBackendKey, In
       e
     end
     @test err !== nothing
+  end
+
+  @testset "Transport-error classification (BackendDisconnected)" begin
+    @testset "rethrow_disconnected translates only transport-death errors" begin
+      classify(e) = try
+        try
+          throw(e)
+        catch caught
+          KhepriBase.rethrow_disconnected(caught)
+        end
+      catch result
+        result
+      end
+      # Julia reports a write to a closed socket as this ArgumentError.
+      @test classify(ArgumentError("stream is closed or unusable")) isa KhepriBase.BackendDisconnected
+      @test classify(EOFError()) isa KhepriBase.BackendDisconnected
+      @test classify(Base.IOError("read: connection reset", -104)) isa KhepriBase.BackendDisconnected
+      # An ordinary ArgumentError (a geometry-validation/programming error)
+      # must come back unchanged.
+      @test classify(ArgumentError("invalid knot vector")) isa ArgumentError
+      @test classify(ErrorException("boom")) isa ErrorException
+    end
+
+    @testset "closed TCP socket surfaces as BackendDisconnected" begin
+      let Sockets = KhepriBase.Sockets,
+          server = Sockets.listen(Sockets.localhost, 0),
+          port = Int(Sockets.getsockname(server)[2]),
+          sock = Sockets.connect(port)
+        try
+          close(sock)
+          let buf = IOBuffer()
+            write(buf, UInt8[1, 2, 3])
+            @test_throws KhepriBase.BackendDisconnected KhepriBase.send(sock, buf)
+          end
+          @test_throws KhepriBase.BackendDisconnected KhepriBase.receive(sock)
+        finally
+          close(server)
+        end
+      end
+    end
+
+    @testset "handle_backend_error retires only on the transport-class set" begin
+      for transport_error in (KhepriBase.BackendDisconnected(EOFError()),
+                              EOFError(),
+                              Base.IOError("read: connection reset", -104))
+        let b = KhepriBase.SocketBackend{TestSocketBackendKey, Int}("Dead", 9, NamedTuple())
+          @test_logs (:warn, r"disconnected") begin
+            try
+              throw(transport_error)
+            catch e
+              KhepriBase.handle_backend_error(e, b)
+            end
+          end
+        end
+      end
+      let b = KhepriBase.SocketBackend{TestSocketBackendKey, Int}("Alive", 9, NamedTuple()),
+          err = try
+            try
+              throw(ArgumentError("degenerate polygonal path"))
+            catch e
+              KhepriBase.handle_backend_error(e, b)
+            end
+            nothing
+          catch e
+            e
+          end
+        @test err isa ArgumentError
+      end
+    end
+
+    @testset "ArgumentError from a b_* body propagates instead of retiring" begin
+      let b = KhepriBase.SocketBackend{TestSocketBackendKey, Int}("BuggyOp", 9, NamedTuple())
+        with(KhepriBase.current_backends, (b,)) do
+          # No retire @warn may be logged, and the error must escape the
+          # @defcbs dispatch loop instead of being swallowed.
+          @test_logs begin
+            @test_throws ArgumentError delete_all_shapes()
+          end
+        end
+      end
+    end
   end
 
   @testset "Resource folder ordering" begin

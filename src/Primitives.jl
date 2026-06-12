@@ -223,16 +223,29 @@ receive(conn) = conn
 # Each RPC call is wrapped in a length-prefixed frame: send writes Int32 length + payload,
 # receive reads Int32 length then that many bytes into an IOBuffer. This matches
 # Channel.cs's BeginFrame/EndFrame on the C# side.
+# Transport failures (IOError, EOFError, and Julia's closed-stream
+# ArgumentError) are rethrown as BackendDisconnected so that the retire
+# policy in handle_backend_error never confuses them with ordinary
+# ArgumentErrors raised by b_* implementations — see the prose block above
+# BackendDisconnected in Backends.jl.
 send(conn::TCPSocket, buf::IOBuffer) =
   let n = buf.size
-    write(conn, Int32(n))
-    unsafe_write(conn, pointer(buf.data), n)
+    try
+      write(conn, Int32(n))
+      unsafe_write(conn, pointer(buf.data), n)
+    catch e
+      rethrow_disconnected(e)
+    end
     truncate(buf, 0)
   end
 
 receive(conn::TCPSocket) =
-  let len = read(conn, Int32)
-    IOBuffer(read(conn, len))
+  try
+    let len = read(conn, Int32)
+      IOBuffer(read(conn, len))
+    end
+  catch e
+    rethrow_disconnected(e)
   end
 
 # Julia side of the lazy registration protocol: sends opcode 0 (ProvideOperation) with the
