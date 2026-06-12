@@ -5,18 +5,40 @@
 
 _is_identity_void(x) = x isa Void && x.width == 0.0 && x.depth == 0.0
 
+#=
+Option validation for `beside_x`/`beside_y` (the variadic `beside`
+forwards here). `shared_wall=false` — independent double walls between
+adjacent rooms — is accepted syntax but has never been implemented:
+the wall-graph deduplicates shared edges unconditionally. Per the
+no-silent-stub policy it errors instead of quietly producing a single
+shared wall. `align` is validated here so a typo fails at description
+time, not deep inside the layout engine.
+
+See also: `_align_offset` (DesignLayout.jl) for the align semantics.
+=#
+"Validate `shared_wall`/`align` options shared by `beside_x` and `beside_y`."
+function _check_beside_options(shared_wall, align)
+  shared_wall ||
+    throw(ArgumentError("shared_wall=false is not implemented: adjacent rooms always share a single wall"))
+  align in (:start, :center, :end) ||
+    throw(ArgumentError("align must be :start, :center, or :end, got :$align"))
+end
+
 # ---- Horizontal adjacency (along x) ----
 
 """
     beside_x(a, b; shared_wall=true, align=:start)
 
 Place two spaces side by side along the x-axis. A zero-sized `void()` on either
-side is elided, so `beside_x(void(), a) === a`.
+side is elided, so `beside_x(void(), a) === a`. `align` positions the shallower
+space within the pair's combined depth (`:start`, `:center`, `:end`).
 """
-beside_x(a, b; shared_wall=true, align=:start) =
+function beside_x(a, b; shared_wall=true, align=:start)
+  _check_beside_options(shared_wall, align)
   _is_identity_void(a) ? b :
   _is_identity_void(b) ? a :
   BesideX(a, b, shared_wall, align)
+end
 
 # ---- Depth adjacency (along y) ----
 
@@ -24,12 +46,15 @@ beside_x(a, b; shared_wall=true, align=:start) =
     beside_y(a, b; shared_wall=true, align=:start)
 
 Place two spaces side by side along the y-axis (depth). A zero-sized `void()`
-on either side is elided, so `beside_y(void(), a) === a`.
+on either side is elided, so `beside_y(void(), a) === a`. `align` positions the
+narrower space within the pair's combined width (`:start`, `:center`, `:end`).
 """
-beside_y(a, b; shared_wall=true, align=:start) =
+function beside_y(a, b; shared_wall=true, align=:start)
+  _check_beside_options(shared_wall, align)
   _is_identity_void(a) ? b :
   _is_identity_void(b) ? a :
   BesideY(a, b, shared_wall, align)
+end
 
 # ---- General beside (2 args) ----
 
@@ -136,27 +161,43 @@ precedence over the overlay.
 """
 with_props(s, props) = PropsOverlay(s, NamedTuple(props))
 
-"""
-    tag_wall_family(s, family_name)
-
-Attach `family_name` as a `wall_family` prop on every placed space under `s`.
-At generation time, walls between spaces that agree on the family name use
-the corresponding `WallFamilyDef` (from AA's element-rule layer) is
-looked up in `rules.families.walls`, overriding the rule system.
-Named `tag_` rather than `with_` to avoid a collision with Khepri's
-`with_wall_family` context manager.
-"""
-tag_wall_family(s, family_name) = with_props(s, (wall_family=Symbol(family_name),))
+#=
+The tag combinators carry actual `Family` OBJECTS, not Symbol names:
+KhepriBase has no name → family registry, so the originally documented
+name lookup could never be implemented backend-agnostically. The
+object travels in the space's props and is consumed by the storey
+compiler (`_segment_wall_family` / `_space_slab_family` in Spaces.jl);
+the Symbol/String forms throw so old code fails loudly instead of
+silently building default walls.
+=#
 
 """
-    tag_slab_family(s, family_name)
+    tag_wall_family(s, fam::WallFamily)
 
-Attach `family_name` as a `slab_family` prop on every placed space under `s`.
-At generation time, each floor slab looks the name up in
-`rules.families.slabs` and uses it in place of the default `SlabSpec`.
-Named `tag_` rather than `with_` to avoid a collision with Khepri.
+Attach the wall family `fam` to every placed space under `s`. At `build`
+time, a tagged space's exterior walls use `fam`, and an interior wall
+uses it when *both* adjoining spaces are tagged with the same family
+(disagreeing tags fall back to the storey default). Named `tag_` rather
+than `with_` to avoid a collision with Khepri's `with_wall_family`
+context manager.
 """
-tag_slab_family(s, family_name) = with_props(s, (slab_family=Symbol(family_name),))
+tag_wall_family(s, fam::WallFamily) = with_props(s, (wall_family=fam,))
+
+tag_wall_family(s, fam::Union{Symbol, AbstractString}) =
+  throw(ArgumentError("tag_wall_family: named-family lookup ($(repr(fam))) is not supported; pass a WallFamily object, e.g. tag_wall_family(s, wall_family(thickness=0.3))"))
+
+"""
+    tag_slab_family(s, fam::SlabFamily)
+
+Attach the slab family `fam` to every placed space under `s`. At `build`
+time, each tagged space's floor slab uses `fam` in place of the storey
+default. Named `tag_` rather than `with_` to avoid a collision with
+Khepri.
+"""
+tag_slab_family(s, fam::SlabFamily) = with_props(s, (slab_family=fam,))
+
+tag_slab_family(s, fam::Union{Symbol, AbstractString}) =
+  throw(ArgumentError("tag_slab_family: named-family lookup ($(repr(fam))) is not supported; pass a SlabFamily object, e.g. tag_slab_family(s, slab_family(thickness=0.3))"))
 
 # ---- Annotation combinators ----
 
