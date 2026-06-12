@@ -945,14 +945,79 @@ Compile a `Storey` (or every storey of a `Layout`) down to BIM
 elements via the wall-graph chain resolver: shared edges become walls,
 interior connections become doors/windows/arches, boundaries become
 `SpaceBoundary` records. Returns a `BuildResult` (single storey) or
-`Vector{BuildResult}` (layout).
+`Vector{BuildResult}` (layout). The `Layout` form first lowers the
+layout's design annotations (`connect_spaces`, `connect_exterior`,
+`disconnect`, `no_windows`) into effective per-storey
+`SpaceConnection`s; a standalone `Storey` has no annotations and
+builds exactly its own `connections`.
 """
-function build(s::Storey)
+build(s::Storey) = _build_storey(s, s.connections)
+
+#=
+Per-space slab family: `tag_slab_family` stores a `SlabFamily` object
+in the space's props at layout time; the storey default applies
+otherwise. A `:slab_family` prop that is not a `SlabFamily` (e.g. a
+Symbol from the old, never-implemented name-lookup contract) errors
+loudly rather than silently falling back to the default.
+
+See also: tag_slab_family, _segment_wall_family.
+=#
+"Slab family for one space: its `:slab_family` prop if tagged, else the storey default."
+_space_slab_family(s::Storey, sp::Space) =
+  let fam = get(sp.props, :slab_family, s.slab_family)
+    fam isa SlabFamily ? fam :
+      throw(ArgumentError("space :$(sp.id) has a :slab_family prop of type $(typeof(fam)); pass a SlabFamily object to tag_slab_family"))
+  end
+
+# Wall-family tag of one space, or nothing. Non-WallFamily tags error
+# loudly (same stub policy as _space_slab_family).
+_space_wall_family_tag(sp::Space) =
+  let fam = get(sp.props, :wall_family, nothing)
+    isnothing(fam) || fam isa WallFamily ||
+      throw(ArgumentError("space :$(sp.id) has a :wall_family prop of type $(typeof(fam)); pass a WallFamily object to tag_wall_family"))
+    fam
+  end
+
+#=
+Per-segment wall family, consuming `tag_wall_family` tags:
+- exterior segments belong to a single space and take its tag;
+- interior segments take a tag only when both spaces are tagged with
+  the *same* `WallFamily` object — disagreeing tags fall back to the
+  storey default rather than guessing a winner;
+- untagged spaces use the storey default.
+The chain resolver refuses to merge segments with different families
+(see `chain_from` in WallGraph.jl), so a tagged region splits into its
+own `Wall`s carrying the requested family while the output stays
+standard `Wall`s on every backend.
+
+See also: tag_wall_family, _space_slab_family.
+=#
+"Wall family for one classified segment, honoring per-space `:wall_family` tags."
+_segment_wall_family(s::Storey, kind, sp_a, sp_b) =
+  let fam_a = _space_wall_family_tag(sp_a)
+    if kind == :exterior || isnothing(sp_b)
+      isnothing(fam_a) ? s.wall_family : fam_a
+    else
+      let fam_b = _space_wall_family_tag(sp_b)
+        (!isnothing(fam_a) && fam_a === fam_b) ? fam_a : s.wall_family
+      end
+    end
+  end
+
+#=
+The storey compiler proper. Takes the effective connection list as an
+explicit parameter instead of reading `s.connections` so that
+`build(l::Layout)` can pass annotation-lowered connections without
+mutating the `Storey` — lowering stays pure, and `validate(l)` /
+`apply_fixers`, which rebuild a layout repeatedly, never accumulate
+duplicate openings.
+=#
+function _build_storey(s::Storey, connections::Vector{SpaceConnection})
   tol = collinearity_tolerance()
   all_segments = classify_all_edges(s, tol)
   arch_pairs = Set(
     minmax(objectid(c.space_a), objectid(c.space_b))
-    for c in s.connections
+    for c in connections
     if c.kind == :arch && c.space_b isa Space)
   segments = filter(all_segments) do seg
     _, _, kind, sp_a, sp_b, _ = seg
@@ -964,14 +1029,19 @@ function build(s::Storey)
   # Each classified segment either carries an `ArcPath` (arc-based
   # boundary, e.g. from a polar_sector_path) or `nothing` (straight
   # boundary). We create the corresponding wall-graph segment so the
-  # resolver can emit a curved or straight Wall later.
-  for (p1, p2, _, _, _, arc) in segments
+  # resolver can emit a curved or straight Wall later. The family is
+  # chosen per segment so `tag_wall_family` tags take effect (see
+  # `_segment_wall_family`).
+  for (p1, p2, kind, sp_a, sp_b, arc) in segments
     let j1 = find_or_create_junction!(wg, p1, tol),
         j2 = find_or_create_junction!(wg, p2, tol)
       if j1 == j2
         push!(edge_to_seg, 0)
       else
-        push!(edge_to_seg, segment!(wg, j1, j2; family=s.wall_family, arc=arc))
+        push!(edge_to_seg,
+              segment!(wg, j1, j2;
+                       family=_segment_wall_family(s, kind, sp_a, sp_b),
+                       arc=arc))
       end
     end
   end
@@ -1052,7 +1122,7 @@ function build(s::Storey)
       end
     end
   end
-  for conn in s.connections
+  for conn in connections
     if conn.kind == :arch && conn.space_b isa Space
       for (p1, p2) in shared_boundary(conn.space_a, conn.space_b)
         push!(boundaries, SpaceBoundary(conn.space_a, nothing, :virtual, :interior, conn.space_b, p1, p2))
@@ -1062,7 +1132,7 @@ function build(s::Storey)
   end
   doors = []
   windows = []
-  for conn in s.connections
+  for conn in connections
     conn.kind == :arch && continue
     if conn.space_b isa Space
       place_interior_connection!(conn, segments, edge_to_seg, walls,
@@ -1076,24 +1146,215 @@ function build(s::Storey)
       error("Exterior connections require a loc parameter")
     end
   end
+  # Per-space opt-outs: `above(below, top; slab_between=false)` stamps
+  # the interface-level spaces with `:_no_floor_slab` (see `_layout!`
+  # on `Above` in DesignLayout.jl), suppressing just their floor slab
+  # while the rest of the storey keeps its slabs.
   slabs = s.generate_slabs ?
-    [slab(sp.boundary, level=s.level, family=s.slab_family)
-     for sp in s.spaces] : []
+    [slab(sp.boundary, level=s.level, family=_space_slab_family(s, sp))
+     for sp in s.spaces if !get(sp.props, :_no_floor_slab, false)] : []
   BuildResult(s, walls, doors, windows, slabs, boundaries)
 end
 
+#=== Annotation Lowering ===#
+#
+# The declarative Designs layer (Level 2) attaches `DesignAnnotation`s
+# to the tree (`connect_spaces`, `connect_exterior`, `disconnect`,
+# `no_windows`); the layout engine copies them verbatim onto
+# `Layout.annotations`. Lowering turns them into the standard
+# `SpaceConnection`s that `_build_storey` already consumes — no new
+# element kinds, so every backend gets ordinary doors/windows/arches.
+#
+# Lowering is PURE: it computes effective per-storey connection lists
+# without touching `Storey.connections`, so repeated `build(l)` calls
+# (e.g. inside `validate(l)` / `apply_fixers`) never duplicate
+# openings.
+
+# Resolve a space id against the Layout's lazy index, or throw an
+# ArgumentError that lists the known ids. The `unit_<i>/` hint matters
+# because annotations inside `repeat_unit` reference the *unscoped*
+# unit ids, which after layout exist only in their per-copy scoped form
+# — a silent no-op before this lowering existed, a loud error now.
+_resolve_space(l::Layout, id::Symbol, op::String) =
+  let entry = get(_ensure_index(l), id, nothing)
+    isnothing(entry) &&
+      throw(ArgumentError("$op: unknown space id :$id; known ids: " *
+        join(sort!(collect(keys(_ensure_index(l))), by=string), ", ") *
+        ". Ids inside repeat_unit are scoped per copy as unit_<i>/<id>."))
+    entry
+  end
+
 #=
-Build a whole `Layout`. Each storey is compiled independently; the
-per-storey `BuildResult`s are wrapped in a `LayoutBuildResult` so
+Derived opening family for an annotation's `width`/`height` overrides.
+Unset dimensions default from the *current* default family (not the
+literal field defaults), via the `_element` instance constructors that
+`@deffamily` generates — the derived family also records the default as
+`based_on`, which keeps backend family mapping working.
+=#
+_opening_family(kind::Symbol, width, height) =
+  let (base, derive) = kind == :door ?
+        (default_door_family(), door_family_element) :
+        (default_window_family(), window_family_element),
+      overrides = (; (k => v for (k, v) in pairs((width=width, height=height))
+                      if !isnothing(v))...)
+    isempty(overrides) ? base : derive(base; overrides...)
+  end
+
+#=
+Host edge for a `connect_exterior` annotation, as a world-space
+`(Loc, Loc)` pair. Named faces are bounding-box faces (north = +y,
+matching `SubdivideRemaining`'s compass convention); `:auto` picks the
+longest exterior edge so the opening lands on the facade with the most
+room. Openings are then placed at fractions along this edge and
+projected onto the actual exterior wall chain by
+`place_exterior_connection!`, so non-rectangular boundaries still work.
+=#
+function _exterior_host_edge(st::Storey, sp::Space, face::Symbol)
+  if face == :auto
+    let edges = exterior_edges(st, sp)
+      isempty(edges) &&
+        throw(ArgumentError("connect_exterior: space :$(sp.id) has no exterior edges (face=:auto)"))
+      argmax(e -> distance(e[1], e[2]), edges)
+    end
+  elseif face in (:north, :south, :east, :west)
+    let (x0, y0) = space_origin(sp),
+        w = space_width(sp),
+        d = space_depth(sp)
+      face == :south ? (xy(x0, y0), xy(x0 + w, y0)) :
+      face == :north ? (xy(x0, y0 + d), xy(x0 + w, y0 + d)) :
+      face == :west  ? (xy(x0, y0), xy(x0, y0 + d)) :
+                       (xy(x0 + w, y0), xy(x0 + w, y0 + d))
+    end
+  else
+    throw(ArgumentError("connect_exterior: unknown face :$face; expected :north, :south, :east, :west, or :auto"))
+  end
+end
+
+#=
+Lower a Layout's design annotations into effective per-storey
+connection lists, seeded with each storey's explicit `connections`.
+
+Two phases, so removal annotations win regardless of how the
+`Annotated` wrappers were nested: the docs promise that `disconnect`
+removes **any** connection between two spaces, including one declared
+by a `connect_spaces` elsewhere in the tree, and `no_windows`
+suppresses windows declared elsewhere. Within each phase, annotations
+apply in `collect_annotations` order (outermost wrapper first).
+
+Phase 1 (additive): `ConnectAnnotation` becomes an interior
+door/window/arch `SpaceConnection` mirroring `add_door`/`add_window`/
+`add_arch` defaults; `ConnectExteriorAnnotation` becomes `count`
+exterior connections with explicit `loc`s at fractions `(i-0.5)/n`
+along the host edge (exterior placement requires a `loc`).
+
+Phase 2 (subtractive): `DisconnectAnnotation` deletes every interior
+connection between its two spaces (zero matches is a no-op — "remove
+any"); `NoWindowsAnnotation` deletes every `:window` connection,
+interior or exterior, touching its space.
+
+Unknown ids, cross-storey interior connections, unsupported kinds or
+faces, `count < 1`, and `width`/`height` on an `:arch` (arches carry
+no family) all throw `ArgumentError` — annotations that previously
+no-opped silently now fail loudly.
+=#
+"Compute effective per-storey `SpaceConnection`s from a Layout's explicit connections plus its design annotations. Pure — never mutates the storeys."
+function _lower_annotations(l::Layout)
+  conns = IdDict{Storey, Vector{SpaceConnection}}(
+    s => copy(s.connections) for s in l.storeys)
+  # Phase 1 — additive annotations.
+  for ann in l.annotations
+    if ann isa ConnectAnnotation
+      let (st_a, sp_a) = _resolve_space(l, ann.from, "connect_spaces"),
+          (st_b, sp_b) = _resolve_space(l, ann.to, "connect_spaces")
+        st_a === st_b ||
+          throw(ArgumentError("connect_spaces: spaces :$(ann.from) and :$(ann.to) are on different storeys; interior openings are per-storey"))
+        if ann.kind == :door
+          push!(conns[st_a],
+                SpaceConnection(:door, sp_a, sp_b,
+                                _opening_family(:door, ann.width, ann.height),
+                                nothing, 0))
+        elseif ann.kind == :window
+          push!(conns[st_a],
+                SpaceConnection(:window, sp_a, sp_b,
+                                _opening_family(:window, ann.width, ann.height),
+                                nothing, default_window_sill_height()))
+        elseif ann.kind == :arch
+          isnothing(ann.width) && isnothing(ann.height) ||
+            throw(ArgumentError("connect_spaces: width/height are not supported with kind=:arch (an arch elides the shared wall and carries no family)"))
+          push!(conns[st_a],
+                SpaceConnection(:arch, sp_a, sp_b, nothing, nothing, 0))
+        else
+          throw(ArgumentError("connect_spaces: unsupported kind :$(ann.kind); expected :door, :window, or :arch"))
+        end
+      end
+    elseif ann isa ConnectExteriorAnnotation
+      let (st, sp) = _resolve_space(l, ann.space_id, "connect_exterior")
+        ann.kind in (:door, :window) ||
+          throw(ArgumentError("connect_exterior: unsupported kind :$(ann.kind); expected :door or :window"))
+        let n = something(ann.count, 1)
+          n >= 1 ||
+            throw(ArgumentError("connect_exterior: count must be >= 1, got $n"))
+          let (p1, p2) = _exterior_host_edge(st, sp, ann.face),
+              fam = _opening_family(ann.kind, ann.width, ann.height),
+              sill = ann.kind == :door ? 0 : default_window_sill_height()
+            for i in 1:n
+              push!(conns[st],
+                    SpaceConnection(ann.kind, sp, :exterior, fam,
+                                    p1 + (p2 - p1) * ((i - 0.5) / n), sill))
+            end
+          end
+        end
+      end
+    elseif !(ann isa DisconnectAnnotation || ann isa NoWindowsAnnotation)
+      # Stub policy: a new annotation type must be wired in here, not
+      # silently dropped.
+      throw(ArgumentError("build: unsupported design annotation $(typeof(ann))"))
+    end
+  end
+  # Phase 2 — subtractive annotations.
+  for ann in l.annotations
+    if ann isa DisconnectAnnotation
+      let (_, sp_a) = _resolve_space(l, ann.from, "disconnect"),
+          (_, sp_b) = _resolve_space(l, ann.to, "disconnect")
+        for s in l.storeys
+          filter!(conns[s]) do c
+            !(c.space_b isa Space &&
+              ((c.space_a === sp_a && c.space_b === sp_b) ||
+               (c.space_a === sp_b && c.space_b === sp_a)))
+          end
+        end
+      end
+    elseif ann isa NoWindowsAnnotation
+      let (_, sp) = _resolve_space(l, ann.space_id, "no_windows")
+        for s in l.storeys
+          filter!(c -> !(c.kind == :window &&
+                         (c.space_a === sp || c.space_b === sp)),
+                  conns[s])
+        end
+      end
+    end
+  end
+  conns
+end
+
+#=
+Build a whole `Layout`. The layout's design annotations are first
+lowered into effective per-storey connection lists (see
+`_lower_annotations`); each storey is then compiled independently, and
+the per-storey `BuildResult`s are wrapped in a `LayoutBuildResult` so
 that a caller can still destructure the whole-building elements
 with the same 4-tuple shape as a single storey:
 
     walls, doors, windows, slabs = build(layout)
 
 Per-storey access remains available via `result.storey_results` or
-`result[i]`.
+`result[i]`. Note that `build(s::Storey)` standalone is intentionally
+annotation-free: annotations live on the `Layout`.
 =#
-build(l::Layout) = LayoutBuildResult(l, [build(s) for s in l.storeys])
+build(l::Layout) =
+  let conns = _lower_annotations(l)
+    LayoutBuildResult(l, [_build_storey(s, conns[s]) for s in l.storeys])
+  end
 
 # Compute the position along a merged wall path for an opening on a
 # given edge. `local_x` is the distance from edge start (p1) to the

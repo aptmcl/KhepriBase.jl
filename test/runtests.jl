@@ -56,6 +56,7 @@ using Test
     include("test_wall_graph.jl")
     include("test_constraints.jl")
     include("test_design_layout.jl")
+    include("test_design_annotations.jl")
     include("test_visual_compare.jl")
   end
 
