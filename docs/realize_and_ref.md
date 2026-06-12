@@ -459,6 +459,37 @@ shapes must be re-realized each time the output is regenerated.
 **Note:** `IOBackend` is deprecated. All file-output backends have been
 migrated to `@defbackend` with `parent = LocalBackend`.
 
+`realize_shapes` iterates a *snapshot* of the storage and skips (by
+identity) any shape that a previous realization removed from the queue:
+realizing one shape may delete others (e.g. `b_surface` over a frontier
+of curves calls `and_delete_shapes` on the boundary shapes), and
+`b_delete_shape` on a `LocalBackend` `filter!`s the very vector being
+iterated, which would otherwise shift and silently skip later shapes.
+
+### Profile consumption (`consume_shape!` / `b_consume_shape`)
+
+The extrusion/sweep proxies (`extruded_point/curve/surface`,
+`swept_point/curve/surface`) accept live `Shape` inputs in their
+profile/path fields so native backends (AutoCAD, Rhino) can `map_ref` the
+input's existing refs at realize time. At proxy *construction*, their
+`after_init` overrides call `consume_shape!` on those inputs, which calls
+`b_consume_shape(b, s)` on every current backend:
+
+- **Generic default**: a deliberate no-op — native refs must stay alive
+  for `map_ref`.
+- **`LocalBackend`**: delegates to `b_delete_shape`, which only unqueues
+  the shape from `local_shape_storage`/layer index (refs untouched). This
+  keeps a consumed profile from realizing standalone — on file-output
+  backends its bytes would otherwise leak into the output ahead of its
+  consumer — and keeps the realize-time `convert` → `and_delete_shape`
+  from mutating the queue mid-`realize_shapes`.
+
+`Path`/`Region` inputs fall through a `::Any` no-op; `TransformedShape`
+wrappers are consumed recursively (wrapper and wrapped shape). The
+`surface()` frontier, `revolve`, and `loft` inputs are deliberately NOT
+consumed — their realize-time deletion (boundary curves appearing in the
+output, then deleted) is long-standing blessed behavior.
+
 ---
 
 ## 8. Contract for Backend Implementors

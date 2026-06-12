@@ -46,6 +46,7 @@ using Test
     include("test_shapes.jl")
     include("test_backend.jl")
     include("test_default_ops.jl")
+    include("test_profile_consumption.jl")
   end
 
   # Phase 4: Extended Features tests

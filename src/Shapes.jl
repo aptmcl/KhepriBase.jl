@@ -1456,6 +1456,42 @@ sweep(path, profile, args...; kargs...) =
     error("Profile is neither a point nor a curve nor a surface")
   end
 
+#=
+The Union-typed profile fields above keep the input Shape alive until realize
+time so that native backends can map_ref its refs. On storage backends
+(LocalBackend: TikZ, POVRay, ...) that broke the construction-time contract
+the strict Path/Region fields used to provide via `convert` in two ways:
+(a) the profile shape stayed in the realize queue and realized *standalone*,
+leaking its bytes into the output ahead of its consumer, and (b) the
+realize-time `convert` → `and_delete_shape` mutated `local_shape_storage`
+while `realize_shapes` iterated it, shifting indices and silently skipping
+the shapes that followed (predioSinusoidal lost all four extruded solids and
+six cylinders this way). Consuming the inputs here, at proxy construction,
+restores the pre-Union semantics for storage backends without giving up the
+native-backend win: `b_consume_shape` is a deliberate no-op everywhere except
+LocalBackend, so native refs stay alive for map_ref.
+
+Scope: exactly the six proxies whose fields were widened to Unions. The
+`surface()` frontier, `revolve`, and `loft` inputs keep their blessed
+realize-time deletion (their boundary curves are expected to appear in the
+output); the snapshot in `realize_shapes` (Backends.jl) defends against
+their mid-pass mutation.
+
+See also: consume_shape!/b_consume_shape (near b_delete_shape, below);
+realize_shapes and b_consume_shape(::LocalBackend) in Backends.jl.
+=#
+after_init(s::Union{AbstractExtrudedPoint,AbstractExtrudedCurve,AbstractExtrudedSurface}) =
+  begin
+    consume_shape!(s.profile)
+    Base.@invoke after_init(s::Shape)
+  end
+after_init(s::Union{AbstractSweptPoint,AbstractSweptCurve,AbstractSweptSurface}) =
+  begin
+    consume_shape!(s.path)
+    consume_shape!(s.profile)
+    Base.@invoke after_init(s::Shape)
+  end
+
 @defshape(Shape1D, revolved_point, profile::Union{Loc,Point}=point(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defshape(Shape2D, revolved_curve, profile::Union{Shape,Path}=line(), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
 @defshape(Shape3D, revolved_surface, profile::Union{Shape,Path,Region}=region(circular_path()), p::Loc=u0(), n::Vec=vz(1,p.cs), start_angle::Real=0, amplitude::Real=2*pi)
@@ -1930,6 +1966,46 @@ backend_bounding_box(backend::Backend, shape::Shape) =
 
 b_delete_shape(b::Backend, s::Proxy) =
   maybe_delete(b, s)
+
+#=
+Construction-time consumption of extrusion/sweep profile inputs (see the
+after_init overrides for the extruded/swept proxies). The generic default is
+a *deliberate* no-op, not an unfinished stub — same contract as
+b_set_layer_material (Backends.jl): the whole point of the Union-typed
+profile fields is that on native backends the input shape's refs stay alive
+so b_extruded_*/b_swept_* overrides can map_ref them at realize time;
+destroying or even unqueuing anything here would undo that. Only backends
+that *queue* shapes for a later realize pass override this (LocalBackend, in
+Backends.jl) to unqueue the profile so it never realizes standalone —
+unqueue, not destroy: that override filter!s local_shape_storage and the
+layer index but never touches refs.
+
+See also: b_delete_shape (above), b_consume_shape(::LocalBackend) and
+realize_shapes in Backends.jl.
+=#
+"Backend hook: a profile shape was consumed at construction by a containing proxy."
+b_consume_shape(b::Backend, s::Shape) = nothing
+
+#=
+Frontend dispatch for profile consumption. Path/Region (and Loc/PointPath)
+inputs fall through the ::Any no-op — there is nothing queued to unqueue.
+TransformedShape wrappers recurse: both the wrapper and the shape it wraps
+sit in the realize queue, and the realize-time lowering
+(convert(::Type{Region}, ::TransformedShape), below) consumes both.
+=#
+"Mark `s` as consumed by a containing proxy on all current backends."
+consume_shape!(s::Shape) =
+  for b in current_backends()
+    b_consume_shape(b, s)
+  end
+consume_shape!(s::TransformedShape) =
+  begin
+    consume_shape!(s.shape)
+    for b in current_backends()
+      b_consume_shape(b, s)
+    end
+  end
+consume_shape!(s::Any) = nothing
 
 delete_shapes(ss::Proxies=Proxy[], bs=current_backends()) =
   for s in ss

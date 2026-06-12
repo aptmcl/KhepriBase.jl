@@ -896,10 +896,26 @@ save_shape!(b::LocalBackend, s::Proxy) =
   end
 
 public realize_shapes
+#=
+Realizing one shape can delete *other* queued shapes: b_surface over a
+frontier of curves and_delete_shapes the boundary shapes (Backend.jl), and
+b_delete_shape on a LocalBackend filter!s local_shape_storage — the very
+vector this loop iterates. An in-place iteration would shift the survivors
+over the deleted slots and silently skip them (predioSinusoidal lost all
+four extruded solids and six cylinders this way before profile consumption
+moved to construction time). Iterate a snapshot and skip, by identity, any
+entry a previous realization removed from the queue.
+
+See also: b_consume_shape(::LocalBackend) and b_delete_shape below; the
+extruded/swept after_init overrides in Shapes.jl.
+=#
 realize_shapes(b::LocalBackend) =
-  for s in local_shape_storage(b)
-    reset_ref(b, s)
-    force_realize(b, s)
+  let queued = copy(local_shape_storage(b))
+    for s in queued
+      any(q -> q === s, local_shape_storage(b)) || continue
+      reset_ref(b, s)
+      force_realize(b, s)
+    end
   end
 
 public used_materials
@@ -933,6 +949,18 @@ KhepriBase.b_delete_shape(b::LocalBackend, shape::Proxy) =
       filter!(f, ss)
     end
   end
+
+#=
+A LocalBackend queues shapes (save_shape!) and realizes them in a later
+realize_shapes pass, so a profile consumed at construction by an
+extrusion/sweep proxy must be unqueued here or its bytes leak into the
+output ahead of its consumer (the file-output goldens bless its absence).
+Delegating to b_delete_shape is exactly "unqueue, don't destroy": the
+override above only filter!s the local storage and layer index — it never
+touches refs, which realize_shapes re-mints on every pass anyway.
+=#
+KhepriBase.b_consume_shape(b::LocalBackend, s::Shape) =
+  b_delete_shape(b, s)
 
 KhepriBase.b_all_shapes(b::LocalBackend) = local_shape_storage(b)
 # Mirror the generic default: the layer index is filled lazily by `save_shape!`
