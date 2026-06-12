@@ -1333,21 +1333,78 @@ end
 text_compare(test_path, golden_path; kwargs...) =
   read(test_path) == read(golden_path)
 
-function pixel_diff_compare(test_path, golden_path; threshold=0.01)
+#=
+PNGFiles is loaded lazily, on the first non-byte-identical comparison: the
+text_compare consumers (TikZ, POVRay, ...) must be able to use this module
+without carrying an image dependency.  But a load FAILURE must be loud: the
+previous implementation fetched PNGFiles from Base.loaded_modules inside a
+bare try/catch returning false, and since no consumer ever loaded PNGFiles,
+the tolerance path was dead code — every comparison silently degraded to
+byte equality and any render nondeterminism failed with zero explanation.
+A backend that wants pixel_diff_compare declares PNGFiles in its
+[extras]/test target (see KhepriRhino/Project.toml) and this loader
+requires it by PkgId.
+=#
+const PNGFILES_PKGID =
+  Base.PkgId(Base.UUID("f57f5aa1-a3ce-4bc8-8ab9-96f992907883"), "PNGFiles")
+
+load_pngfiles() =
+  try
+    Base.require(PNGFILES_PKGID)
+  catch e
+    error("pixel_diff_compare needs the PNGFiles package to compare ",
+          "non-identical PNGs, but it could not be loaded ($(sprint(showerror, e))). ",
+          "Add PNGFiles = \"$(PNGFILES_PKGID.uuid)\" to the backend's ",
+          "[extras] section and to its test target in Project.toml.")
+  end
+
+# Largest per-channel difference between two pixels, in [0, 1] units.
+# Convert to RGBA{Float64} first: PNG pixels come back as N0f8/N0f16
+# fixed-point colorants, whose subtraction would wrap around at 0.
+max_channel_delta(a, b) =
+  let ca = convert(KhepriBase.RGBA{Float64}, a),
+      cb = convert(KhepriBase.RGBA{Float64}, b)
+    max(abs(ca.r - cb.r), abs(ca.g - cb.g), abs(ca.b - cb.b),
+        abs(ca.alpha - cb.alpha))
+  end
+
+#=
+Two tolerances, both needed because renders are not bit-stable:
+- `atol` (per-channel, default 0.02 ≈ 5/255) absorbs anti-aliasing and
+  GPU-dithering noise on individual pixels;
+- `threshold` (fraction of differing pixels, default 1%) absorbs the thin
+  silhouette band where anti-aliased edges legitimately move by a pixel.
+A genuine geometry regression moves far more than 1% of pixels by far
+more than 2% intensity.  On failure the diagnostics below name which
+gate failed and by how much, so a golden mismatch is actionable instead
+of a bare `false`.
+=#
+function pixel_diff_compare(test_path, golden_path; threshold=0.01, atol=0.02)
   test_bytes = read(test_path)
   golden_bytes = read(golden_path)
   test_bytes == golden_bytes && return true
-  # Pixel-level comparison using PNGFiles (if available)
-  try
-    PNGFiles = Base.loaded_modules[Base.PkgId(Base.UUID("f57f5aa1-a3ce-4bc8-8ab9-96f992907883"), "PNGFiles")]
-    test_img = PNGFiles.load(test_path)
-    golden_img = PNGFiles.load(golden_path)
-    size(test_img) != size(golden_img) && return false
-    n = length(test_img)
-    ndiff = count(i -> !isapprox(test_img[i], golden_img[i]; atol=0.02), 1:n)
-    ndiff / n <= threshold
-  catch
-    false
+  PNGFiles = load_pngfiles()
+  test_img = PNGFiles.load(test_path)
+  golden_img = PNGFiles.load(golden_path)
+  if size(test_img) != size(golden_img)
+    @warn "pixel_diff_compare: image dimensions differ" test_path golden_path size(test_img) size(golden_img)
+    return false
+  end
+  let n = length(test_img),
+      ndiff = 0,
+      max_delta = 0.0
+    for i in 1:n
+      let delta = max_channel_delta(test_img[i], golden_img[i])
+        delta > atol && (ndiff += 1)
+        max_delta = max(max_delta, delta)
+      end
+    end
+    let frac = ndiff / n,
+        pass = frac <= threshold
+      pass ||
+        @warn "pixel_diff_compare: images differ beyond tolerance" test_path golden_path n ndiff frac threshold max_delta atol
+      pass
+    end
   end
 end
 
