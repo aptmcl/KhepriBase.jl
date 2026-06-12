@@ -47,9 +47,13 @@ above(f1, f2, f3)   # left-associative: (f1 ^ f2) ^ f3
 
 Keyword arguments control alignment and wall sharing:
 
-- `shared_wall=true` — adjacent rooms share a single wall (default)
-- `align=:start` — alignment when depths differ (`:start`, `:center`,
-  `:end`)
+- `shared_wall=true` — adjacent rooms share a single wall. This is
+  the only implemented behaviour; `shared_wall=false` (independent
+  double walls) throws an `ArgumentError`.
+- `align=:start` — positions the smaller room within the pair's
+  combined cross extent when depths (`beside_x`) or widths
+  (`beside_y`) differ: `:start` keeps it flush at the shared origin,
+  `:center` centers it, `:end` aligns the far edges.
 
 ### Depth Mismatches
 
@@ -107,7 +111,9 @@ still places every cell at a consistent grid offset.
 - [`with_height(s, h)`](@ref) — override height for a subtree
 - [`with_props(s, nt)`](@ref) — merge a `NamedTuple` of props onto
   every placed space under `s` (existing per-room props win)
-- [`tag_wall_family(s, :name)`](@ref) /
-  [`tag_slab_family(s, :name)`](@ref) — shortcut for `with_props`
-  that marks a subtree for named-family lookup in downstream element
-  generation.
+- [`tag_wall_family(s, fam)`](@ref) /
+  [`tag_slab_family(s, fam)`](@ref) — attach a `WallFamily` /
+  `SlabFamily` object to every placed space under `s`; `build` uses
+  it in place of the storey default (interior walls require both
+  adjoining spaces to agree on the same family). Passing a Symbol
+  name throws — there is no name → family registry.

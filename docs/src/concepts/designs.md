@@ -150,9 +150,9 @@ Some information about a design is not geometry: "put a door between
 :kitchen and :living_room", "this wall faces the street",
 "don't auto-window the bathroom". These are annotations, attached
 to any subtree via `Annotated` wrappers. Layout walks through them
-transparently, but `collect_annotations(desc)` gathers them and
-hands them to downstream passes (door placement, window placement,
-element generation).
+transparently and copies them onto the produced `Layout`;
+`build(layout)` then lowers them into actual doors, windows, and
+arches on the built walls.
 
 Because annotations live on the tree, they survive copying and
 transformation: scaling a wing scales both the walls and the
@@ -204,7 +204,7 @@ manipulate designs without reaching into internals.
   `above`, `grid`, `repeat_unit`, transforms, infix operators
 - [Subdivision](../reference/design-subdivision.md) — top-down
   operations
-- [Annotations](../reference/design-annotations.md) — `connect`,
+- [Annotations](../reference/design-annotations.md) — `connect_spaces`,
   `connect_exterior`, `disconnect`, `no_windows`
 - [Tree Queries](../reference/design-queries.md) — `desc_width`,
   `collect_ids`, `update_room_by_id`, …

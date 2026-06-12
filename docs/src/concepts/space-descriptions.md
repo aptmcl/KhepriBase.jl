@@ -83,8 +83,9 @@ Composite nodes are created by combinators (see
 ## Annotation Nodes
 
 [`Annotated`](@ref) wraps a `SpaceDesc` with an override annotation.
-Annotations are transparent to layout — they only affect downstream
-element generation:
+Annotations are transparent to layout — they don't move any space.
+`build(layout)` lowers them into actual doors, windows, and arches
+(see [Annotations](../reference/design-annotations.md)):
 
 ```julia
 plan |> d -> connect_spaces(d, :a, :b, kind=:door)  # wraps in Annotated node
