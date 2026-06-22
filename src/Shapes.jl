@@ -41,6 +41,7 @@ export Path,
        subpath_ending_at,
        bounding_box,
        capture_shape, capture_shapes,
+       captured_shape, captured_shapes,
        extrusion, sweep, revolve, loft
 
 ensure_ref(b::Backend{K,T}, r::T) where {K,T} = NativeRef{K,T}(r)
@@ -750,18 +751,19 @@ decreasing parameter tiers until a backend-supported level is reached.
   base_color::RGBA=rgba(0.5, 0.5, 0.5, 1.0),
   metallic::Real=0.0,
   roughness::Real=0.5,
-  reflectance::Real=0.35,
+  specular::Real=0.35,
   sheen_color::RGB=rgb(0.0, 0.0, 0.0),
   sheen_roughness::Real=0.0,
-  clear_coat::Real=0.0,
-  clear_coat_roughness::Real=0.0,
+  clearcoat::Real=0.0,
+  clearcoat_roughness::Real=0.0,
   anisotropy::Real=0.0,
   anisotropy_direction::RGB=rgb(0.0, 0.0, 0.0),
   ambient_occlusion::Real=0.0,
   normal::RGB=rgb(0.0, 0.0, 0.0),
   bent_normal::RGB=rgb(0.0, 0.0, 0.0),
-  clear_coat_normal::RGB=rgb(0.0, 0.0, 0.0),
-  emissive::RGBA=rgba(0.0, 0.0, 0.0, 0.0),
+  clearcoat_normal::RGB=rgb(0.0, 0.0, 0.0),
+  emission_color::RGBA=rgba(0.0, 0.0, 0.0, 0.0),
+  emission_strength::Real=1.0,
   post_lighting_color::RGBA=rgba(0.0, 0.0, 0.0, 0.0),
   ior::Real=1.5,
   transmission::Real=0.0,
@@ -775,21 +777,22 @@ decreasing parameter tiers until a backend-supported level is reached.
 # arguments and skip the internal BackendParameter data field.
 meta_program(m::PbrMaterial) =
   let defaults = (base_color=rgba(0.5, 0.5, 0.5, 1.0),
-                  metallic=0.0, roughness=0.5, reflectance=0.35,
+                  metallic=0.0, roughness=0.5, specular=0.35,
                   sheen_color=rgb(0,0,0), sheen_roughness=0.0,
-                  clear_coat=0.0, clear_coat_roughness=0.0,
+                  clearcoat=0.0, clearcoat_roughness=0.0,
                   anisotropy=0.0, anisotropy_direction=rgb(0,0,0),
                   ambient_occlusion=0.0, normal=rgb(0,0,0),
-                  bent_normal=rgb(0,0,0), clear_coat_normal=rgb(0,0,0),
-                  emissive=rgba(0,0,0,0), post_lighting_color=rgba(0,0,0,0),
+                  bent_normal=rgb(0,0,0), clearcoat_normal=rgb(0,0,0),
+                  emission_color=rgba(0,0,0,0), emission_strength=1.0,
+                  post_lighting_color=rgba(0,0,0,0),
                   ior=1.5, transmission=0.0, transmission_roughness=0.5,
                   absorption=0.0, micro_thickness=0.0, thickness=0.0),
-      fields = [:base_color, :metallic, :roughness, :reflectance,
+      fields = [:base_color, :metallic, :roughness, :specular,
                 :sheen_color, :sheen_roughness,
-                :clear_coat, :clear_coat_roughness,
+                :clearcoat, :clearcoat_roughness,
                 :anisotropy, :anisotropy_direction,
-                :ambient_occlusion, :normal, :bent_normal, :clear_coat_normal,
-                :emissive, :post_lighting_color,
+                :ambient_occlusion, :normal, :bent_normal, :clearcoat_normal,
+                :emission_color, :emission_strength, :post_lighting_color,
                 :ior, :transmission, :transmission_roughness,
                 :absorption, :micro_thickness, :thickness],
       kwargs = [Expr(:kw, f, meta_program(getfield(m, f)))
@@ -808,13 +811,13 @@ realize(b::Backend, s::PbrMaterial) =
     spec !== nothing ?
       b_get_material(b, spec) :
       b_material(b, s.name, s.base_color, s.metallic, s.roughness,
-                 s.reflectance,
+                 s.specular,
                  s.ior, s.transmission, s.transmission_roughness,
-                 s.clear_coat, s.clear_coat_roughness,
-                 s.emissive, 1.0,
+                 s.clearcoat, s.clearcoat_roughness,
+                 s.emission_color, s.emission_strength,
                  s.sheen_color, s.sheen_roughness,
                  s.anisotropy, s.anisotropy_direction,
-                 s.ambient_occlusion, s.normal, s.bent_normal, s.clear_coat_normal,
+                 s.ambient_occlusion, s.normal, s.bent_normal, s.clearcoat_normal,
                  s.post_lighting_color,
                  s.absorption, s.micro_thickness, s.thickness)
   end
@@ -825,8 +828,30 @@ realize(b::Backend, s::PbrMaterial) =
 #   material(my_layer)                   → MaterialInLayer (via layer_material)
 #   material("name", Backend=>spec, …)   → MaterialInLayer (via layer_material, for backend overrides)
 export material, standard_material
-material(; kwargs...) = pbr_material(; kwargs...)
-material(name::String; kwargs...) = pbr_material(name; kwargs...)
+# Deprecated material keyword aliases (fields renamed for cross-backend consistency,
+# and emission_strength promoted). Kept for one release: translate old names to the
+# canonical ones with a one-time warning. (Direct pbr_material callers should migrate.)
+const material_kwarg_aliases = Dict(
+  :reflectance => :specular,
+  :clear_coat => :clearcoat,
+  :clear_coat_roughness => :clearcoat_roughness,
+  :clear_coat_normal => :clearcoat_normal,
+  :emissive => :emission_color)
+migrate_material_kwargs(kwargs) =
+  let out = Pair{Symbol,Any}[]
+    for (k, v) in kwargs
+      if haskey(material_kwarg_aliases, k)
+        nk = material_kwarg_aliases[k]
+        @warn "Khepri: material keyword `$k` is deprecated; use `$nk`." maxlog=1
+        push!(out, nk => v)
+      else
+        push!(out, k => v)
+      end
+    end
+    out
+  end
+material(; kwargs...) = pbr_material(; migrate_material_kwargs(kwargs)...)
+material(name::String; kwargs...) = pbr_material(name; migrate_material_kwargs(kwargs)...)
 material(l::Layer, data::BackendParameter=BackendParameter()) = layer_material(l, data)
 material(name::String, bvs::Pair...) = layer_material(name, bvs...)
 const standard_material = pbr_material
@@ -872,9 +897,9 @@ Blender Cycles, Rhino, AutoCAD, or POVJay is rendering it.
     0.95` leaves a hint of Fresnel reflection. The base-colour alpha stays
     opaque (1.0) so non-transmission backends (TikZ, SVG) still draw a
     visible surface.
-  - Diffuse materials (wood, concrete, plaster, grass, clay): `reflectance`
+  - Diffuse materials (wood, concrete, plaster, grass, clay): `specular`
     values are chosen to give a plausible Fresnel F0 under daylight; concrete
-    has a slightly lower reflectance than plaster, which in turn is lower
+    has a slightly lower specular than plaster, which in turn is lower
     than clay, matching real-world observations.
 
 See also: `architectural_pbr_table` in ArchMaterials.jl (the iterable
@@ -885,13 +910,13 @@ const material_basic = material(
   name="Basic",
   base_color=rgba(0.70, 0.70, 0.70, 1.0),
   roughness=0.5,
-  reflectance=0.5,
+  specular=0.5,
   data=BackendParameter(default=backend_default))
 const material_glass = material(
   name="Glass",
   base_color=rgba(0.95, 0.97, 1.0, 1.0),
   roughness=0.0,
-  reflectance=0.5,
+  specular=0.5,
   ior=1.5,
   transmission=0.95)
 const material_metal = material(
@@ -899,32 +924,32 @@ const material_metal = material(
   base_color=rgba(0.80, 0.80, 0.82, 1.0),
   metallic=1.0,
   roughness=0.15,
-  reflectance=0.5)
+  specular=0.5)
 const material_wood = material(
   name="Wood",
   base_color=rgba(0.50, 0.32, 0.18, 1.0),
   roughness=0.7,
-  reflectance=0.5)
+  specular=0.5)
 const material_concrete = material(
   name="Concrete",
   base_color=rgba(0.65, 0.63, 0.60, 1.0),
   roughness=0.9,
-  reflectance=0.4)
+  specular=0.4)
 const material_plaster = material(
   name="Plaster",
   base_color=rgba(0.92, 0.91, 0.88, 1.0),
   roughness=0.8,
-  reflectance=0.3)
+  specular=0.3)
 const material_grass = material(
   name="Grass",
   base_color=rgba(0.30, 0.50, 0.20, 1.0),
   roughness=0.95,
-  reflectance=0.2)
+  specular=0.2)
 const material_clay = material(
   name="Clay",
   base_color=rgba(0.85, 0.78, 0.70, 1.0),
   roughness=0.9,
-  reflectance=0.4)
+  specular=0.4)
 
 # Polymorphic material accessors — uniform interface for all Material subtypes
 export material_color, material_name
@@ -1208,19 +1233,30 @@ See also: b_surface (Backend.jl), surface (this file).
 =#
 @defshape(Shape2D, surface_path, path::ClosedPath=[circular_path()])
 surface_boundary(s::Shape2D, backend::Backend=top_backend()) =
-  backend_surface_boundary(backend, s)
+  b_surface_boundary(backend, s)
+public b_surface_boundary
+b_surface_boundary(b::Backend, s::Shape2D) = throw(UndefinedBackendException())
 
 curve_domain(s::Shape1D, backend::Backend=top_backend()) =
-  backend_curve_domain(backend, s)
+  b_curve_domain(backend, s)
+public b_curve_domain
+b_curve_domain(b::Backend, s::Shape1D) = throw(UndefinedBackendException())
 # THIS SHOULD APPLY ONLY TO Shape1D but was generalized to Shape to apply to Move
 map_division(f::Function, s::Shape1D, n::Int) =
   map_division(f, shape_path(s), n)
 
 surface_domain(s::Shape2D, backend::Backend=top_backend()) =
-  backend_surface_domain(backend, s)
+  b_surface_domain(backend, s)
+public b_surface_domain
+b_surface_domain(b::Backend, s::Shape2D) = throw(UndefinedBackendException())
 map_division(f::Function, s::Shape2D, nu::Int, nv::Int) =
   b_map_division(backend(s), f, s, nu, nv)
 
+# b_map_division must be `public` so @import_backend_api pulls it into backend
+# scope: the per-backend specializations (KhepriRhino, KhepriAutoCAD) are written
+# bare (`b_map_division(b::RH, ...)`) and only extend THIS function — rather than
+# defining a private one — when the name is imported.
+public b_map_division
 b_map_division(b::Backend, f::Function, s::Shape1D, n::Int) =
   map_division(f, shape_path(s), n)
 
@@ -1582,7 +1618,9 @@ b_loft_surface_point(b::Backend, profile, point, mat) =
   b_loft_curve_point(b, profile, point, mat)
 
 b_loft_curves(b::Backend, profiles, rails, ruled, closed, mat) =
-  b_loft(b, shape_path.(profiles), closed, ! ruled, mat)
+  and_delete_shapes(
+    b_loft(b, shape_path.(profiles), closed, ! ruled, mat),
+    profiles)
 
 b_loft_surfaces(b::Backend{K,T}, profiles, rails, ruled, closed, mat) where {K,T} =
   let paths = shape_path.(profiles),
@@ -1771,12 +1809,12 @@ surface_domain(s::SurfaceRectangle) = (0, s.dx, 0, s.dy)
 surface_domain(s::SurfaceCircle) = (0, s.radius, 0, 2pi)
 surface_domain(s::SurfaceArc) = (0, s.radius, s.start_angle, s.amplitude)
 
-public backend_frame_at
-backend_frame_at(b::Backend, s::Shape2D, u::Real, v::Real) =
-  missing_specialization(b, :backend_frame_at, s, u, v)
+public b_frame_at
+b_frame_at(b::Backend, s::Shape2D, u::Real, v::Real) =
+  missing_specialization(b, :b_frame_at, s, u, v)
 
-frame_at(c::Shape1D, t::Real) = backend_frame_at(backend(c), c, t)
-frame_at(s::Shape2D, u::Real, v::Real) = backend_frame_at(backend(s), s, u, v)
+frame_at(c::Shape1D, t::Real) = b_frame_at(backend(c), c, t)
+frame_at(s::Shape2D, u::Real, v::Real) = b_frame_at(backend(s), s, u, v)
 
 #Some specific cases can be handled in an uniform way without the backend
 frame_at(s::SurfaceRectangle, u::Real, v::Real) = add_xy(s.corner, u, v)
@@ -1955,11 +1993,11 @@ bounding_box(shapes::Shapes=Shape[]) =
   if isempty(shapes)
     [u0(), u0()]
   else
-    backend_bounding_box(backend(shapes[1]), shapes)
+    b_bounding_box(backend(shapes[1]), shapes)
   end
 
-public backend_bounding_box
-backend_bounding_box(backend::Backend, shape::Shape) =
+public b_bounding_box
+b_bounding_box(backend::Backend, shape::Shape) =
   throw(UndefinedBackendException())
 
 @defcbs delete_shape(s::Proxy)
@@ -2095,14 +2133,27 @@ const unhighlight_all_shapes = unhighlight_all_refs
 
 capture_shape(s=select_shape("Select shape to be captured")) =
   if ! isnothing(s)
-    generate_captured_shape(s, backend(s))
+    b_generate_captured_shape(backend(s), s)
   end
 
 capture_shapes(ss=select_shapes("Select shapes to be captured")) =
     # A cancelled/empty selection yields no shapes; nothing to capture (cf. capture_shape's isnothing guard).
     if ! isempty(ss)
-        generate_captured_shapes(ss, backend(ss[1]))
+        b_generate_captured_shapes(backend(ss[1]), ss)
     end
+
+# `capture_shape` PRINTS replay code shaped like `captured_shape(<backend>, <handle>)`.
+# `captured_shape`/`captured_shapes` are therefore an intentional EXCEPTION to the b_*
+# hook convention: they are the user-facing names the *emitted* code calls (evaluated
+# later in a plain script after `using KhepriXXX`), so they keep their bare names and
+# are EXPORTED — backends specialize them via `KhepriBase.captured_shape(b::XX, ...)`.
+# The generators that PRODUCE that code are ordinary internal backend ops, so they stay
+# b_*: `b_generate_captured_shape`/`b_generate_captured_shapes`.
+captured_shape(b::Backend, handle) = throw(UndefinedBackendException())
+captured_shapes(b::Backend, handles) = throw(UndefinedBackendException())
+public b_generate_captured_shape, b_generate_captured_shapes
+b_generate_captured_shape(b::Backend, s::Shape) = throw(UndefinedBackendException())
+b_generate_captured_shapes(b::Backend, ss::Shapes) = throw(UndefinedBackendException())
 
 export register_for_changes
 register_for_changes(shapes::Shapes) =

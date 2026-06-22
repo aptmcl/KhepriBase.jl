@@ -1137,9 +1137,9 @@ b_swept_surface(b::Backend, path::Shape1D, profile::Region, rotation, scaling, m
 
 b_loft(b::Backend, profiles, closed, smooth, mat) =
   let ptss = path_vertices.(profiles),
-    n = mapreduce(length, max, ptss),
-    vss = map(profile->map_division(identity, profile, n), profiles)
-  b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
+      n = mapreduce(length, max, ptss),
+      vss = map((profile, pts)->length(pts) == n ? pts : map_division(identity, profile, n), profiles, ptss)
+    b_surface_grid(b, hcat(vss...), is_closed_path(profiles[1]), closed, is_smooth_path(profiles[1]), smooth, mat)
   end
 
 
@@ -2557,9 +2557,9 @@ obj_family(obj_name; scale=1.0, rotation=0.0, offset=vxyz(0, 0, 0), y_is_up=fals
   OBJFileFamily(obj_name, Float64(scale), Float64(rotation), offset, y_is_up)
 
 # OBJ families are backend-level families (the value in implemented_as).
-# backend_get_family_ref returns the family itself — actual loading
+# b_get_family_ref returns the family itself — actual loading
 # happens in b_mesh_obj_fmt at element placement time.
-backend_get_family_ref(b::Backend, f::Family, bf::OBJFileFamily) = bf
+b_get_family_ref(b::Backend, f::Family, bf::OBJFileFamily) = bf
 
 public standalone_obj_transform, wall_obj_transform
 
@@ -2778,8 +2778,19 @@ b_family_element(b::Backend, loc, angle, level, family) =
 
 # Lights
 
-@bdef b_pointlight(loc, energy, color)
-@bdef b_spotlight(loc, dir, hotspot, falloff)
+# Default: a backend without native light support gracefully ignores lights (warns once,
+# returns void_ref) so the same script runs everywhere, rather than erroring via
+# missing_specialization. Backends that render lights override these (AutoCAD/Rhino/Unity/
+# Unreal). Native Revit lights (lighting-fixture families) remain a future addition.
+public b_pointlight, b_spotlight
+b_pointlight(b::Backend, loc, energy, color) = begin
+  @warn "$(backend_name(b)) does not support point lights; ignoring." maxlog=1
+  void_ref(b)
+end
+b_spotlight(b::Backend, loc, dir, hotspot, falloff) = begin
+  @warn "$(backend_name(b)) does not support spotlights; ignoring." maxlog=1
+  void_ref(b)
+end
 
 # Default fallbacks: approximate unsupported light types with simpler ones
 public b_ieslight
@@ -3044,10 +3055,10 @@ b_curtain_wall_element(b::Backend, path, bottom, height, l_thickness, r_thicknes
 #@bdef curtain_wall(s, path, bottom, height, thickness, kind)
 
 # Generic fallback for the surface-frame query. `frame_at` (Shapes.jl) routes
-# Shape1D/Shape2D frame queries through `backend_frame_at`; backends with a
+# Shape1D/Shape2D frame queries through `b_frame_at`; backends with a
 # remote curve/surface evaluator (AutoCAD) override it. Backends without one
 # inherit this UnimplementedBackendOperation signal.
-backend_frame_at(b, c, t) = throw(UndefinedBackendException())
+b_frame_at(b, c, t) = throw(UndefinedBackendException())
 
 
 @bdef ground(level::Loc, color::RGB)

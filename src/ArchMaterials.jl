@@ -54,14 +54,14 @@ architectural_material_spec(mat::PbrMaterial) = (
   base_color   = mat.base_color,
   metallic     = mat.metallic,
   roughness    = mat.roughness,
-  reflectance  = mat.reflectance,
+  specular     = mat.specular,
   ior          = mat.ior,
   transmission = mat.transmission,
   transmission_roughness = mat.transmission_roughness,
-  clearcoat             = mat.clear_coat,
-  clearcoat_roughness   = mat.clear_coat_roughness,
-  emission_color        = mat.emissive,
-  emission_strength     = 1.0,
+  clearcoat             = mat.clearcoat,
+  clearcoat_roughness   = mat.clearcoat_roughness,
+  emission_color        = mat.emission_color,
+  emission_strength     = mat.emission_strength,
 )
 
 """

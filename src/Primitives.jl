@@ -713,19 +713,16 @@ encode(ns::SupportsTuples, ::Val{:RGBA}, c::IO, v) =
 decode(ns::SupportsTuples, ::Val{:RGBA}, c::IO) =
   RGBA(decode(ns, (Val(:float),Val(:float),Val(:float),Val(:float)), c)...)
 
-# encodes/decodes ColorTypes' RGB to Windows' System.Drawing.Color
+# Canonical color wire format: 4xfloat RGBA, alpha-last (was packed 4-byte ARGB).
+# Delegates to :RGBA so every Color-typed op shares the one unified color encoding;
+# the endpoint stays a color value (C# System.Drawing.Color / Julia RGBA), only the
+# wire bytes change. See the materials design note (P0). Backends whose native color
+# type is non-byte (Unity, Unreal) override the reader/writer with the same 4-float
+# layout, not a different format.
 encode(ns::SupportsTuples, ::Val{:Color}, c::IO, v) =
-  let v = convert(RGBA{ColorTypes.N0f8}, v)
-    encode(ns, (Val(:byte),Val(:byte),Val(:byte),Val(:byte)), c,
-           (reinterpret(UInt8, v.alpha), reinterpret(UInt8, v.r), reinterpret(UInt8, v.g), reinterpret(UInt8, v.b)))
-  end
+  encode(ns, Val(:RGBA), c, v)
 decode(ns::SupportsTuples, ::Val{:Color}, c::IO) =
-  let a = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
-      r = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
-      g = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c)),
-      b = reinterpret(ColorTypes.N0f8, decode(ns, Val(:byte), c))
-    RGBA(r, g, b, a)
-  end
+  decode(ns, Val(:RGBA), c)
 
 #
 const one_year_milliseconds = 366*24*60*60*1000
