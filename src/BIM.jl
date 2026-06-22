@@ -255,8 +255,8 @@ public LayerFamily
 layer_family(name, color::RGB=rgb(1,1,1); visible::Bool=true) =
   LayerFamily(name, visible, color, IdDict{Backend, Any}())
 
-public backend_get_family_ref
-backend_get_family_ref(b::Backend, f::Family, af::LayerFamily) =
+public b_get_family_ref
+b_get_family_ref(b::Backend, f::Family, af::LayerFamily) =
   b_layer(b, af.name, af.visible, af.color)
 
 # OBJ family types (OBJFamily, OBJFileFamily, obj_family) are defined in
@@ -401,9 +401,9 @@ set_backend_family(family::Family, ::Type{B}, backend_family::Family) where {B<:
   family.implemented_as[B] = backend_family
 
 realize(b::Backend, f::Family) =
-  backend_get_family_ref(b, f, backend_family(b, f))
+  b_get_family_ref(b, f, backend_family(b, f))
 
-backend_get_family_ref(b::Backend, f::Family, bf) = bf
+b_get_family_ref(b::Backend, f::Family, bf) = bf
 public backend_family, set_backend_family
 
 # Registry of default family parameters for invalidation on backend reconnection.

@@ -35,11 +35,12 @@ export run_visual_tests, text_compare, pixel_diff_compare, backfill_provenance
 #=
 This module runs inside each backend's test process, whose Project.toml test
 target lists only the backend itself (plus PNGFiles where pixel comparison is
-used).  A bare `using TOML`/`using Dates` here would force a test-target edit
-in every backend repo, so both are reached through KhepriBase, which carries
-them as regular deps.
+used).  A bare `using Dates` here would force a test-target edit in every
+backend repo, so it is reached through KhepriBase, which carries it as a
+regular dep.  (Provenance sidecars are read/written with the minimal
+hand-rolled TOML helpers below rather than the TOML stdlib, so KhepriBase does
+not have to carry TOML as a dependency just for testing.)
 =#
-const TOML = KhepriBase.TOML
 const Dates = KhepriBase.Dates
 
 # Detect unimplemented backend operations (thrown as ErrorException wrapping
@@ -1471,6 +1472,64 @@ See also: mint_golden! (writes them), warn_if_stale (reads them),
 backfill_provenance (for pre-provenance goldens).
 =#
 
+#=
+Minimal TOML writer/reader for the provenance sidecars.  Their schema is fully
+under our control — flat `String`/`Integer`/`Bool` keys plus a single nested
+`[validation]` table — so a few lines here cover every value this module ever
+emits, sparing KhepriBase a TOML dependency that would otherwise leak into every
+backend just to run the visual tests.  This is NOT a general TOML parser.
+=#
+toml_value(v::AbstractString) =
+  "\"" * replace(v, "\\" => "\\\\", "\"" => "\\\"") * "\""
+toml_value(v::Bool) = v ? "true" : "false"
+toml_value(v::Integer) = string(v)
+
+"Write `doc` (scalars then `[table]`s, keys sorted) as TOML to `io`."
+print_toml(io, doc) =
+  let scalars = sort!([k for (k, v) in doc if !(v isa AbstractDict)]),
+      tables = sort!([k for (k, v) in doc if v isa AbstractDict])
+    for k in scalars
+      println(io, k, " = ", toml_value(doc[k]))
+    end
+    for k in tables
+      println(io, "\n[", k, "]")
+      for k2 in sort!(collect(keys(doc[k])))
+        println(io, k2, " = ", toml_value(doc[k][k2]))
+      end
+    end
+  end
+
+parse_toml_value(s) =
+  let s = strip(s)
+    startswith(s, "\"") ?
+      replace(s[2:prevind(s, lastindex(s))], "\\\\" => "\\", "\\\"" => "\"") :
+    s == "true" ? true :
+    s == "false" ? false :
+    something(tryparse(Int, s), String(s))
+  end
+
+"Parse the TOML `print_toml` writes (top-level scalars and one-deep tables)."
+parse_toml(text) =
+  let doc = Dict{String,Any}(), section = doc
+    for raw in eachline(IOBuffer(text))
+      let line = strip(raw)
+        if isempty(line) || startswith(line, "#")
+          nothing
+        elseif startswith(line, "[")
+          section = doc[strip(line[2:prevind(line, lastindex(line))])] =
+            Dict{String,Any}()
+        else
+          let eq = findfirst('=', line)
+            eq === nothing && continue
+            section[strip(line[1:prevind(line, eq)])] =
+              parse_toml_value(line[nextind(line, eq):end])
+          end
+        end
+      end
+    end
+    doc
+  end
+
 "Path of the provenance sidecar for golden `name` in `golden_dir`."
 provenance_path(golden_dir, name) =
   joinpath(golden_dir, "$(name).provenance.toml")
@@ -1490,7 +1549,7 @@ write_provenance(path; meta...) =
           v
     end
     open(path, "w") do io
-      TOML.print(io, doc, sorted=true)
+      print_toml(io, doc)
     end
     path
   end
@@ -1499,7 +1558,7 @@ write_provenance(path; meta...) =
 read_provenance(path) =
   isfile(path) ?
     try
-      TOML.parsefile(path)
+      parse_toml(read(path, String))
     catch e
       @warn "Ignoring corrupt provenance sidecar" path exception=e
       nothing

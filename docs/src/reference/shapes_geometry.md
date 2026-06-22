@@ -334,7 +334,7 @@ bounding_box(shapes::Shapes=Shape[]) -> [min_loc, max_loc]
 ```
 
 Returns the axis-aligned bounding box as a two-element vector of locations.
-Delegates to `backend_bounding_box` on the shape's backend.  Returns
+Delegates to `b_bounding_box` on the shape's backend.  Returns
 `[u0(), u0()]` for an empty collection.
 
 ## Geometric Utilities (Geometry.jl)

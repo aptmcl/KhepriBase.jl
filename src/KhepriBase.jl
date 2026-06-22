@@ -8,14 +8,6 @@ using Sockets
 using HTTP
 using Base.Iterators
 using Base: @kwdef
-#=
-TOML is pulled in for the golden-file provenance sidecars written by
-test/VisualTests.jl.  That module runs inside each *backend's* test process,
-where a bare `import TOML` would require adding TOML to every backend's test
-target — an edit to every backend repo.  Qualifying through `KhepriBase.TOML`
-(like `KhepriBase.Dates`) keeps backend test targets untouched.
-=#
-import TOML
 
 #=
 Dierckx does not yet support derivatives. Until they update it,
