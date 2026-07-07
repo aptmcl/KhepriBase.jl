@@ -218,6 +218,13 @@ function model_to_expr(model)
       end
     end
   end
+  # Mesh-fallback tail (Phase 6): emit an obj_model placement for each element no parametric reader
+  # consumed (curtain panels, MEP, topography, in-place, sloped/degenerate), so nothing is silently lost.
+  if hasproperty(model, :fallback_meshes)
+    for m in model.fallback_meshes
+      push!(stmts, meta_program(m))
+    end
+  end
   Expr(:block, stmts...)
 end
 
@@ -527,6 +534,9 @@ gensym_short(base::Symbol) =
 
 # Try to convert a value list to a range expression
 function _try_make_range(vals)
+  # Only numeric leaves can form a range/step; a non-numeric differing leaf (e.g. obj_model file paths,
+  # or family names) means this group can't be rerolled — signal rejection so it emits individually.
+  all(v -> v isa Real, vals) || return nothing
   n = length(vals)
   n < 2 && return Expr(:vect, vals...)
   sorted = sort(vals)
