@@ -1425,6 +1425,29 @@ meta_program(s::ConeFrustum) =
   Expr(:call, :cone_frustum, meta_program(in_world(s.cb)), meta_program(s.rb),
        meta_program(in_world(add_z(s.cb, s.h))), meta_program(s.rt), meta_program(s.material))
 
+# regular_pyramid/prism/pyramid_frustum are cb-based with NO 2-point constructor, so preserve the base
+# loc's FULL coordinate system (position + orientation) via loc_from_o_vx_vy — the auto-generated
+# meta_program routes cb through meta_program(::Loc) (local coords, cs dropped), collapsing a tilted solid
+# to the origin, axis-aligned.
+_loc_with_cs_expr(cb) =
+  let o = in_world(cb)
+    Expr(:call, :loc_from_o_vx_vy, meta_program(o),
+         meta_program(in_world(add_x(cb, 1.0)) - o),
+         meta_program(in_world(add_y(cb, 1.0)) - o))
+  end
+meta_program(s::RegularPyramid) =
+  Expr(:call, :regular_pyramid, meta_program(s.edges), _loc_with_cs_expr(s.cb),
+       meta_program(s.rb), meta_program(s.angle), meta_program(s.h),
+       meta_program(s.inscribed), meta_program(s.material))
+meta_program(s::RegularPrism) =
+  Expr(:call, :regular_prism, meta_program(s.edges), _loc_with_cs_expr(s.cb),
+       meta_program(s.r), meta_program(s.angle), meta_program(s.h),
+       meta_program(s.inscribed), meta_program(s.material))
+meta_program(s::RegularPyramidFrustum) =
+  Expr(:call, :regular_pyramid_frustum, meta_program(s.edges), _loc_with_cs_expr(s.cb),
+       meta_program(s.rb), meta_program(s.angle), meta_program(s.h),
+       meta_program(s.rt), meta_program(s.inscribed), meta_program(s.material))
+
 #=
 Transformation proxies wrap an existing shape with a deferred transformation.
 They SHOULD be type-parametric — moving a Shape3D should yield a Shape3D —
