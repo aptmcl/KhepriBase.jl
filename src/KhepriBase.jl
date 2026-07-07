@@ -105,6 +105,8 @@ include("DesignLayout.jl")
 include("ConstraintLibrary.jl")
 include("Backends.jl")
 include("Primitives.jl")
+include("Introspection.jl")     # portable CAD/BIM read-back vocabulary (FamilyMeta, …)
+include("CodeGen.jl")           # portable BIM-model → Julia-program code generation
 include("Camera.jl")
 include("Simulation.jl")
 include("PluginManagement.jl")
@@ -114,6 +116,9 @@ khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
 
 # From ColorTypes
 export RGB, RGBA, rgb, rgba, red, green, blue, alpha
+
+# Code generation (BIM model → Julia program) — see CodeGen.jl
+export model_to_expr, expr_to_string, guarded_backend_family_expr
 
 # User-facing
 export and_mark_deleted, @remote, @get_remote

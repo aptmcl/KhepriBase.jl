@@ -1004,7 +1004,14 @@ b_torus(b::Backend, c, ra, rb, mat) =
   end
 
 public b_mesh_obj_fmt
-@bdef(b_mesh_obj_fmt(obj_name, transform))
+# Default: parse the OBJ file on the Julia side and emit a surface mesh, so OBJ-family elements
+# (sinks, chairs, doors, extracted Revit families, …) realize on ANY backend — not just those with a
+# native OBJ loader. Backends with native/instanced OBJ import (e.g. KhepriThreejs) override this.
+b_mesh_obj_fmt(b::Backend, obj_name, transform) =
+  let (verts, faces) = read_obj_mesh(obj_file_path(obj_name)),
+      ps = transform_obj_vertices(verts, transform)
+    b_surface_mesh(b, ps, faces, void_ref(b))
+  end
 public b_set_environment
 @bdef(b_set_environment(env_name, set_background))
 
@@ -2689,21 +2696,21 @@ end
 
 public b_toilet, b_sink, b_closet
 b_toilet(b::Backend, c, host, family) =
-  let bf = get(family.implemented_as, typeof(b), nothing)
+  let bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
       b_box(b, c - vxy(20, 20, c.cs), 40, 40, 40, nothing)
   end
 
 b_sink(b::Backend, c, host, family) =
-  let bf = get(family.implemented_as, typeof(b), nothing)
+  let bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
       b_box(b, c - vxy(40, 40, c.cs), 80, 80, 80, nothing)
   end
 
 b_closet(b::Backend, c, host, family) =
-  let bf = get(family.implemented_as, typeof(b), nothing)
+  let bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
       b_box(b, c - vxy(100, 40, c.cs), 200, 80, 200, nothing)
@@ -2727,7 +2734,10 @@ public obj_file_path, read_obj_mesh, transform_obj_vertices
     obj_family("Porta/Porta")  → resources/models/obj/Porta/Porta.obj  (subfolder)
     obj_family("Porta")        → resources/models/obj/Porta.obj        (flat)
 =#
+# A name already ending in ".obj" or an absolute path is used verbatim (e.g. a Revit-extracted OBJ
+# placed by the geometric fallback); a bare resource name resolves under resources/models/obj/.
 obj_file_path(obj_name) =
+  (isabspath(obj_name) || endswith(lowercase(obj_name), ".obj")) ? String(obj_name) :
   joinpath("resources", "models", "obj", "$obj_name.obj")
 
 #=
@@ -2774,7 +2784,11 @@ transform_obj_vertices(verts, transform) =
 
 public b_family_element
 b_family_element(b::Backend, loc, angle, level, family) =
-  b_box(b, loc - vxy(0.5, 0.5, loc.cs), 1.0, 1.0, 1.0, nothing)
+  let bf = maybe_backend_family(b, family)
+    bf isa OBJFamily ?
+      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(loc, bf)) :
+      b_box(b, loc - vxy(0.5, 0.5, loc.cs), 1.0, 1.0, 1.0, nothing)
+  end
 
 # Lights
 

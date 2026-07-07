@@ -54,6 +54,7 @@ using Test
     include("test_materials.jl")
     include("test_bim.jl")
     include("test_family_lifecycle.jl")
+    include("test_obj_family.jl")
     include("test_wall_graph.jl")
     include("test_constraints.jl")
     include("test_design_layout.jl")
