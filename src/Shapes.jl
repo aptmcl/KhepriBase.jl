@@ -776,6 +776,9 @@ decreasing parameter tiers until a backend-supported level is reached.
 # Override auto-generated meta_program for PbrMaterial to use keyword
 # arguments and skip the internal BackendParameter data field.
 meta_program(m::PbrMaterial) =
+  # A canonical material round-trips as its bare binding symbol; anything else as a full literal.
+  get(_canonical_material_symbols, m, nothing) !== nothing ?
+    _canonical_material_symbols[m] :
   let defaults = (base_color=rgba(0.5, 0.5, 0.5, 1.0),
                   metallic=0.0, roughness=0.5, specular=0.35,
                   sheen_color=rgb(0,0,0), sheen_roughness=0.0,
@@ -950,6 +953,17 @@ const material_clay = material(
   base_color=rgba(0.85, 0.78, 0.70, 1.0),
   roughness=0.9,
   specular=0.4)
+
+# Registry mapping each canonical material to its binding symbol, so an introspected model emits a bare
+# `material_concrete` rather than a verbose `pbr_material("Concrete"; …)` literal. `meta_program(::Material)`
+# consults this before falling back to the full-literal emit.
+const _canonical_material_symbols = IdDict{Material,Symbol}(
+  material_point => :material_point, material_curve => :material_curve,
+  material_surface => :material_surface, material_basic => :material_basic,
+  material_glass => :material_glass, material_metal => :material_metal,
+  material_wood => :material_wood, material_concrete => :material_concrete,
+  material_plaster => :material_plaster, material_grass => :material_grass,
+  material_clay => :material_clay)
 
 # Polymorphic material accessors — uniform interface for all Material subtypes
 export material_color, material_name

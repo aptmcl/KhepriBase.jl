@@ -826,6 +826,10 @@ internalize_shapes.
 const meta_program_sigdigits = Parameter(8)
 export meta_program_sigdigits
 
+"When true, `meta_program` emits a family's non-default material fields as keyword arguments (so backends whose appearance comes from the family material, not a native type, reproduce it). Override via `codegen_emit_materials(false)`."
+const codegen_emit_materials = Parameter(true)
+export codegen_emit_materials
+
 meta_program(x::Real) = round(x, sigdigits=meta_program_sigdigits())
 meta_program(x::Bool) = x
 meta_program(x::DataType) = Symbol(x)

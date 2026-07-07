@@ -324,10 +324,20 @@ macro deffamily(name, parent, fields...)
 #    $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
 #          selector_names, field_names)...)
     KhepriBase.meta_program(v::$(struct_name)) =
-        Expr(:call, $(Expr(:quote, name)),
-             $(map(field_name -> :(meta_program(v.$(field_name))),
-                   [fn for (fn, ft) in zip(field_names, field_types)
-                    if ft != :Material])...))
+        let args = Any[$(map(field_name -> :(meta_program(v.$(field_name))),
+                             [fn for (fn, ft) in zip(field_names, field_types)
+                              if ft != :Material])...)]
+            # Non-material fields are positional (as before); non-default material fields are appended as
+            # keyword args when material emission is enabled — so backends whose appearance comes from the
+            # family material (not a native type) reproduce it, and default materials stay silent.
+            codegen_emit_materials() && begin
+                $(map(((fn, fi),) -> :(v.$(fn) == $(fi) ||
+                          push!(args, Expr(:kw, $(QuoteNode(fn)), meta_program(v.$(fn))))),
+                      [(fn, fi) for (fn, ft, fi) in zip(field_names, field_types, field_inits)
+                       if ft == :Material])...)
+            end
+            Expr(:call, $(Expr(:quote, name)), args...)
+        end
     KhepriBase.meta_program(v::Parameter{$struct_name}) =
         Expr(:call, $(Expr(:quote, default_name)))
     Base.@doc $(docstr) $(constructor_name)
