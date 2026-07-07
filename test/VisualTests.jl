@@ -1558,7 +1558,13 @@ write_provenance(path; meta...) =
 read_provenance(path) =
   isfile(path) ?
     try
-      parse_toml(read(path, String))
+      let prov = parse_toml(read(path, String))
+        # parse_toml is lenient (a malformed line like "= x" yields an empty-key Dict rather than
+        # throwing), so validate the parse actually IS a provenance: every write_provenance sidecar
+        # always carries at least "schema" and "julia".
+        (prov isa AbstractDict && haskey(prov, "schema") && haskey(prov, "julia")) ? prov :
+          (@warn "Ignoring corrupt provenance sidecar" path; nothing)
+      end
     catch e
       @warn "Ignoring corrupt provenance sidecar" path exception=e
       nothing
