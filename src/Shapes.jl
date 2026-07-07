@@ -1396,12 +1396,12 @@ box(c0::Loc, c1::Loc, others...) =
   end
 
 @defshape(Shape3D, cone, cb::Loc=u0(), r::Real=1, h::Real=1)
-cone(cb::Loc, r::Real, ct::Loc) =
+cone(cb::Loc, r::Real, ct::Loc, _material=default_material(); material=_material) =
   let (c, h) = position_and_height(cb, ct)
-    cone(c, r, h)
+    cone(c, r, h, material)
   end
 @defshape(Shape3D, cone_frustum, cb::Loc=u0(), rb::Real=1, h::Real=1, rt::Real=1)
-cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real; material=default_material()) =
+cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real, _material=default_material(); material=_material) =
   let (c, h) = position_and_height(cb, ct)
     cone_frustum(c, rb, h, rt, material)
   end
@@ -1410,6 +1410,20 @@ cylinder(cb::Loc, r::Real, ct::Loc, _material=default_material(); material=_mate
   let (c, h) = position_and_height(cb, ct)
     cylinder(c, r, h, material)
   end
+
+# cs-based solids store their base center in a local coordinate system (the axis is the cs's +z), but
+# meta_program(::Loc) emits a Loc's LOCAL coordinates and drops the cs — so a positioned/tilted cylinder,
+# cone or cone_frustum would round-trip to the origin, axis-aligned. Emit the two world endpoints via the
+# 2-point constructor (as meta_program(::Beam) does) so both position and orientation survive.
+meta_program(s::Cylinder) =
+  Expr(:call, :cylinder, meta_program(in_world(s.cb)), meta_program(s.r),
+       meta_program(in_world(add_z(s.cb, s.h))), meta_program(s.material))
+meta_program(s::Cone) =
+  Expr(:call, :cone, meta_program(in_world(s.cb)), meta_program(s.r),
+       meta_program(in_world(add_z(s.cb, s.h))), meta_program(s.material))
+meta_program(s::ConeFrustum) =
+  Expr(:call, :cone_frustum, meta_program(in_world(s.cb)), meta_program(s.rb),
+       meta_program(in_world(add_z(s.cb, s.h))), meta_program(s.rt), meta_program(s.material))
 
 #=
 Transformation proxies wrap an existing shape with a deferred transformation.
