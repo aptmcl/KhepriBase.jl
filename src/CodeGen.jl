@@ -221,6 +221,37 @@ function model_to_expr(model)
   Expr(:block, stmts...)
 end
 
+# ── Geometric round-trip (non-BIM backends: AutoCAD, …) ──────────────────────
+# Emit a geometry-only program: one meta_program statement per reconstructed shape. Skips shapes that
+# can't round-trip to reproducible code — `Unknown` (opaque native handles, e.g. an AutoCAD Solid3d the
+# CAD API cannot classify back to box/sphere/…), which would otherwise emit a dead `unknown(handle)`
+# call. Needs no BIM structure; the standard passes then refine it (extract_levels/families no-op with
+# none present, while loop_rerolling still rerolls repeated geometry such as arrays into for-loops).
+shapes_to_expr(shapes) =
+  let keep = [s for s in shapes if !is_unknown(s)],
+      dropped = length(shapes) - length(keep)
+    dropped > 0 && @info "shapes_to_expr: skipped $dropped non-reproducible shape(s) (e.g. AutoCAD Solid3d → unknown handle)"
+    Expr(:block, [meta_program(s) for s in keep]...)
+  end
+
+# Run the full codegen pipeline on an already-reconstructed set of geometric shapes (e.g. from
+# existing_shapes on a geometric backend). Same passes as the BIM generate_khepri_code; the family passes
+# no-op without families. Returns the source; also writes it to output_path when a path is given.
+function shapes_to_khepri_code(shapes, b; output_path=nothing)
+  let raw_expr = shapes_to_expr(shapes),
+      fmap = Dict{Expr, FamilyMeta}(),
+      passes = [extract_levels,
+                extract_families(fmap),
+                add_backend_families(b, fmap),
+                loop_rerolling,
+                detect_level_repetition,
+                add_geometric_header(b)],
+      code = expr_to_string(foldl((e, pass) -> pass(e), passes, init=raw_expr))
+    output_path === nothing || open(io -> write(io, code), output_path, "w")
+    code
+  end
+end
+
 # Translate all xyz/xy calls in an Expr tree by subtracting an offset.
 # Skips door/window positions (wall-relative, not world coords).
 translate_xyz_expr(x, dx, dy, dz) = x
@@ -532,6 +563,15 @@ add_header(b) = (e::Expr) ->
        Expr(:using, Expr(:., b_codegen_module(b))),
        stmts_of(e)...)
 
+# Header for the geometric round-trip (own provenance line so the BIM add_header — and its goldens —
+# stay untouched).
+add_geometric_header(b) = (e::Expr) ->
+  Expr(:block,
+       Expr(:toplevel_comment, "Auto-generated Khepri code (geometric round-trip via $(b_codegen_module(b)))"),
+       Expr(:toplevel_comment, "Generated on: $(Dates.now())"),
+       Expr(:using, Expr(:., b_codegen_module(b))),
+       stmts_of(e)...)
+
 stmts_of(e::Expr) = e.head == :block ? e.args : [e]
 
 # ─── Phase 4: Pretty-Printing ─────────────────────────────────────────────────
@@ -713,7 +753,10 @@ end
 _kw_str(e::Expr) = "$(e.args[1])=$(_expr_str(e.args[2]))"
 
 function _expr_str(e::Expr)
-  if e.head == :call
+  if e.head == :call && e.args[1] === Symbol(":") && length(e.args) in (3, 4)
+    # Range operator is infix: (:)(a,b) → a:b, (:)(a,step,b) → a:step:b (a for-loop reroll range).
+    join(map(_expr_str, e.args[2:end]), ":")
+  elseif e.head == :call
     let fn = e.args[1],
         args = e.args[2:end],
         # Extract keyword args from :parameters block if present

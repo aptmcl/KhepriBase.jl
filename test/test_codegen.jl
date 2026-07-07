@@ -153,7 +153,7 @@ end
     check_golden("collision_two_door_types", src)
     @test occursin("door_single_flush_0915", src)     # both types survive as distinct variables
     @test occursin("door_double_flush_1830", src)
-    @test length(findall("revit_file_family(", src)) >= 2   # distinct backend mappings, not collapsed
+    @test length(findall("revit_opening_file_family(", src)) >= 2   # distinct backend mappings, not collapsed (doors use the opening-file family)
   end
 
   @testset "beam orientation round-trips (meta_program override)" begin
