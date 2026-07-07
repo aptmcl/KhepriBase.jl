@@ -830,7 +830,13 @@ export meta_program_sigdigits
 const codegen_emit_materials = Parameter(true)
 export codegen_emit_materials
 
-meta_program(x::Real) = round(x, sigdigits=meta_program_sigdigits())
+meta_program(x::Real) =
+  # Snap sub-picometre magnitudes to zero: cross-product/normalisation round-off (e.g. a cs axis with a
+  # 4e-17 stray component) would otherwise emit noise like `vxyz(-0.707, 4.3e-17, 0.707)` that no longer
+  # reproduces on reconstruction. Anything ≥1e-12 is a real (if tiny) value and is kept.
+  let r = round(x, sigdigits=meta_program_sigdigits())
+    abs(r) < 1e-12 ? zero(r) : r
+  end
 meta_program(x::Bool) = x
 meta_program(x::DataType) = Symbol(x)
 meta_program(x::Vector{T}) where T = 
