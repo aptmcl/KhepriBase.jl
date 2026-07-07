@@ -1216,9 +1216,15 @@ location_at_length(path::LinePath, d::Real) =
 location_at_length(path::ArcPath, d::Real) =
   let Δα = d/path.radius,
       s = sign(path.amplitude)
-    Δα <= abs(path.amplitude) + coincidence_tolerance() ?
-      location_at(path, Δα*s) :
-      error("Exceeded path length by ", Δα - path.amplitude)
+    if Δα <= abs(path.amplitude) + coincidence_tolerance()
+      location_at(path, Δα*s)
+    elseif (Δα - abs(path.amplitude)) * path.radius < path_overshoot_tolerance()
+      # A small overshoot (an opening placed just past the arc's end, from rounding) → clamp to the end,
+      # matching the OpenPolygonalPath clamp, so arc-wall doors/windows reconstruct instead of erroring.
+      location_at(path, path.amplitude)
+    else
+      error("Exceeded arc path length by ", (Δα - abs(path.amplitude)) * path.radius)
+    end
   end
 location_at_length(path::EllipticPath, d::Real) =
   location_at(path, parameter_at_length(path, d))
