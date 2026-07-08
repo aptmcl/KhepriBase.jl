@@ -1684,11 +1684,15 @@ realize(b::Backend, s::ObjModel) = b_obj_model(b, s.path, s.location, s.scale, s
 
 public b_obj_model
 b_obj_model(b::Backend, path, location, scale, material) =
-  let (verts, faces) = read_obj_mesh(obj_file_path(path)),
+  let objpath = obj_file_path(path),
+      (verts, faces) = read_obj_mesh(objpath),
       # Place each (scaled) OBJ vertex in the location's frame: works whether `location` is a plain
       # world point or a full frame u0(cs=cs(o, vx, vy, vz)) as emitted by the geometric fallback.
       placed = [in_world(location + vxyz(v[1] * scale, v[2] * scale, v[3] * scale)) for v in verts],
-      mat = isnothing(material) ? void_ref(b) : material_ref(b, material)
+      # When the obj_model carries no explicit material, recover colour from the .mtl sibling (the Revit
+      # exporter writes one next to each fallback .obj) so fallback meshes render coloured, not void/grey.
+      eff = isnothing(material) ? _obj_sibling_material(objpath) : material,
+      mat = isnothing(eff) ? void_ref(b) : material_ref(b, eff)
     b_surface_mesh(b, placed, faces, mat)
   end
 

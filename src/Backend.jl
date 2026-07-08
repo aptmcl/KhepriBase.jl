@@ -1008,9 +1008,14 @@ public b_mesh_obj_fmt
 # (sinks, chairs, doors, extracted Revit families, …) realize on ANY backend — not just those with a
 # native OBJ loader. Backends with native/instanced OBJ import (e.g. KhepriThreejs) override this.
 b_mesh_obj_fmt(b::Backend, obj_name, transform) =
-  let (verts, faces) = read_obj_mesh(obj_file_path(obj_name)),
-      ps = transform_obj_vertices(verts, transform)
-    b_surface_mesh(b, ps, faces, void_ref(b))
+  let objpath = obj_file_path(obj_name),
+      (verts, faces) = read_obj_mesh(objpath),
+      ps = transform_obj_vertices(verts, transform),
+      # Recover colour from the .mtl sibling so OBJ-family meshes aren't grey on file backends without a
+      # native OBJ loader (KhepriThreejs overrides this and loads the .mtl itself).
+      m = _obj_sibling_material(objpath),
+      mat = isnothing(m) ? void_ref(b) : material_ref(b, m)
+    b_surface_mesh(b, ps, faces, mat)
   end
 public b_set_environment
 @bdef(b_set_environment(env_name, set_background))
@@ -2772,6 +2777,36 @@ function read_obj_mesh(filepath)
   end
   (vertices, faces)
 end
+
+# Parse a Wavefront .mtl into name → Material (base colour from Kd, opacity from d), so obj_model meshes
+# (the geometric mesh-fallback) recover their colour instead of rendering with the void material. Missing
+# file → empty. Diffuse-only for now; PBR keywords (Pr/Pm/Ke) can be added when the exporter emits them.
+function parse_mtl(filepath)
+  mats = Dict{String, Material}()
+  isfile(filepath) || return mats
+  name = ""; kd = [0.8, 0.8, 0.8]; d = 1.0
+  save() = name == "" || (mats[name] = material(name=name, base_color=rgba(kd[1], kd[2], kd[3], d)))
+  for line in eachline(filepath)
+    parts = split(strip(line))
+    isempty(parts) && continue
+    if parts[1] == "newmtl" && length(parts) >= 2
+      save(); name = parts[2]; kd = [0.8, 0.8, 0.8]; d = 1.0
+    elseif parts[1] == "Kd" && length(parts) >= 4
+      kd = [parse(Float64, parts[i]) for i in 2:4]
+    elseif parts[1] == "d" && length(parts) >= 2
+      d = parse(Float64, parts[2])
+    end
+  end
+  save()
+  mats
+end
+
+# The dominant (first) material of an .obj's .mtl sibling, or nothing when there is no usable .mtl —
+# used to colour a mesh whose obj_model carries no explicit material.
+_obj_sibling_material(objpath) =
+  let mats = parse_mtl(splitext(objpath)[1] * ".mtl")
+    isempty(mats) ? nothing : first(values(mats))
+  end
 
 #=
   transform_obj_vertices(verts, transform)
