@@ -324,10 +324,20 @@ macro deffamily(name, parent, fields...)
 #    $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
 #          selector_names, field_names)...)
     KhepriBase.meta_program(v::$(struct_name)) =
-        Expr(:call, $(Expr(:quote, name)),
-             $(map(field_name -> :(meta_program(v.$(field_name))),
-                   [fn for (fn, ft) in zip(field_names, field_types)
-                    if ft != :Material])...))
+        let args = Any[$(map(field_name -> :(meta_program(v.$(field_name))),
+                             [fn for (fn, ft) in zip(field_names, field_types)
+                              if ft != :Material])...)]
+            # Non-material fields are positional (as before); non-default material fields are appended as
+            # keyword args when material emission is enabled — so backends whose appearance comes from the
+            # family material (not a native type) reproduce it, and default materials stay silent.
+            codegen_emit_materials() && begin
+                $(map(((fn, fi),) -> :(v.$(fn) == $(fi) ||
+                          push!(args, Expr(:kw, $(QuoteNode(fn)), meta_program(v.$(fn))))),
+                      [(fn, fi) for (fn, ft, fi) in zip(field_names, field_types, field_inits)
+                       if ft == :Material])...)
+            end
+            Expr(:call, $(Expr(:quote, name)), args...)
+        end
     KhepriBase.meta_program(v::Parameter{$struct_name}) =
         Expr(:call, $(Expr(:quote, default_name)))
     Base.@doc $(docstr) $(constructor_name)
@@ -404,7 +414,7 @@ realize(b::Backend, f::Family) =
   b_get_family_ref(b, f, backend_family(b, f))
 
 b_get_family_ref(b::Backend, f::Family, bf) = bf
-public backend_family, set_backend_family
+export backend_family, set_backend_family
 
 # Registry of default family parameters for invalidation on backend reconnection.
 # Each @deffamily generates a default_xxx_family Parameter; we register them here
@@ -1147,6 +1157,16 @@ beam(cb::Loc, ct::Loc, Angle::Real=0, Family::BeamFamily=default_beam_family(); 
 realize(b::Backend, s::Beam) =
   b_beam(b, s.cb, s.h, s.angle, s.family)
 
+# Emit the two world endpoints (via the 2-point beam constructor) so a beam's orientation round-trips.
+# The auto-generated meta_program would emit `beam(cb, h, …)`, but meta_program(::Loc) drops cb's
+# coordinate system, so a horizontal beam would collapse back to a vertical one of height h≈0.
+meta_program(s::Beam) =
+  Expr(:call, :beam,
+       meta_program(in_world(s.cb)),
+       meta_program(in_world(add_z(s.cb, s.h))),
+       Expr(:kw, :angle, meta_program(s.angle)),
+       Expr(:kw, :family, meta_program(s.family)))
+
 # Column
 # Columns are mainly vertical elements. A column has its center axis aligned with a line defined by two points
 
@@ -1164,6 +1184,15 @@ free_column(cb::Loc, ct::Loc, Angle::Real=0, Family::ColumnFamily=default_column
 
 realize(b::Backend, s::FreeColumn) =
   b_free_column(b, s.cb, s.h, s.angle, s.family)
+
+# See meta_program(::Beam): emit the two world endpoints via the 2-point free_column constructor so
+# the member's orientation survives the round-trip.
+meta_program(s::FreeColumn) =
+  Expr(:call, :free_column,
+       meta_program(in_world(s.cb)),
+       meta_program(in_world(add_z(s.cb, s.h))),
+       Expr(:kw, :angle, meta_program(s.angle)),
+       Expr(:kw, :family, meta_program(s.family)))
 
 @defproxy(column, BIMShape, cb::Loc=u0(), angle::Real=0,
   bottom_level::Level=default_level(), top_level::Level=upper_level(bottom_level),
@@ -1640,6 +1669,32 @@ show_stresses(results, b::Backend=autocad) =
     end
   end
 =#
+
+# obj_model — a portable, direct placement of a Wavefront OBJ mesh at an explicit frame. Distinct
+# from an OBJ *family* (obj_family, resolved via set_backend_family): obj_model is a standalone shape
+# used by the geometric fallback to reproduce elements that have no parametric family (MEP, in-place,
+# complex geometry). It realizes on any backend by parsing the OBJ and emitting a surface mesh in the
+# placement coordinate system; backends with native/instanced OBJ loading (e.g. KhepriThreejs) override
+# b_obj_model. `path` is a file path (absolute or ending in .obj); a bare name resolves under
+# resources/models/obj/.
+@defproxy(obj_model, Shape3D, path::String="", location::Loc=u0(), scale::Real=1.0,
+          material::Union{Material,Nothing}=nothing)
+
+realize(b::Backend, s::ObjModel) = b_obj_model(b, s.path, s.location, s.scale, s.material)
+
+public b_obj_model
+b_obj_model(b::Backend, path, location, scale, material) =
+  let objpath = obj_file_path(path),
+      (verts, faces) = read_obj_mesh(objpath),
+      # Place each (scaled) OBJ vertex in the location's frame: works whether `location` is a plain
+      # world point or a full frame u0(cs=cs(o, vx, vy, vz)) as emitted by the geometric fallback.
+      placed = [in_world(location + vxyz(v[1] * scale, v[2] * scale, v[3] * scale)) for v in verts],
+      # When the obj_model carries no explicit material, recover colour from the .mtl sibling (the Revit
+      # exporter writes one next to each fallback .obj) so fallback meshes render coloured, not void/grey.
+      eff = isnothing(material) ? _obj_sibling_material(objpath) : material,
+      mat = isnothing(eff) ? void_ref(b) : material_ref(b, eff)
+    b_surface_mesh(b, placed, faces, mat)
+  end
 
 @defcb lighting_analysis()
 

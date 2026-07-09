@@ -2,6 +2,9 @@
 
 using Test
 using KhepriBase
+# These names are public API but not exported (declared with `public`), so bring them into scope
+# explicitly for the unqualified references below.
+using KhepriBase: used_materials, material_ref, BackendParameter, Material, b_set_layer_material, backend_default
 
 # Include the mock backend
 include("TestMockBackend.jl")

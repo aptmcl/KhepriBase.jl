@@ -776,6 +776,9 @@ decreasing parameter tiers until a backend-supported level is reached.
 # Override auto-generated meta_program for PbrMaterial to use keyword
 # arguments and skip the internal BackendParameter data field.
 meta_program(m::PbrMaterial) =
+  # A canonical material round-trips as its bare binding symbol; anything else as a full literal.
+  get(_canonical_material_symbols, m, nothing) !== nothing ?
+    _canonical_material_symbols[m] :
   let defaults = (base_color=rgba(0.5, 0.5, 0.5, 1.0),
                   metallic=0.0, roughness=0.5, specular=0.35,
                   sheen_color=rgb(0,0,0), sheen_roughness=0.0,
@@ -950,6 +953,17 @@ const material_clay = material(
   base_color=rgba(0.85, 0.78, 0.70, 1.0),
   roughness=0.9,
   specular=0.4)
+
+# Registry mapping each canonical material to its binding symbol, so an introspected model emits a bare
+# `material_concrete` rather than a verbose `pbr_material("Concrete"; …)` literal. `meta_program(::Material)`
+# consults this before falling back to the full-literal emit.
+const _canonical_material_symbols = IdDict{Material,Symbol}(
+  material_point => :material_point, material_curve => :material_curve,
+  material_surface => :material_surface, material_basic => :material_basic,
+  material_glass => :material_glass, material_metal => :material_metal,
+  material_wood => :material_wood, material_concrete => :material_concrete,
+  material_plaster => :material_plaster, material_grass => :material_grass,
+  material_clay => :material_clay)
 
 # Polymorphic material accessors — uniform interface for all Material subtypes
 export material_color, material_name
@@ -1382,12 +1396,12 @@ box(c0::Loc, c1::Loc, others...) =
   end
 
 @defshape(Shape3D, cone, cb::Loc=u0(), r::Real=1, h::Real=1)
-cone(cb::Loc, r::Real, ct::Loc) =
+cone(cb::Loc, r::Real, ct::Loc, _material=default_material(); material=_material) =
   let (c, h) = position_and_height(cb, ct)
-    cone(c, r, h)
+    cone(c, r, h, material)
   end
 @defshape(Shape3D, cone_frustum, cb::Loc=u0(), rb::Real=1, h::Real=1, rt::Real=1)
-cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real; material=default_material()) =
+cone_frustum(cb::Loc, rb::Real, ct::Loc, rt::Real, _material=default_material(); material=_material) =
   let (c, h) = position_and_height(cb, ct)
     cone_frustum(c, rb, h, rt, material)
   end
@@ -1396,6 +1410,43 @@ cylinder(cb::Loc, r::Real, ct::Loc, _material=default_material(); material=_mate
   let (c, h) = position_and_height(cb, ct)
     cylinder(c, r, h, material)
   end
+
+# cs-based solids store their base center in a local coordinate system (the axis is the cs's +z), but
+# meta_program(::Loc) emits a Loc's LOCAL coordinates and drops the cs — so a positioned/tilted cylinder,
+# cone or cone_frustum would round-trip to the origin, axis-aligned. Emit the two world endpoints via the
+# 2-point constructor (as meta_program(::Beam) does) so both position and orientation survive.
+meta_program(s::Cylinder) =
+  Expr(:call, :cylinder, meta_program(in_world(s.cb)), meta_program(s.r),
+       meta_program(in_world(add_z(s.cb, s.h))), meta_program(s.material))
+meta_program(s::Cone) =
+  Expr(:call, :cone, meta_program(in_world(s.cb)), meta_program(s.r),
+       meta_program(in_world(add_z(s.cb, s.h))), meta_program(s.material))
+meta_program(s::ConeFrustum) =
+  Expr(:call, :cone_frustum, meta_program(in_world(s.cb)), meta_program(s.rb),
+       meta_program(in_world(add_z(s.cb, s.h))), meta_program(s.rt), meta_program(s.material))
+
+# regular_pyramid/prism/pyramid_frustum are cb-based with NO 2-point constructor, so preserve the base
+# loc's FULL coordinate system (position + orientation) via loc_from_o_vx_vy — the auto-generated
+# meta_program routes cb through meta_program(::Loc) (local coords, cs dropped), collapsing a tilted solid
+# to the origin, axis-aligned.
+_loc_with_cs_expr(cb) =
+  let o = in_world(cb)
+    Expr(:call, :loc_from_o_vx_vy, meta_program(o),
+         meta_program(in_world(add_x(cb, 1.0)) - o),
+         meta_program(in_world(add_y(cb, 1.0)) - o))
+  end
+meta_program(s::RegularPyramid) =
+  Expr(:call, :regular_pyramid, meta_program(s.edges), _loc_with_cs_expr(s.cb),
+       meta_program(s.rb), meta_program(s.angle), meta_program(s.h),
+       meta_program(s.inscribed), meta_program(s.material))
+meta_program(s::RegularPrism) =
+  Expr(:call, :regular_prism, meta_program(s.edges), _loc_with_cs_expr(s.cb),
+       meta_program(s.r), meta_program(s.angle), meta_program(s.h),
+       meta_program(s.inscribed), meta_program(s.material))
+meta_program(s::RegularPyramidFrustum) =
+  Expr(:call, :regular_pyramid_frustum, meta_program(s.edges), _loc_with_cs_expr(s.cb),
+       meta_program(s.rb), meta_program(s.angle), meta_program(s.h),
+       meta_program(s.rt), meta_program(s.inscribed), meta_program(s.material))
 
 #=
 Transformation proxies wrap an existing shape with a deferred transformation.

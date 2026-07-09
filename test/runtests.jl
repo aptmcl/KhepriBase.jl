@@ -47,6 +47,7 @@ using Test
     include("test_backend.jl")
     include("test_default_ops.jl")
     include("test_profile_consumption.jl")
+    include("test_roundtrip.jl")   # shape → source → shape round-trip stress tests (headless)
   end
 
   # Phase 4: Extended Features tests
@@ -54,6 +55,7 @@ using Test
     include("test_materials.jl")
     include("test_bim.jl")
     include("test_family_lifecycle.jl")
+    include("test_obj_family.jl")
     include("test_wall_graph.jl")
     include("test_constraints.jl")
     include("test_design_layout.jl")

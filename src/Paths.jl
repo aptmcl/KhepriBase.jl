@@ -154,6 +154,10 @@ geometry).
 
 "Distance below which two locations are treated as the same point. `distance(a, b) < coincidence_tolerance()`. [metres]"
 const coincidence_tolerance = Parameter(1e-10)
+# How far a length query may run past the end of a path before it's treated as a real error rather than
+# clamped to the path end (see location_at_length). Covers precision cases like a wall opening placed
+# slightly beyond a wall end that a source BIM tool tolerated; genuine misplacements exceed it.
+const path_overshoot_tolerance = Parameter(1.0)
 export coincidence_tolerance
 
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < coincidence_tolerance()
@@ -1212,9 +1216,15 @@ location_at_length(path::LinePath, d::Real) =
 location_at_length(path::ArcPath, d::Real) =
   let Δα = d/path.radius,
       s = sign(path.amplitude)
-    Δα <= abs(path.amplitude) + coincidence_tolerance() ?
-      location_at(path, Δα*s) :
-      error("Exceeded path length by ", Δα - path.amplitude)
+    if Δα <= abs(path.amplitude) + coincidence_tolerance()
+      location_at(path, Δα*s)
+    elseif (Δα - abs(path.amplitude)) * path.radius < path_overshoot_tolerance()
+      # A small overshoot (an opening placed just past the arc's end, from rounding) → clamp to the end,
+      # matching the OpenPolygonalPath clamp, so arc-wall doors/windows reconstruct instead of erroring.
+      location_at(path, path.amplitude)
+    else
+      error("Exceeded arc path length by ", (Δα - abs(path.amplitude)) * path.radius)
+    end
   end
 location_at_length(path::EllipticPath, d::Real) =
   location_at(path, parameter_at_length(path, d))
@@ -1243,6 +1253,15 @@ location_at_length(path::OpenPolygonalPath, d::Real) =
       else
         p = pp
         d -= delta
+      end
+    end
+    # A moderate overshoot (e.g. a wall opening whose position + width runs slightly past the wall end —
+    # a precision case Revit tolerates but that a reconstructed model can hit) is clamped to the path end
+    # rather than aborting the whole model. Larger overshoots still error, surfacing genuine bugs.
+    if d < path_overshoot_tolerance()
+      let n = length(path.vertices)
+        @warn "location_at_length: overshoot clamped to path end" overshoot=d
+        return loc_from_o_vz(path.vertices[n], unitized(path.vertices[n] - path.vertices[n-1]))
       end
     end
     error("Exceeded path length by ", d)
