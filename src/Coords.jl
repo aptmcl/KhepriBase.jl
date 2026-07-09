@@ -318,7 +318,7 @@ sph_phi(p::Union{Loc,Vec}) =
     0 == x == y ? 0 : mod(atan(y, x), 2pi)
   end
 sph_phi(p::Union{Pol,VPol,Cyl,VCyl,Sph,VSph}) =
-  p.ϕ
+  mod(p.ϕ, 2pi)   # normalize into [0,2π) to match the Cartesian branch — representation-independent
 
 sph_psi(p::Union{Loc,Vec}) =
   let (x, y, z) = (p.x, p.y, p.z)
@@ -734,8 +734,7 @@ add_sph(p::Loc, ρ::Real, ϕ::Real, ψ::Real) = p + vsph(ρ, ϕ, ψ, p.cs)
 
 
 
-norm(v::Vec) = norm(v.raw)
-length(v::Vec) = norm(v.raw)
+norm(v::Vec) = norm(v.raw)   # the sole magnitude function for vectors (Base.length is NOT magnitude)
 
 min_loc(p::Loc, q::Loc) =
     xyz(min.(p.raw, in_cs(q, p.cs).raw), p.cs)
@@ -857,12 +856,15 @@ meta_program(v::Vec) =
 
 # Integration in standard protocols
 
-# iteration for destructuring into components
-iterate(v::Vec) = iterate(v.raw)
-iterate(v::Vec, state) = iterate(v.raw, state)
-
-iterate(v::Loc) = iterate(v.raw)
-iterate(v::Loc, state) = iterate(v.raw, state)
+# iteration for destructuring into components — yield EXACTLY the 3 spatial coordinates from `raw`,
+# dropping its homogeneous 4th slot (w=1 for Loc, 0 for Vec) so collect/Tuple/comprehensions are
+# correct. `length`==3 and `eltype`==Float64 give generic code the right buffer size and element type.
+iterate(v::Vec, i::Int=1) = i <= 3 ? (@inbounds v.raw[i], i + 1) : nothing
+iterate(p::Loc, i::Int=1) = i <= 3 ? (@inbounds p.raw[i], i + 1) : nothing
+length(::Vec) = 3
+length(::Loc) = 3
+Base.eltype(::Type{<:Vec}) = Float64
+Base.eltype(::Type{<:Loc}) = Float64
 
 # Utilities
 export trig_center, trig_normal, quad_center, quad_normal, vertices_center, vertices_normal, iterate_quads
@@ -1026,6 +1028,18 @@ Base.isequal(v::Vec, w::Vec) =
   let wv = in_world(v),
       ww = in_world(w)
     isequal(wv.x, ww.x) && isequal(wv.y, ww.y) && isequal(wv.z, ww.z)
+  end
+
+# hash partners for the world-space isequal specializations above: two locations/vectors that are
+# isequal (same world coords, possibly in different coordinate systems) MUST hash equal, or every
+# Dict/Set/unique/`in` keyed on them is silently corrupt. Distinct type seeds keep Loc and Vec apart.
+Base.hash(p::Loc, h::UInt) =
+  let wp = in_world(p)
+    hash(wp.z, hash(wp.y, hash(wp.x, hash(:khepri_loc, h))))
+  end
+Base.hash(v::Vec, h::UInt) =
+  let wv = in_world(v)
+    hash(wv.z, hash(wv.y, hash(wv.x, hash(:khepri_vec, h))))
   end
 
 # angle between

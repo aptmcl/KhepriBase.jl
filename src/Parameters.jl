@@ -1,4 +1,4 @@
-export with, Parameter, OptionParameter, LazyParameter, ThreadLocalParameter, GlobalParameter
+export with, Parameter, OptionParameter, LazyParameter, ThreadLocalParameter, GlobalParameter, spawn_inheriting
 
 #=
 Parameter uses task-local storage so that each @spawn-ed task (e.g., each
@@ -10,6 +10,9 @@ mutable struct Parameter{T}
   value::T
 end
 
+# NOTE: task-local storage is NOT inherited by Threads.@spawn/@async children — a spawned task starts
+# with empty TLS and sees only `value` (the global default). To build geometry in a child task under an
+# enclosing `with(current_cs, cs) do … end`, use `spawn_inheriting` (below), never a bare @spawn.
 (p::Parameter{T})() where T = get(task_local_storage(), p, p.value)::T
 (p::Parameter{T})(newvalue::T) where T = task_local_storage(p, newvalue)::T
 
@@ -26,6 +29,23 @@ end
 with(f, p, newvalue, others...) =
   with(p, newvalue) do
     with(f, others...)
+  end
+
+"""
+    spawn_inheriting(f)
+
+Run `f` in a freshly `Threads.@spawn`-ed task that INHERITS the caller's `Parameter` bindings.
+Plain `@spawn`/`@async` children start with empty task-local storage, so `Parameter`s
+(`current_cs`, `current_backends`, `default_wall_family`, …) would silently revert to their
+global defaults — geometry built there would land in `world_cs`. Use this whenever a spawned task
+must build geometry under an enclosing `with(current_cs, cs) do … end`.
+"""
+spawn_inheriting(f) =
+  let parent_tls = copy(task_local_storage())
+    Threads.@spawn begin
+      merge!(task_local_storage(), parent_tls)
+      f()
+    end
   end
 
 #=
@@ -69,14 +89,22 @@ like the WebSocket server instance.
 mutable struct LazyParameter{T,F<:Function}
   initializer::F
   value::Union{T,Nothing}
+  lock::ReentrantLock
   LazyParameter(initializer::F) where {F<:Function} =
-    new{Base.return_types(initializer, ())[1],F}(initializer, nothing)
+    new{Base.return_types(initializer, ())[1],F}(initializer, nothing, ReentrantLock())
 end
 
-(p::LazyParameter{T,F})() where {T,F} = isnothing(p.value) ? (p.value = p.initializer()::T) : p.value
-(p::LazyParameter{T,F})(newvalue::T) where {T,F} = p.value = newvalue
+# Double-checked locking: concurrent tasks initialize the singleton exactly once, while the common
+# already-initialized path stays lock-free.
+(p::LazyParameter{T,F})() where {T,F} =
+  isnothing(p.value) ?
+    lock(p.lock) do
+      isnothing(p.value) ? (p.value = p.initializer()::T) : p.value
+    end :
+    p.value
+(p::LazyParameter{T,F})(newvalue::T) where {T,F} = lock(p.lock) do; p.value = newvalue end
 
-Base.reset(p::LazyParameter{T,F}) where {T,F} = p.value = nothing
+Base.reset(p::LazyParameter{T,F}) where {T,F} = lock(p.lock) do; p.value = nothing end
 
 #=
 ThreadLocalParameter is now equivalent to Parameter (which uses task-local

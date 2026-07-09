@@ -639,11 +639,7 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
 
 public start_processing_requests
 start_processing_requests(c::WebSocketBackend{K,T}) where {K,T} = begin
-  parent_tls = copy(task_local_storage())
-  Threads.@spawn begin
-    merge!(task_local_storage(), parent_tls)
-    process_requests(c)
-  end
+  spawn_inheriting(() -> process_requests(c))   # child task inherits current_backends/current_cs/… TLS
   c
 end
 

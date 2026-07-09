@@ -294,7 +294,12 @@ using LinearAlgebra
     @testset "norm/length" begin
       v = vxyz(3, 4, 0)
       @test norm(v) ≈ 5 atol=1e-10
-      @test length(v) ≈ 5 atol=1e-10
+      # `length` is Base's component count (3), NOT the magnitude — `norm` is the magnitude.
+      # (Previously length(::Vec) was overloaded to norm, breaking collect/Tuple; see WS0.)
+      @test length(v) == 3
+      @test collect(v) == [3.0, 4.0, 0.0]   # iterate yields the 3 spatial coords, not the homogeneous w
+      @test Tuple(vxy(1, 2)) == (1.0, 2.0, 0.0)
+      @test eltype(v) == Float64
 
       v2 = vxyz(1, 2, 2)
       @test norm(v2) ≈ 3 atol=1e-10
