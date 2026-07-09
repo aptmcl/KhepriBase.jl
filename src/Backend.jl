@@ -2501,7 +2501,10 @@ _face_paths_usable(w_path, l_face, r_face) =
     end
   end
 
-b_curtain_wall(b::Backend, path, bottom_level, top_level, family, offset) =
+b_curtain_wall(b::Backend, path, bottom_level, top_level, family, offset) = begin
+  # A non-positive panel cap makes ceil(Int, length/cap) → ceil(Int, Inf) → InexactError; guard first.
+  family.max_panel_dx > 0 || throw(ArgumentError("curtain_wall: family.max_panel_dx must be positive (got $(family.max_panel_dx))"))
+  family.max_panel_dy > 0 || throw(ArgumentError("curtain_wall: family.max_panel_dy must be positive (got $(family.max_panel_dy))"))
   let th = family.panel.thickness,
       bfw = family.boundary_frame.width,
       bfd = family.boundary_frame.depth,
@@ -2520,6 +2523,10 @@ b_curtain_wall(b::Backend, path, bottom_level, top_level, family, offset) =
       x_panels = ceil(Int, path_length/family.max_panel_dx),
       y_panels = ceil(Int, height/family.max_panel_dy),
       refs = new_refs(b)
+    # Panel/frame subpaths below span [bfw, path_length-bfw] and heights span [2*bfw, …]; a path or
+    # height not exceeding twice the frame width gives inverted subpaths / negative heights (garbage).
+    path_length > 2*bfw || throw(ArgumentError("curtain_wall: path length ($path_length) must exceed twice the boundary-frame width ($(2*bfw))"))
+    height > 2*bfw || throw(ArgumentError("curtain_wall: height ($height) must exceed twice the boundary-frame width ($(2*bfw))"))
     collect_ref!(refs, b_curtain_wall_element(b, subpath(path, bfw, path_length-bfw), bottom+bfw, height-2*bfw, th/2, th/2, getproperty(family, :panel)))
     collect_ref!(refs, b_curtain_wall_element(b, path, bottom, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
     collect_ref!(refs, b_curtain_wall_element(b, path, top-bfw, bfw, l_thickness(bfdo, bfd), r_thickness(bfdo, bfd), getproperty(family, :boundary_frame)))
@@ -2536,14 +2543,17 @@ b_curtain_wall(b::Backend, path, bottom_level, top_level, family, offset) =
     end
     refs
   end
+end
 
-curtain_wall_panel_path(b::Backend, path, family) =
+curtain_wall_panel_path(b::Backend, path, family) = begin
+  family.max_panel_dx > 0 || throw(ArgumentError("curtain_wall: family.max_panel_dx must be positive (got $(family.max_panel_dx))"))
   let path_length = path_length(path),
       x_panels = ceil(Int, path_length/family.max_panel_dx),
       pts = map(t->in_world(location_at_length(path, t)),
                 division(0, path_length, x_panels))
     polygonal_path(pts)
   end
+end
 
 ## ─────────────────────────────────────────────────────────────────────
 ##  OBJ/MTL family types and transform computation

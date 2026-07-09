@@ -608,18 +608,24 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
                   # a dead task. retire_dead_backend does the full delete+discard+close.
                   retire_dead_backend(c)
                   WebSockets.isok(e) ? break : rethrow(e)
-                end,
-          target = decode(namespace, Val(:size), buf),
-          args_len = decode(namespace, Val(:size), buf),
-          args = Any[]
-        for i in 1:args_len
-          push!(args, decode(namespace, Val(:Any), buf))
-        end
-        @warn("Calling '$target' with $(args)")
-        let result_code = -1 # Default: no result
+                end
+        # Decode + dispatch + reply all inside one try so a MALFORMED FRAME
+        # (bad target / arg-count / arg payload) is answered with an error
+        # result_code in the finally instead of escaping the loop — otherwise a
+        # timeout-less client blocks forever on a reply that never comes, and this
+        # request task dies silently. target starts unresolved for the error log.
+        let result_code = -1, target = -1 # Default: no result
           try
-            with(current_backends, (c,)) do
-              call_handler(c, target, args...)
+            target = decode(namespace, Val(:size), buf)
+            let args_len = decode(namespace, Val(:size), buf),
+                args = Any[]
+              for i in 1:args_len
+                push!(args, decode(namespace, Val(:Any), buf))
+              end
+              @warn("Calling '$target' with $(args)")
+              with(current_backends, (c,)) do
+                call_handler(c, target, args...)
+              end
             end
           catch e
             @warn("Error occurred while processing request '$target': $e")
@@ -639,7 +645,7 @@ process_requests(c::WebSocketBackend{K,T}) where {K,T} =
 
 public start_processing_requests
 start_processing_requests(c::WebSocketBackend{K,T}) where {K,T} = begin
-  spawn_inheriting(() -> process_requests(c))   # child task inherits current_backends/current_cs/… TLS
+  errormonitor(spawn_inheriting(() -> process_requests(c)))   # child inherits TLS; errormonitor surfaces a silent task-death
   c
 end
 

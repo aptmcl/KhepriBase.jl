@@ -474,6 +474,17 @@ thus equal length, selecting the (Locs, Locs, Vector, Vector) method. Aperture
 is not part of the control positions, so it is held at the current default.
 =#
 interpolate_view_save_frames(ctl_positions, nframes) =
+  isempty(ctl_positions) ?
+    throw(ArgumentError("interpolate_view_save_frames: needs at least one control position")) :
+  length(ctl_positions) == 1 ?
+    # A lone control view has no path to interpolate — hold it across every frame
+    # (nframes+1, matching the multi-control map_division count below) instead of
+    # indexing ctl_lenses[0] / feeding a 1-point spline (both throw).
+    let p = ctl_positions[1], n = nframes + 1
+      set_view_save_frames(
+        fill(in_world(p[1]), n), fill(in_world(p[2]), n),
+        fill(float(p[3]), n), fill(default_aperture(), n))
+    end :
   let ctl_lenses = map(p -> p[3], ctl_positions),
       last_ctl = length(ctl_lenses) - 1,
       lenses = map_division(
