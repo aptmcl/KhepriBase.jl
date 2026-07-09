@@ -527,7 +527,7 @@ closed_spline_path(vertices=[u0(), x(), xy(), y()]) =
 
 "Smooth spline interpolating `vertices`; closed when the first and last vertices coincide, otherwise open."
 interpolating_spline_path(vertices::Locs) =
-  coincident_path_location(vertices[1], vertices[end]) ?
+  is_closed_path(vertices) ?     # length>=2 && coincident — a lone vertex is NOT closed (routes to open)
     closed_interpolating_spline_path(vertices[1:end-1]) :
     open_interpolating_spline_path(vertices)
 interpolating_spline_path(v::Loc, vs...) = interpolating_spline_path([v, vs...])
@@ -1266,9 +1266,12 @@ location_at_length(path::OpenPolygonalPath, d::Real) =
     end
     # Overshoot past the last vertex: clamp a small residual to the path end, else error (see
     # clamped_overshoot_location — the single shared policy).
-    let n = length(path.vertices)
-      clamped_overshoot_location(d,
-        loc_from_o_vz(path.vertices[n], unitized(path.vertices[n] - path.vertices[n-1])))
+    let n = length(path.vertices),
+        # end tangent, defensively: a single vertex (n<2) or coincident last two vertices have no
+        # direction, so fall back to a world up-vector frame instead of BoundsError/DomainError.
+        tan = n >= 2 ? path.vertices[n] - path.vertices[n-1] : vz(1),
+        dir = norm(tan) < zero_vector_tolerance() ? vz(1) : unitized(tan)
+      clamped_overshoot_location(d, loc_from_o_vz(path.vertices[n], dir))
     end
   end
 location_at_length(path::ClosedPolygonalPath, d::Real) =
@@ -1884,7 +1887,9 @@ planar_path_normal(path::T) where T<:Union{PathSet,Region} =
 convert(::Type{OpenPath}, vs::Locs) =
   open_polygonal_path(vs)
 convert(::Type{ClosedPath}, vs::Locs) =
-  closed_polygonal_path(vs)
+  # Strip an explicit closing duplicate (first==last), like convert(ClosedPath,::OpenPolygonalPath) and
+  # polygonal_path do, so a closed loop those accept no longer AssertionErrors in closed_polygonal_path.
+  closed_polygonal_path(coincident_path_location(vs[1], vs[end]) ? vs[1:end-1] : vs)
 convert(::Type{Vector{<:ClosedPath}}, ps::Vector{<:Any}) =
   ClosedPath[convert(ClosedPath, p) for p in ps]
 

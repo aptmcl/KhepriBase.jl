@@ -1350,11 +1350,15 @@ b_united(b::Backend, source, mask, mat) =
     [source, mask])
 
 b_slice(b::Backend, shape, p, v, mat) =
-  and_mark_deleted(b,
-    map_ref(b, shape) do s
-      b_slice_ref(b, s, p, v)
-    end,
-    [shape])
+  # Guard the zero normal HERE (shared) not in b_slice_ref (AutoCAD/Rhino fully override b_slice_ref, so a
+  # guard there would let them send a degenerate normal to their native Slice); also pre-empts loc_from_o_vz.
+  norm(v) < zero_vector_tolerance() ?
+    throw(ArgumentError("slice: the cutting-plane normal must be non-zero")) :
+    and_mark_deleted(b,
+      map_ref(b, shape) do s
+        b_slice_ref(b, s, p, v)
+      end,
+      [shape])
 
 b_slice_ref(b::Backend, r, p, v) =
   b_subtract_ref(b, r, b_regular_prism(b, 4, loc_from_o_vz(p, v), 1e5, 0, 1e5, true, void_ref(b)))
