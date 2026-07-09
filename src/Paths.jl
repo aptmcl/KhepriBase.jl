@@ -162,6 +162,16 @@ export coincidence_tolerance
 
 coincident_path_location(p1::Loc, p2::Loc) = distance(p1, p2) < coincidence_tolerance()
 
+# Reconcile a length query that ran past a path's end. `overshoot` is the distance past the end (metres);
+# `endpoint` the location to clamp to. A small overshoot — e.g. a wall opening whose position+width rounds
+# just past the wall end, which the source BIM tolerated — is clamped so the model still reconstructs; a
+# larger one is a genuine misplacement and still errors. Single source of truth for the clamp policy that
+# every location_at_length end-branch (Line/Arc/OpenPolygonal/PathOps/CompositePath) shares.
+clamped_overshoot_location(overshoot::Real, endpoint) =
+  overshoot < path_overshoot_tolerance() ?
+    (@warn "location_at_length: overshoot clamped to path end" overshoot; endpoint) :
+    error("Exceeded path length by ", overshoot)
+
 #=
 Polygonal smoothness budget.
 
@@ -1211,19 +1221,18 @@ location_at_length(path::LinePath, d::Real) =
   let len = path_length(path)
     len <= coincidence_tolerance() && return path.p0
     v = unitized(path.p1 - path.p0)
-    loc_from_o_vz(path.p0 + v*d, v)
+    d <= len + coincidence_tolerance() ?
+      loc_from_o_vz(path.p0 + v*d, v) :
+      clamped_overshoot_location(d - len, loc_from_o_vz(path.p1, v))
   end
 location_at_length(path::ArcPath, d::Real) =
   let Δα = d/path.radius,
       s = sign(path.amplitude)
     if Δα <= abs(path.amplitude) + coincidence_tolerance()
       location_at(path, Δα*s)
-    elseif (Δα - abs(path.amplitude)) * path.radius < path_overshoot_tolerance()
-      # A small overshoot (an opening placed just past the arc's end, from rounding) → clamp to the end,
-      # matching the OpenPolygonalPath clamp, so arc-wall doors/windows reconstruct instead of erroring.
-      location_at(path, path.amplitude)
     else
-      error("Exceeded arc path length by ", (Δα - abs(path.amplitude)) * path.radius)
+      clamped_overshoot_location((Δα - abs(path.amplitude)) * path.radius,
+                                 location_at(path, path.amplitude))
     end
   end
 location_at_length(path::EllipticPath, d::Real) =
@@ -1255,16 +1264,12 @@ location_at_length(path::OpenPolygonalPath, d::Real) =
         d -= delta
       end
     end
-    # A moderate overshoot (e.g. a wall opening whose position + width runs slightly past the wall end —
-    # a precision case Revit tolerates but that a reconstructed model can hit) is clamped to the path end
-    # rather than aborting the whole model. Larger overshoots still error, surfacing genuine bugs.
-    if d < path_overshoot_tolerance()
-      let n = length(path.vertices)
-        @warn "location_at_length: overshoot clamped to path end" overshoot=d
-        return loc_from_o_vz(path.vertices[n], unitized(path.vertices[n] - path.vertices[n-1]))
-      end
+    # Overshoot past the last vertex: clamp a small residual to the path end, else error (see
+    # clamped_overshoot_location — the single shared policy).
+    let n = length(path.vertices)
+      clamped_overshoot_location(d,
+        loc_from_o_vz(path.vertices[n], unitized(path.vertices[n] - path.vertices[n-1])))
     end
-    error("Exceeded path length by ", d)
   end
 location_at_length(path::ClosedPolygonalPath, d::Real) =
   let p = path.vertices[1]
@@ -1642,7 +1647,7 @@ location_at_length(path::PathOps, d::Real) =
         d -= delta
       end
     end
-    error("Exceeded path length by ", d)
+    clamped_overshoot_location(d, start)   # `start` == end of the last op == path end
   end
 
 location_at_length(op::LineOp, start::Loc, d::Real) =
@@ -1729,7 +1734,7 @@ location_at_length(path::CompositePath, d::Real) =
           d -= delta
       end
     end
-    error("Exceeded path length by ", d)
+    clamped_overshoot_location(d, path_end(path))
   end
 subpath_starting_at(path::CompositePath, d::Real) =
   let subpaths = path.pieces
