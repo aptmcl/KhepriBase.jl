@@ -2704,21 +2704,21 @@ b_toilet(b::Backend, c, host, family) =
   let bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
-      b_box(b, c - vxy(20, 20, c.cs), 40, 40, 40, nothing)
+      b_box(b, c - vxy(0.2, 0.2, c.cs), 0.4, 0.4, 0.4, nothing)   # metres: 0.4 m cube (was cm-scale)
   end
 
 b_sink(b::Backend, c, host, family) =
   let bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
-      b_box(b, c - vxy(40, 40, c.cs), 80, 80, 80, nothing)
+      b_box(b, c - vxy(0.4, 0.4, c.cs), 0.8, 0.8, 0.8, nothing)   # metres: 0.8 m cube (was cm-scale)
   end
 
 b_closet(b::Backend, c, host, family) =
   let bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(c, bf)) :
-      b_box(b, c - vxy(100, 40, c.cs), 200, 80, 200, nothing)
+      b_box(b, c - vxy(1.0, 0.4, c.cs), 2.0, 0.8, 2.0, nothing)   # metres: 2.0×0.8×2.0 m wardrobe (was cm)
   end
 
 ## ─────────────────────────────────────────────────────────────────────
@@ -2783,14 +2783,15 @@ end
 # file → empty. Diffuse-only for now; PBR keywords (Pr/Pm/Ke) can be added when the exporter emits them.
 function parse_mtl(filepath)
   mats = Dict{String, Material}()
-  isfile(filepath) || return mats
+  order = String[]   # declaration order — so "the first material" is deterministic (Dict is hash-ordered)
+  isfile(filepath) || return (mats, order)
   name = ""; kd = [0.8, 0.8, 0.8]; d = 1.0
   save() = name == "" || (mats[name] = material(name=name, base_color=rgba(kd[1], kd[2], kd[3], d)))
   for line in eachline(filepath)
     parts = split(strip(line))
     isempty(parts) && continue
     if parts[1] == "newmtl" && length(parts) >= 2
-      save(); name = parts[2]; kd = [0.8, 0.8, 0.8]; d = 1.0
+      save(); name = parts[2]; push!(order, name); kd = [0.8, 0.8, 0.8]; d = 1.0
     elseif parts[1] == "Kd" && length(parts) >= 4
       kd = [parse(Float64, parts[i]) for i in 2:4]
     elseif parts[1] == "d" && length(parts) >= 2
@@ -2798,14 +2799,14 @@ function parse_mtl(filepath)
     end
   end
   save()
-  mats
+  (mats, order)
 end
 
-# The dominant (first) material of an .obj's .mtl sibling, or nothing when there is no usable .mtl —
-# used to colour a mesh whose obj_model carries no explicit material.
+# The first-declared material of an .obj's .mtl sibling (deterministic — not Dict hash order), or nothing
+# when there is no usable .mtl — used to colour a mesh whose obj_model carries no explicit material.
 _obj_sibling_material(objpath) =
-  let mats = parse_mtl(splitext(objpath)[1] * ".mtl")
-    isempty(mats) ? nothing : first(values(mats))
+  let (mats, order) = parse_mtl(splitext(objpath)[1] * ".mtl")
+    isempty(order) ? nothing : mats[first(order)]
   end
 
 #=
