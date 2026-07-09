@@ -548,7 +548,11 @@ function _try_make_range(vals)
       if step_v == 1
         Expr(:call, :(:), first_v, last_v)
       else
-        Expr(:call, :(:), first_v, step_v, last_v)
+        # A float first:step:last range is NOT count-preserving — endpoint rounding can drop or add
+        # an element (e.g. 0.1:0.1:0.3 yields 2 elements, not 3), so the rerolled loop would place
+        # the wrong number of shapes. range(first; step, length=n) forces exactly the original n
+        # elements while keeping the exact step. (step == 1 stays a:b — integer ranges are exact.)
+        Expr(:call, :range, first_v, Expr(:kw, :step, step_v), Expr(:kw, :length, n))
       end
     end
   else

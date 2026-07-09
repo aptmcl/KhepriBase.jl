@@ -1712,7 +1712,7 @@ b_swept_surface(b::Backend, path, profile::TransformedShape, rotation, scaling, 
 translate(s::Line, v::Vec) = line(map(p -> p+v, s.vertices))
 translate(s::Polygon, v::Vec) = polygon(map(p -> p+v, s.vertices))
 translate(s::Circle, v::Vec) = circle(s.center+v, s.radius)
-translate(s::Text, v::Vec) = text(s.str, s.c+v, s.h)
+translate(s::Text, v::Vec) = text(s.str, s.corner+v, s.height)
 
 # We can translate arrays of Shapes
 translate(ss::Shapes, v::Vec) = translate.(ss, v)

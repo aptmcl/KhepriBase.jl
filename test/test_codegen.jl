@@ -204,7 +204,9 @@ end
     step1 = KB._try_make_range([0.0, 1.0, 2.0, 3.0])
     @test step1 isa Expr && step1.head == :call && step1.args[1] == :(:) && length(step1.args) == 3
     stepN = KB._try_make_range([0.0, 5.0, 10.0])
-    @test stepN isa Expr && stepN.head == :call && stepN.args[1] == :(:) && length(stepN.args) == 4
+    # count-preserving range(first; step, length=n), NOT a float first:step:last (see CodeGen.jl)
+    @test stepN isa Expr && stepN.head == :call && stepN.args[1] == :range
+    @test collect(eval(stepN)) == [0.0, 5.0, 10.0]   # exact step AND exact count
     irregular = KB._try_make_range([0.0, 1.0, 3.0])
     @test irregular isa Expr && irregular.head == :vect   # non-uniform → literal vector
   end
