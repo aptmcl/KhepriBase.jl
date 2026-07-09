@@ -397,6 +397,7 @@ current_view_dolly_zoom(back/forth, delta, frames) =
 
 dolly_effect_back(delta, camera, target, lens, frames) =
   let d = distance(camera, target)
+      iszero(d) && throw(ArgumentError("dolly_effect: camera coincides with target (zero distance)"))
       new_camera = target+(camera-target)*(d+delta)/d
       new_d = distance(new_camera, target)
       new_lens = (lens*new_d)/d
@@ -410,6 +411,7 @@ dolly_effect_back(delta, camera, target, lens, frames) =
 
 dolly_effect_forth(delta, camera, target, lens, frames) =
   let d = distance(camera, target)
+      iszero(d) && throw(ArgumentError("dolly_effect: camera coincides with target (zero distance)"))
       new_camera = target+(camera-target)*(d-delta)/d
       new_d = distance(new_camera, target)
       new_lens = (lens*new_d)/d
@@ -423,6 +425,8 @@ dolly_effect_forth(delta, camera, target, lens, frames) =
 
 function dolly_effect(camera, target, lens, new_camera)
   cur_dist = distance(camera, target)
+  iszero(cur_dist) &&
+    throw(ArgumentError("dolly_effect: camera coincides with target (zero distance)"))
   new_dist = distance(new_camera, target)
   new_lens = lens*new_dist/cur_dist
   set_view(new_camera, target, new_lens)

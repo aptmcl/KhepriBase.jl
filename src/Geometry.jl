@@ -52,9 +52,13 @@ function offset(path, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_lim
 end
 
 function nonzero_offset(path::RectangularPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0)
-  join == :miter && cap == :butt ?
-    rectangular_path(add_xy(path.corner, d, d), path.dx - 2d, path.dy - 2d) :
+  if join == :miter && cap == :butt
+    (path.dx - 2d > 0 && path.dy - 2d > 0) ||
+      throw(ArgumentError("offset: inward offset $d collapses the $(path.dx)x$(path.dy) rectangle"))
+    rectangular_path(add_xy(path.corner, d, d), path.dx - 2d, path.dy - 2d)
+  else
     nonzero_offset(convert(ClosedPolygonalPath, path), d; join=join, cap=cap, miter_limit=miter_limit)
+  end
 end
 function nonzero_offset(path::OpenPolygonalPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0)
   _offset_polygonal_path(path.vertices, d, false; join=join, cap=cap, miter_limit=miter_limit)
@@ -63,9 +67,11 @@ function nonzero_offset(path::ClosedPolygonalPath, d::Real; join::Symbol=:miter,
   _offset_polygonal_path(path.vertices, d, true; join=join, cap=cap, miter_limit=miter_limit)
 end
 nonzero_offset(path::CircularPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
-  circular_path(path.center, path.radius - d)
+  path.radius - d > 0 ? circular_path(path.center, path.radius - d) :
+    throw(ArgumentError("offset: inward offset $d collapses the radius-$(path.radius) circle"))
 nonzero_offset(path::ArcPath, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
-  arc_path(path.center, path.radius - d, path.start_angle, path.amplitude)
+  path.radius - d > 0 ? arc_path(path.center, path.radius - d, path.start_angle, path.amplitude) :
+    throw(ArgumentError("offset: inward offset $d collapses the radius-$(path.radius) arc"))
 nonzero_offset(path::CompositePath{true}, d::Real; join::Symbol=:miter, cap::Symbol=:butt, miter_limit::Real=10.0) =
   CompositePath{true}(OpenPath[nonzero_offset(piece, d; join=join, cap=cap, miter_limit=miter_limit) for piece in path.pieces])
 

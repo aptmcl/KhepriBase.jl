@@ -1889,7 +1889,7 @@ convert(::Type{Vector{<:ClosedPath}}, ps::Vector{<:Any}) =
   ClosedPath[convert(ClosedPath, p) for p in ps]
 
 convert(::Type{Path}, vs::Locs) =
-  coincident_path_location(vs[1], vs[end]) ?
+  (length(vs) >= 2 && coincident_path_location(vs[1], vs[end])) ?
     closed_polygonal_path(vs[1:end-1]) :
     open_polygonal_path(vs)
 convert(::Type{ClosedPath}, p::OpenPolygonalPath) =
@@ -2168,7 +2168,9 @@ end
 
 
 curve_interpolator(pts::Locs, closed::Bool) =
-  let pts = length(pts) > 2 ? pts : [pts[1], intermediate_loc(pts...), pts[2]]
+  length(pts) < 2 ?
+    throw(ArgumentError("curve_interpolator: a spline needs at least 2 control points, got $(length(pts))")) :
+  let pts = length(pts) > 2 ? pts : [pts[1], intermediate_loc(pts[1], pts[2]), pts[2]]
     ParametricSpline(
       [pt.raw[i] for i in 1:3, pt in in_world.(closed ? [pts..., pts[1]] : pts)],
       k=min(length(pts)-1, 3),
@@ -2278,6 +2280,8 @@ average_frame(f1, f2) =
   end
 
 path_frames(path::OpenPolygonalPath) =
+  length(path.vertices) < 2 ?
+    throw(ArgumentError("path_frames: an open polygonal path needs at least 2 vertices, got $(length(path.vertices))")) :
   let pts = path.vertices,
       pt1 = pts[1],
       pt2 = pts[2],

@@ -19,7 +19,8 @@ next_random(previous_random::Int) =
 
 next_random!() = random_seed(next_random(random_seed()))
 
-random(x::Int) = rem(next_random!(), x)
+random(x::Int) =
+  iszero(x) ? throw(ArgumentError("random(0): the upper bound must be non-zero")) : rem(next_random!(), x)
 
 random(x::Real) = x*next_random!()/2147483647.0
 

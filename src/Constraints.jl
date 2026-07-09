@@ -268,6 +268,8 @@ Returns the (possibly rewritten) `desc` together with the final
 """
 function apply_fixers(desc, build, constraints, fixers;
                       max_iters::Integer = 10)
+  max_iters >= 1 ||
+    throw(ArgumentError("apply_fixers: max_iters must be >= 1, got $max_iters"))
   local vr
   for _ in 1:max_iters
     ctx = build(desc)

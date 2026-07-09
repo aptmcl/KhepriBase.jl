@@ -130,7 +130,7 @@ max_aspect_ratio(kind::Symbol, ratio::Real; severity=SOFT) = Constraint(
     for sp in _ctx_spaces(ctx)
     if sp.kind == kind
     for ar in (let w = space_width(sp), d = space_depth(sp)
-                 max(w / d, d / w)
+                 (w > 0 && d > 0) ? max(w / d, d / w) : Inf
                end,)
     if ar > ratio])
 
