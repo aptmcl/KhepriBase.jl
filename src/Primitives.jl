@@ -491,7 +491,7 @@ encode(ns::SizeIsInt, t::Val{:address}, c::IO, v) =
 decode(ns::SizeIsInt, t::Val{:address}, c::IO) =
   decode(ns, Val(:long), c)
 
-const BoolIsByte = Union{Val{:CS},Val{:JS},Val{:TS},Val{:PY}}
+const BoolIsByte = Union{Val{:CS},Val{:JS},Val{:TS},Val{:PY},Val{:CPP}}  # :CPP so :UE (delegates to :CPP) can decode bool
 encode(ns::BoolIsByte, t::Val{:bool}, c::IO, v::Bool) =
   encode(ns, Val(:byte), c, v ? 1 : 0)
 decode(ns::BoolIsByte, t::Val{:bool}, c::IO) =
@@ -582,7 +582,7 @@ decode(ns::StringIsCSString, ::Union{Val{:string},Val{:String},Val{:str}}, c::IO
   end
 end
 
-const VoidIsByte = Union{Val{:CS},Val{:PY},Val{:JS},Val{:TS}}
+const VoidIsByte = Union{Val{:CS},Val{:PY},Val{:JS},Val{:TS},Val{:CPP}}  # :CPP so :UE (delegates to :CPP) can decode void
 decode(ns::VoidIsByte, t::Union{Val{:void},Val{:None}}, c::IO) =
   decode(ns, Val(:byte), c) == 0x00
 
