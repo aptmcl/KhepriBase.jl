@@ -422,7 +422,18 @@ circle_from_three_points_2d(v0::Loc, v1::Loc, v2::Loc) =
   end
 
 circle_from_three_points(p0::Loc, p1::Loc, p2::Loc) =
-  let cs = cs_from_o_vx_vy(p0, p1-p0, p2-p0)
+  let u = p1-p0,
+      v = p2-p0,
+      crs = cross(u, v),
+      cs = dot(crs, crs) < parallelism_tolerance()*dot(u, u)*dot(v, v) ?
+             # Collinear: u ∥ v, so the in-plane frame cs_from_o_vx_vy(p0, u, v) has a zero
+             # z-axis and throws (DomainError normalizing vxyz(0,0,0)). Build ANY plane that
+             # CONTAINS the p0→p1 line instead — x-axis = u, vy = a world axis not parallel to
+             # u — so the three points project onto that x-axis and circle_from_three_points_2d's
+             # collinear branch returns the (degenerate, center-on-line) circle instead of crashing.
+             cs_from_o_vx_vy(p0, u,
+               dot(cross(u, vz(1)), cross(u, vz(1))) < parallelism_tolerance()*dot(u, u) ? vx(1) : vz(1)) :
+             cs_from_o_vx_vy(p0, u, v)
     with(current_cs, cs) do
       c, r = circle_from_three_points_2d(in_cs(p0, cs),
                                          in_cs(p1, cs),
