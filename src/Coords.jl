@@ -847,10 +847,22 @@ meta_program(c::RGB) =
 meta_program(c::RGBA) =
   Expr(:call, :rgba, meta_program(Float64(red(c))), meta_program(Float64(green(c))), meta_program(Float64(blue(c))), meta_program(Float64(alpha(c))))
 meta_program(p::Loc) =
-    if cz(p) == 0
-        Expr(:call, :xy, meta_program(cx(p)), meta_program(cy(p)))
+    if is_world_cs(p.cs)
+        if cz(p) == 0
+            Expr(:call, :xy, meta_program(cx(p)), meta_program(cy(p)))
+        else
+            Expr(:call, :xyz, meta_program(cx(p)), meta_program(cy(p)), meta_program(cz(p)))
+        end
     else
-        Expr(:call, :xyz, meta_program(cx(p)), meta_program(cy(p)), meta_program(cz(p)))
+        # Non-world frame: xy/xyz would emit p's LOCAL coordinates and drop the cs, collapsing a
+        # positioned/oriented loc to the wrong world point (and wrong orientation) on re-execution.
+        # Emit the full frame via loc_from_o_vx_vy(world-origin, world-x-dir, world-y-dir). in_world
+        # yields a world-cs loc/vec, so the three recursive meta_program calls take the branch above.
+        let o = in_world(p)
+            Expr(:call, :loc_from_o_vx_vy, meta_program(o),
+                 meta_program(in_world(add_x(p, 1.0)) - o),
+                 meta_program(in_world(add_y(p, 1.0)) - o))
+        end
     end
 meta_program(v::Vec) =
     if cz(v) == 0
