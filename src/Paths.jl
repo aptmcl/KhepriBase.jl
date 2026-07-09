@@ -1442,6 +1442,19 @@ subpath(path::ClosedPolygonalPath, a::Real, b::Real) =
 subpath(path::OpenPolygonalPath, a::Real, b::Real) =
   subpath_starting_at(subpath_ending_at(path, b), a)
 
+# LinePath needs its own subpath methods. Without them, subpath / subpath_starting_at /
+# subpath_ending_at bounce between the generic Path forms (subpath_starting_at → subpath →
+# subpath_ending_at → subpath → …) with no base case and stack-overflow — subpath on a bare
+# LinePath never worked. A LinePath subpath is just the segment between two length-points
+# (a zero-length line at the exact end, line_path(p1, p1), is fine). in_world resolves the
+# loc_from_o_vz frame that location_at_length returns back to a plain world position.
+subpath(path::LinePath, a::Real, b::Real) =
+  line_path(in_world(location_at_length(path, a)), in_world(location_at_length(path, b)))
+subpath_starting_at(path::LinePath, d::Real) =
+  line_path(in_world(location_at_length(path, d)), path.p1)
+subpath_ending_at(path::LinePath, d::Real) =
+  line_path(path.p0, in_world(location_at_length(path, d)))
+
 subpath_starting_at(path::OpenPolygonalPath, d::Real) =
     let pts = path.vertices
         p1 = pts[1]
@@ -1744,7 +1757,11 @@ subpath_starting_at(path::CompositePath, d::Real) =
     for i in 1:length(subpaths)
       subpath = subpaths[i]
       delta = path_length(subpath)
-      if d == delta
+      if d == delta && i < length(subpaths)
+        # Only drop consumed pieces when a NEXT piece exists. At the exact end of the LAST
+        # piece subpaths[i+1:end] is [] → an empty composite whose path_length hits
+        # zero(::Type{Any}). Fall through to the tolerant branch below, which recurses into
+        # the last piece's own zero-length end subpath (now that LinePath has subpath methods).
         return CompositePath{false}(subpaths[i+1:end])
       elseif d < delta + coincidence_tolerance()
         subpath = subpath_starting_at(subpath, d)
