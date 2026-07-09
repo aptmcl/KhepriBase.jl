@@ -2245,10 +2245,10 @@ with_shape_dependency(f, ss) =
                     f()
                 end
         on_change(ss) do
-            try
-                delete_shapes(shapes)
-            catch e
-            end
+            # Let a real delete failure propagate (delete_shapes' own @defcbs wrappers already retire a
+            # dead transport backend and rethrow genuine bugs) rather than swallowing it and rebuilding
+            # over leaked refs.
+            delete_shapes(shapes)
             shapes = collecting_shapes() do
                 f()
             end

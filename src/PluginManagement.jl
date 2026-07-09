@@ -4,8 +4,10 @@ copy_plugin_files!(dlls, src_folder, dst_folder) =
   for dll in dlls
     let src = joinpath(src_folder, dll),
         dst = joinpath(dst_folder, dll)
-      rm(dst, force=true)
-      cp(src, dst)
+      # Verify the source before touching the destination — otherwise a missing/half-built src leaves the
+      # installed plugin deleted (cp force=true still rm's dst before it stats src, so the guard is needed).
+      isfile(src) || error("copy_plugin_files!: source not found, refusing to overwrite $dst: $src")
+      cp(src, dst, force=true)
     end
   end
 

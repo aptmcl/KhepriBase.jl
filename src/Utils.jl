@@ -406,6 +406,11 @@ fixed_svg(svgpath) =
   end
 
 public to_from
+public rethrow_with_context
+# Log an exception (with its backtrace) under a context message, then re-raise it — so a caught cause is
+# both diagnosable AND still propagates. Prefer this to a bare `error(msg)` in a catch, which drops `e`.
+rethrow_with_context(msg, e) = (@error msg exception=(e, catch_backtrace()); rethrow())
+
 to_from(f, suffix, path, program) =
   ! isfile(path) ?
     error("Inexisting file $path") :
@@ -419,8 +424,7 @@ to_from(f, suffix, path, program) =
             try
               f(prog, path, topath)
             catch e
-              error("Could not process $path to generate $topath.")
-              println(e)
+              rethrow_with_context("Could not process $path to generate $topath.", e)
             end
           end
         end
