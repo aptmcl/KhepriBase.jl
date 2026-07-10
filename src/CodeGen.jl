@@ -36,18 +36,6 @@ sanitize_name(name) =
     isempty(s) ? "unnamed" : (isdigit(s[1]) ? "_" * s : s)
   end
 
-# Detect regular grid pattern in a set of values
-function detect_regular_spacing(vals; tol=0.01)
-  sorted = sort(unique(vals))
-  length(sorted) < 2 && return nothing
-  spacing = sorted[2] - sorted[1]
-  spacing < tol && return nothing
-  for i in 2:length(sorted)-1
-    abs((sorted[i+1] - sorted[i]) - spacing) > tol && return nothing
-  end
-  (first=sorted[1], step=spacing, last=sorted[end], count=length(sorted))
-end
-
 # Bottom-up map over an Expr tree
 map_expr(f, e::Expr) = f(Expr(e.head, map(x -> map_expr(f, x), e.args)...))
 map_expr(f, x) = f(x)

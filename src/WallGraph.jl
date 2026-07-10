@@ -510,10 +510,8 @@ function _chainable_segments(s1::WallSegment, s2::WallSegment)
 end
 
 # Signed angle difference in [0, 2pi)
-angle_diff(a, b) =
-  let d = mod(a - b, 2pi)
-    d < 0 ? d + 2pi : d
-  end
+# mod(x, 2pi) already returns a value in [0, 2pi); the old `d < 0 ? d + 2pi : d` guard was unreachable.
+angle_diff(a, b) = mod(a - b, 2pi)
 
 #=== Chain Resolution ===#
 
