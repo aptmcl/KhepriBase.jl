@@ -1187,20 +1187,17 @@ end
 _polygon_area_large_enough(pts, tol) =
   length(pts) >= 3 && abs(_polygon_signed_area(pts)) > tol^2
 
-function _region_triangulation_vertices(r::Region, tol)
-  pts = path_vertices(outer_path(r))
-  for hole in inner_paths(r)
-    pts = subtract_polygon_vertices(pts, reverse(path_vertices(hole)))
-  end
-  _clean_polygon_vertices(pts, tol)
-end
-
 function _region_triangles(r::Region, tol)
-  pts = _region_triangulation_vertices(r, tol)
-  length(pts) < 3 && return Vector{Loc}[]
+  outer = path_vertices(outer_path(r))
+  length(outer) < 3 && return Vector{Loc}[]
+  # Robust hole-aware triangulation (earcut). Was a keyhole merge (subtract_polygon_vertices)
+  # + triangulate_polygon, which for a region WITH holes could fall to an invalid fan that
+  # filled the hole. triangulate_polygon_with_holes bridges holes robustly; with no holes it
+  # delegates to the unchanged triangulate_polygon, so hole-free regions are bit-identical.
+  coords, trigs = triangulate_polygon_with_holes(outer, [path_vertices(h) for h in inner_paths(r)])
   triangles = Vector{Loc}[]
-  for (i, j, k) in triangulate_polygon([raw_point(p) for p in pts])
-    tri = _clean_polygon_vertices(Loc[pts[i], pts[j], pts[k]], tol)
+  for (i, j, k) in trigs
+    tri = _clean_polygon_vertices(Loc[coords[i], coords[j], coords[k]], tol)
     _polygon_area_large_enough(tri, tol) || continue
     _polygon_signed_area(tri) < 0 && reverse!(tri)
     push!(triangles, tri)
