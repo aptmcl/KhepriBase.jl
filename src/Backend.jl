@@ -666,8 +666,14 @@ b_surface_polygon(b::Backend, ps, mat) =
   end
 
 b_surface_polygon_with_holes(b::Backend, ps, qss, mat) =
-  # By default, we use half-edges
-  b_surface_polygon(b, foldl(subtract_polygon_vertices, qss, init=ps), mat)
+  # Robust hole-elimination triangulation (earcut, EarClip.jl). The old default merged the
+  # holes into one weakly-simple keyhole polygon (foldl subtract_polygon_vertices) and fed it
+  # to triangulate_polygon, whose ear-clip fell to an invalid fan that filled / over-covered
+  # the holes. triangulate_polygon_with_holes bridges holes with topologically-distinct doubled
+  # vertices so the ear test survives; the plain-polygon triangulate_polygon path is untouched.
+  let (coords, trigs) = triangulate_polygon_with_holes(ps, qss)
+    [b_trig(b, coords[i], coords[j], coords[k], mat) for (i, j, k) in trigs]
+  end
 
 b_surface_polygon_with_holes(b::Backend, ps, qss, smooths, mat) =
   b_surface_polygon_with_holes(b, ps, qss, mat)

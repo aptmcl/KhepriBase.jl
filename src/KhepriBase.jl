@@ -82,6 +82,7 @@ include("Paths.jl")
 include("Surfaces.jl")
 include("Geometry.jl")
 include("Backend.jl")
+include("EarClip.jl")   # earcut hole-elimination triangulation (triangulate_polygon_with_holes); uses triangulate_polygon + raw_point from above
 include("GeometryOperations.jl")
 include("Frontend.jl")
 include("Shapes.jl")
