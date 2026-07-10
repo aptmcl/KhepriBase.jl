@@ -346,18 +346,21 @@ struct ArcPath <: PrimitiveOpenPath
 end
 "Open path: circular arc of `radius` centered at `center`, swept from `start_angle` through `amplitude` (angles in radians; a negative amplitude sweeps clockwise)."
 arc_path(center::Loc=u0(), radius::Real=1, start_angle::Real=0, amplitude::Real=pi*1.0) =
-  # pi*1.0 just to circunvent a Julia bug https://github.com/JuliaLang/julia/issues/31949.
-  false ? #amplitude < 0 ?
-    ArcPath(center, radius, start_angle + amplitude, - amplitude) :
-    ArcPath(center, radius, start_angle, amplitude)
+  # A negative amplitude is preserved (clockwise sweep); location_at / location_at_length honor its
+  # sign, so tessellating backends trace the same start_angle → start_angle+amplitude arc that
+  # native-arc backends (which pass the signed amplitude straight through) draw. The old `false ?`
+  # normalization to a positive amplitude was dead code — and wrong for paths, as it swapped the
+  # arc's start/end points.
+  ArcPath(center, radius, start_angle, amplitude)
 path_domain(path::ArcPath) = (0, path.amplitude)
 location_at(path::ArcPath, ϕ::Real) =
-  let s = sign(path.amplitude*1.0), # just to circunvent a Julia bug https://github.com/JuliaLang/julia/issues/31949.
-      ϕ = ϕ*s
-    loc_from_o_vx_vy(add_pol(path.center, path.radius, path.start_angle + ϕ),
-                     vpol(1, path.start_angle + ϕ + π, path.center.cs),
-                     vz(1, path.center.cs))
-  end
+  # ϕ is a SIGNED angular offset from start_angle — every caller (path_domain (0, amplitude),
+  # parameter_at_length, and location_at_length's Δα*sign(amplitude)) already carries the sweep sign.
+  # Do NOT re-apply sign(amplitude) here: doing so cancelled the sign and drew every arc counter-
+  # clockwise, mirroring the arc that native-arc backends draw from a negative amplitude.
+  loc_from_o_vx_vy(add_pol(path.center, path.radius, path.start_angle + ϕ),
+                   vpol(1, path.start_angle + ϕ + π, path.center.cs),
+                   vz(1, path.center.cs))
 planar_path_normal(path::ArcPath) = uvz(path.center.cs)
 
 ## Circular path
@@ -393,8 +396,9 @@ planar_path_normal(path::EllipticPath) = uvz(path.center.cs)
 
 path_domain(path::EllipticArcPath) = (0, path.amplitude)
 location_at(path::EllipticArcPath, ϕ::Real) =
-  let s = sign(path.amplitude*1.0),
-      α = path.start_angle + ϕ*s
+  # ϕ is a SIGNED angular offset from start_angle (see location_at(::ArcPath)); don't re-apply
+  # sign(amplitude) — that cancelled the sign and mirrored negative-amplitude elliptic arcs.
+  let α = path.start_angle + ϕ
     loc_from_o_vx_vy(add_xy(path.center, path.r1*cos(α), path.r2*sin(α)),
                      vxy(cos(α + π), sin(α + π), path.center.cs),
                      vz(1, path.center.cs))
