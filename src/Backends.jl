@@ -224,12 +224,17 @@ retry_connecting(b::RemoteBackend) =
 We start by defining socket-based communication.
 =#
 
-mutable struct SocketBackend{K,T} <: RemoteBackend{K,T}
+# Parameterized on the CONCRETE static_remote (SR) and remote (R) NamedTuple types (and port::Int),
+# so the @remote hot path — getfield(getfield(b, :remote), :Op) — is a STATIC field access + static
+# dispatch instead of the dynamic lookup that an abstract `remote::NamedTuple` field forced on EVERY
+# RPC. SocketBackend{K,T} stays usable as a (UnionAll) type: `const ACAD = SocketBackend{ACADKey,ACADId}`
+# and every `b::SocketBackend{K,T}` method signature are unaffected (SR,R are just left free).
+mutable struct SocketBackend{K,T,SR<:NamedTuple,R<:NamedTuple} <: RemoteBackend{K,T}
   name::String
-  port::Integer
+  port::Int
   connection::Union{Missing,TCPSocket}
-  static_remote::NamedTuple
-  remote::NamedTuple
+  static_remote::SR
+  remote::R
   transaction::Parameter{Transaction}
   refs::References{K,T}
 end
@@ -238,7 +243,11 @@ SocketBackend{K,T}(name, port, static_remote) where {K,T} =
   SocketBackend{K,T}(name, port, missing, static_remote)
 
 SocketBackend{K,T}(name, port, connection, static_remote) where {K,T} =
-  SocketBackend{K,T}(name, port, connection, static_remote, remote_functions(static_remote), Parameter{Transaction}(AutoCommitTransaction()), References{K,T}())
+  let remote = remote_functions(static_remote)
+    SocketBackend{K,T,typeof(static_remote),typeof(remote)}(
+      name, Int(port), connection, static_remote, remote,
+      Parameter{Transaction}(AutoCommitTransaction()), References{K,T}())
+  end
 
 # AML: replace with the Base.retry function?
 #=
@@ -382,21 +391,26 @@ Another option is to use WebSockets. In this case, the backend is strictly a cli
 This also needs an HTTP server to handle the initial handshake and a few more features.
 =#
 
-struct WebSocketBackend{K,T} <: RemoteBackend{K,T}
+# Same as SocketBackend: parameterize on the concrete static_remote (SR) and remote (R) NamedTuple
+# types so getfield(getfield(b, :remote), :Op) on the @remote hot path is static, not a dynamic lookup.
+struct WebSocketBackend{K,T,SR<:NamedTuple,R<:NamedTuple} <: RemoteBackend{K,T}
   name::String
   websocket::HTTP.WebSockets.WebSocket
   buffer::IOBuffer
-  static_remote::NamedTuple
-  remote::NamedTuple
+  static_remote::SR
+  remote::R
   transaction::Parameter{Transaction}
   refs::References{K,T}
   handlers::Vector{Function}
 
   WebSocketBackend{K,T}(name, websocket, static_remote) where {K,T} =
-    new{K,T}(name, websocket, IOBuffer(UInt8[], read=true, write=true),
-        static_remote, remote_functions(static_remote),
+    let remote = remote_functions(static_remote)
+      new{K,T,typeof(static_remote),typeof(remote)}(
+        name, websocket, IOBuffer(UInt8[], read=true, write=true),
+        static_remote, remote,
         Parameter{Transaction}(AutoCommitTransaction()),
         References{K,T}(), Function[])
+    end
 end
 
 # WebSocketBackend is its own connection object (send/receive dispatch on it)
