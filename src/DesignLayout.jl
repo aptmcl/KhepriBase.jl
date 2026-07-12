@@ -70,13 +70,31 @@ _make_space(id, use, x, y, z, w, d, h, props) =
           height=h, props=props, origin_z=z)
   end
 
+# Collision-checking insert for every LEAF-creation site: two spaces that
+# resolve to the same scoped id would otherwise silently overwrite, dropping
+# the earlier space from the layout entirely. Mirrors the imperative Layout
+# index @warn (Spaces.jl:215). Intentional re-stamps that reassign an
+# already-placed id (Above `_no_floor_slab`, HeightOverride, PropsOverlay,
+# Assigned) bypass this and assign `spaces[id] = ...` directly.
+function _place!(spaces, id, sp)
+  haskey(spaces, id) &&
+    @warn "layout: duplicate space id :$id; the earlier space is overwritten and lost."
+  spaces[id] = sp
+end
+
+# A polar Space is absolute-positioned (it ignores the x, y cursor and reports
+# 0 Cartesian extent) and its boundary is an arc sector, so a non-uniform
+# Cartesian scale/mirror of it is not a well-defined circular arc. Scaled and
+# Mirrored use this to error rather than silently flatten it to a rectangle.
+_is_polar(sp::Space) = haskey(sp.props, :_polar)
+
 # ---- Recursive layout ----
 # _layout! populates `spaces` dict in-place and returns (width, depth, height)
 # of the laid-out subtree. `prefix` is the namespace path for scoped naming.
 
 function _layout!(spaces, r::Room, x, y, z, prefix)
   id = _scoped_id(prefix, r.id)
-  spaces[id] = _make_space(id, r.use, x, y, z, r.width, r.depth, r.height, r.props)
+  _place!(spaces, id, _make_space(id, r.use, x, y, z, r.width, r.depth, r.height, r.props))
   (r.width, r.depth, r.height)
 end
 
@@ -88,7 +106,7 @@ end
 
 function _layout!(spaces, e::Envelope, x, y, z, prefix)
   id = _scoped_id(prefix, e.id)
-  spaces[id] = _make_space(id, :envelope, x, y, z, e.width, e.depth, e.height, e.props)
+  _place!(spaces, id, _make_space(id, :envelope, x, y, z, e.width, e.depth, e.height, e.props))
   (e.width, e.depth, e.height)
 end
 
@@ -213,13 +231,18 @@ function _layout!(spaces, s::Scaled, x, y, z, prefix)
   sub = Dict{Symbol, Space}()
   sw, sd, sh = _layout!(sub, s.base, 0.0, 0.0, 0.0, prefix)
   for (id, sp) in sub
+    # A non-uniform Cartesian scale of a polar (arc) space is not a circular
+    # arc; erroring keeps geometry equivalent across backends (none receive a
+    # silently-flattened boundary). Scale polar geometry inside a `refine`.
+    _is_polar(sp) &&
+      error("scale: cannot scale polar space :$id; scale it inside a `refine` transform instead.")
     (ox, oy) = space_origin(sp)
     w = space_width(sp)
     d = space_depth(sp)
-    spaces[id] = _make_space(
+    _place!(spaces, id, _make_space(
       id, sp.kind,
       x + ox * s.sx, y + oy * s.sy, z + sp.origin_z,
-      w * s.sx, d * s.sy, sp.height, sp.props)
+      w * s.sx, d * s.sy, sp.height, sp.props))
   end
   (sw * s.sx, sd * s.sy, sh)
 end
@@ -228,6 +251,11 @@ function _layout!(spaces, m::Mirrored, x, y, z, prefix)
   sub = Dict{Symbol, Space}()
   sw, sd, sh = _layout!(sub, m.base, 0.0, 0.0, 0.0, prefix)
   for (id, sp) in sub
+    # A Cartesian mirror of a polar (arc) space has no well-defined anchor (it
+    # is absolute-positioned and reports 0 Cartesian extent); error rather than
+    # silently flatten. Mirror polar geometry inside a `refine` transform.
+    _is_polar(sp) &&
+      error("mirror: cannot mirror polar space :$id; mirror it inside a `refine` transform instead.")
     (ox, oy) = space_origin(sp)
     w = space_width(sp)
     d = space_depth(sp)
@@ -236,24 +264,27 @@ function _layout!(spaces, m::Mirrored, x, y, z, prefix)
     else  # :y
       (ox, sd - (oy + d))
     end
-    spaces[id] = _make_space(
+    _place!(spaces, id, _make_space(
       id, sp.kind,
       x + new_x, y + new_y, z + sp.origin_z,
-      w, d, sp.height, sp.props)
+      w, d, sp.height, sp.props))
   end
   (sw, sd, sh)
 end
 
 function _layout!(spaces, h::HeightOverride, x, y, z, prefix)
+  # Snapshot pre-existing ids (like PropsOverlay/SubdivideRemaining) so the
+  # override touches only the spaces THIS subtree places on this level, not
+  # sibling spaces an outer combinator (BesideX/BesideY/Above) already placed
+  # at the same z. Rebuild around the existing boundary (NOT `_make_space`,
+  # which would flatten a polar boundary to its bounding rectangle), mirroring
+  # the Above `_no_floor_slab` re-stamp.
+  before = Set(keys(spaces))
   sw, sd, _ = _layout!(spaces, h.base, x, y, z, prefix)
-  # Override height on every space laid out on this level.
   for (id, sp) in spaces
-    if sp.origin_z == z
-      (ox, oy) = space_origin(sp)
-      spaces[id] = _make_space(
-        id, sp.kind, ox, oy, sp.origin_z,
-        space_width(sp), space_depth(sp), h.height, sp.props)
-    end
+    (id in before || !(sp.origin_z ≈ z)) && continue
+    spaces[id] = Space(sp.id, sp.kind, sp.boundary;
+                       height=h.height, props=sp.props, origin_z=sp.origin_z)
   end
   (sw, sd, h.height)
 end
@@ -286,7 +317,7 @@ function _layout!(spaces, s::Subdivided, x, y, z, prefix)
     for (ratio, id) in zip(s.ratios, s.ids)
       zone_w = base_w * ratio
       sid = _scoped_id(prefix, id)
-      spaces[sid] = _make_space(sid, :zone, cx_pos, y, z, zone_w, base_d, base_h, (;))
+      _place!(spaces, sid, _make_space(sid, :zone, cx_pos, y, z, zone_w, base_d, base_h, (;)))
       cx_pos += zone_w
     end
   else  # :y
@@ -294,7 +325,7 @@ function _layout!(spaces, s::Subdivided, x, y, z, prefix)
     for (ratio, id) in zip(s.ratios, s.ids)
       zone_d = base_d * ratio
       sid = _scoped_id(prefix, id)
-      spaces[sid] = _make_space(sid, :zone, x, cy_pos, z, base_w, zone_d, base_h, (;))
+      _place!(spaces, sid, _make_space(sid, :zone, x, cy_pos, z, base_w, zone_d, base_h, (;)))
       cy_pos += zone_d
     end
   end
@@ -310,14 +341,14 @@ function _layout!(spaces, p::Partitioned, x, y, z, prefix)
     for i in 1:p.count
       id = _scoped_id(prefix, Symbol(p.id_prefix, "_", i))
       cx_pos = x + (i - 1) * cell_w
-      spaces[id] = _make_space(id, :zone, cx_pos, y, z, cell_w, base_d, base_h, (;))
+      _place!(spaces, id, _make_space(id, :zone, cx_pos, y, z, cell_w, base_d, base_h, (;)))
     end
   else  # :y
     cell_d = base_d / p.count
     for i in 1:p.count
       id = _scoped_id(prefix, Symbol(p.id_prefix, "_", i))
       cy_pos = y + (i - 1) * cell_d
-      spaces[id] = _make_space(id, :zone, x, cy_pos, z, base_w, cell_d, base_h, (;))
+      _place!(spaces, id, _make_space(id, :zone, x, cy_pos, z, base_w, cell_d, base_h, (;)))
     end
   end
   (base_w, base_d, base_h)
@@ -326,8 +357,8 @@ end
 function _layout!(spaces, c::Carved, x, y, z, prefix)
   bw, bd, bh = _layout!(spaces, c.base, x, y, z, prefix)
   id = _scoped_id(prefix, c.id)
-  spaces[id] = _make_space(id, c.use,
-    x + c.x, y + c.y, z, c.width, c.depth, bh, (;))
+  _place!(spaces, id, _make_space(id, c.use,
+    x + c.x, y + c.y, z, c.width, c.depth, bh, (;)))
   (bw, bd, bh)
 end
 
@@ -410,7 +441,7 @@ function _layout!(spaces, sr::SubdivideRemaining, x, y, z, prefix)
     (bwid > 0 && bdep > 0) ||
       error("subdivide_remaining: block $bid at $pos has non-positive extent")
     sid = _scoped_id(prefix, bid)
-    spaces[sid] = _make_space(sid, :zone, bx, by, z, bwid, bdep, bh, (;))
+    _place!(spaces, sid, _make_space(sid, :zone, bx, by, z, bwid, bdep, bh, (;)))
   end
   (bw, bd, bh)
 end
@@ -443,9 +474,9 @@ end
 
 function _layout!(spaces, pe::PolarEnvelope, x, y, z, prefix)
   id = _scoped_id(prefix, pe.id)
-  spaces[id] = _make_polar_space(id, pe.use, pe.center,
+  _place!(spaces, id, _make_polar_space(id, pe.use, pe.center,
     pe.r_inner, pe.r_outer, pe.theta_start, pe.theta_end,
-    z, pe.height, pe.n_arc, pe.props)
+    z, pe.height, pe.n_arc, pe.props))
   # Polar subtrees are absolute-positioned, so report zero contribution
   # to the Cartesian (x, y) budget. `above` still stacks correctly via
   # the height term.
@@ -462,10 +493,10 @@ function _layout!(spaces, sp::SubdividedPolar, x, y, z, prefix)
     for (ratio, id) in zip(sp.ratios, sp.ids)
       r_band = r_span * ratio / total
       sid = _scoped_id(prefix, id)
-      spaces[sid] = _make_polar_space(sid, :zone, pe.center,
+      _place!(spaces, sid, _make_polar_space(sid, :zone, pe.center,
         cursor, cursor + r_band,
         pe.theta_start, pe.theta_end,
-        z, pe.height, pe.n_arc, (;))
+        z, pe.height, pe.n_arc, (;)))
       cursor += r_band
     end
   elseif sp.axis == :angular
@@ -474,10 +505,10 @@ function _layout!(spaces, sp::SubdividedPolar, x, y, z, prefix)
     for (ratio, id) in zip(sp.ratios, sp.ids)
       th_band = th_span * ratio / total
       sid = _scoped_id(prefix, id)
-      spaces[sid] = _make_polar_space(sid, :zone, pe.center,
+      _place!(spaces, sid, _make_polar_space(sid, :zone, pe.center,
         pe.r_inner, pe.r_outer,
         cursor, cursor + th_band,
-        z, pe.height, pe.n_arc, (;))
+        z, pe.height, pe.n_arc, (;)))
       cursor += th_band
     end
   else
@@ -494,18 +525,18 @@ function _layout!(spaces, pp::PartitionedPolar, x, y, z, prefix)
     for i in 1:pp.count
       sid = _scoped_id(prefix, Symbol(pp.id_prefix, "_", i))
       th0 = pe.theta_start + (i - 1) * th_step
-      spaces[sid] = _make_polar_space(sid, :zone, pe.center,
+      _place!(spaces, sid, _make_polar_space(sid, :zone, pe.center,
         pe.r_inner, pe.r_outer, th0, th0 + th_step,
-        z, pe.height, pe.n_arc, (;))
+        z, pe.height, pe.n_arc, (;)))
     end
   elseif pp.axis == :radial
     r_step = (pe.r_outer - pe.r_inner) / pp.count
     for i in 1:pp.count
       sid = _scoped_id(prefix, Symbol(pp.id_prefix, "_", i))
       r0 = pe.r_inner + (i - 1) * r_step
-      spaces[sid] = _make_polar_space(sid, :zone, pe.center,
+      _place!(spaces, sid, _make_polar_space(sid, :zone, pe.center,
         r0, r0 + r_step, pe.theta_start, pe.theta_end,
-        z, pe.height, pe.n_arc, (;))
+        z, pe.height, pe.n_arc, (;)))
     end
   else
     error("partition polar: unknown axis $(pp.axis)")
