@@ -291,4 +291,36 @@ using KhepriBase
     @test gc isa GeometryCollection
     @test length(gc.geometries) == 2
   end
+
+  @testset "intersection kind from pre-clip geometry (T21)" begin
+    # A genuine transversal whose 2nd hit falls OUTSIDE the segment/arc domain leaves one point;
+    # it must still read :transversal (the old length(points)==1 test mislabeled it :tangent).
+    let hits = intersections(line_path(xy(0, 0), xy(10, 0)), circular_path(xy(0, 0), 5.0))
+      @test length(hits) == 1
+      @test hits[1].kind == :transversal          # infinite line through the centre → transversal
+    end
+    # circle/circle externally tangent (d == r1+r2) reads :tangent even with a single surviving point.
+    let hits = intersections(circular_path(xy(0, 0), 1.0), circular_path(xy(2, 0), 1.0))
+      @test length(hits) == 1
+      @test hits[1].kind == :tangent
+    end
+    # circle/plane: a transversal circle whose 2nd hit is off the arc domain stays :transversal.
+    let arc = arc_path(u0(), 5.0, 0, π/2),
+        vert = plane_surface(loc_from_o_rot_x(u0(), pi/2)),
+        hits = intersections(arc, vert)
+      @test length(hits) == 1
+      @test hits[1].kind == :transversal
+    end
+  end
+
+  @testset "lines_intersection: scale-invariant parallelism (T21)" begin
+    # Non-parallel crossing keeps the exact intersection (formula unchanged).
+    let p = KhepriBase.lines_intersection(xy(0, 0), xy(1, 1), xy(0, 1), xy(1, 0))
+      @test p.x ≈ 0.5 atol=1e-12
+      @test p.y ≈ 0.5 atol=1e-12
+    end
+    @test KhepriBase.lines_intersection(xy(0, 0), xy(1, 0), xy(0, 1), xy(1, 1)) === nothing  # parallel
+    # Near-parallel (~1e-9 rad): was a wildly amplified point, now correctly nothing.
+    @test KhepriBase.lines_intersection(xy(0, 0), xy(1, 0), xy(0, 1), xy(1e6, 1 + 1e-9)) === nothing
+  end
 end

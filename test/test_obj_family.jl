@@ -23,6 +23,19 @@ end
     @test faces == [[1, 2, 3]]
   end
 
+  @testset "read_obj_mesh resolves negative indices + pads short v lines (T21)" begin
+    # A short "v 0 1" line was silently skipped, shifting every later 1-based face index; and OBJ's
+    # negative (relative) indices were parsed as literal negatives. Harden both.
+    p2 = joinpath(dir, "hardening.obj")
+    write(p2, "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1\nf 1 2 3\nf -1 -2 -3\n")
+    local verts, faces
+    @test_logs (:warn,) match_mode=:any ((verts, faces) = KhepriBase.read_obj_mesh(p2))
+    @test length(verts) == 4                 # short "v 0 1" padded, not dropped
+    @test verts[4] == [0.0, 1.0, 0.0]        # missing z → 0.0
+    @test faces[1] == [1, 2, 3]
+    @test faces[2] == [4, 3, 2]              # -1,-2,-3 resolved against the 4 vertices
+  end
+
   @testset "obj_file_path passes through .obj / absolute paths" begin
     @test KhepriBase.obj_file_path(objpath) == objpath                    # absolute .obj → verbatim
     @test KhepriBase.obj_file_path("Porta/Porta") ==

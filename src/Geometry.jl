@@ -276,15 +276,16 @@ segments_intersection(p0, p1, p2, p3) =
   end
 
 lines_intersection(p0, p1, p2, p3) =
-  let denom = (p3.y - p2.y)*(p1.x - p0.x) - (p3.x - p2.x)*(p1.y - p0.y)
-    if denom == 0
-      nothing
-    else
-      let u = ((p3.x - p2.x)*(p0.y - p2.y) - (p3.y - p2.y)*(p0.x - p2.x))/denom,
-          v = ((p1.x - p0.x)*(p0.y - p2.y) - (p1.y - p0.y)*(p0.x - p2.x))/denom
-        xy(p0.x + u*(p1.x - p0.x), p0.y + u*(p1.y - p0.y))
+  let d1x = p1.x - p0.x, d1y = p1.y - p0.y,
+      d2x = p3.x - p2.x, d2y = p3.y - p2.y,
+      denom = d2y*d1x - d2x*d1y   # = cross(d1, d2): the 2D cross of the two direction vectors
+    # Scale-invariant parallelism (|d1×d2|² ≤ tol·|d1|²·|d2|²): an exact `denom == 0` only caught
+    # perfectly parallel lines and let a near-parallel pair return a wildly amplified point (~1/sinθ).
+    denom*denom <= parallelism_tolerance()*(d1x*d1x + d1y*d1y)*(d2x*d2x + d2y*d2y) ?
+      nothing :
+      let u = (d2x*(p0.y - p2.y) - d2y*(p0.x - p2.x))/denom
+        xy(p0.x + u*d1x, p0.y + u*d1y)
       end
-    end
   end
 
 #=

@@ -839,9 +839,59 @@ function _line_circle_points(line::LinePath, circle::Union{ArcPath,CircularPath}
   _dedupe_points(points, opts.tolerance)
 end
 
+# Tangent-vs-transversal must be derived from PRE-CLIP geometry, not from how many points survived
+# the segment/arc-domain clipping: a genuine transversal whose 2nd hit falls outside the segment or arc
+# domain leaves exactly one point and was misreported as tangent. Each helper below returns the intrinsic
+# kind from the full-circle / infinite-line geometry, before any domain clipping.
+
+# line/circle: coplanar center-to-infinite-line distance vs radius (a non-coplanar line is transversal).
+_line_circle_kind(line, circle, opts) =
+  let c = _circle_center(circle), cs = c.cs,
+      p0 = in_cs(line.p0, cs), p1 = in_cs(line.p1, cs)
+    (abs(p0.z - c.z) <= opts.tolerance && abs(p1.z - c.z) <= opts.tolerance) || return :transversal
+    let dx = p1.x - p0.x, dy = p1.y - p0.y, len = hypot(dx, dy)
+      len <= opts.tolerance && return :transversal
+      abs(abs(dx*(p0.y - c.y) - dy*(p0.x - c.x))/len - _circle_radius(circle)) <= opts.tolerance ?
+        :tangent : :transversal
+    end
+  end
+
+# circle/circle: tangent iff externally (d≈r1+r2) or internally (d≈|r1-r2|) tangent. Recomputes d,r1,r2
+# exactly as _circle_circle_points (only reached for the coplanar transversal/tangent case).
+_circle_circle_kind(a, b, opts) =
+  let c1 = _circle_center(a), c2 = in_cs(_circle_center(b), c1.cs),
+      r1 = _circle_radius(a), r2 = _circle_radius(b),
+      d = hypot(c2.x - c1.x, c2.y - c1.y)
+    (abs(d - (r1 + r2)) <= opts.tolerance || abs(d - abs(r1 - r2)) <= opts.tolerance) ?
+      :tangent : :transversal
+  end
+
+# Intersection line of two planes as (line_point, unit_dir); `nothing` when parallel. Only called on
+# non-parallel planes (the parallel case is resolved to :coplanar/empty before the kind classifier runs).
+_plane_intersection_line(plane_a::PlaneSurface, plane_b::PlaneSurface) =
+  let (p1, n1) = _plane_equation(plane_a),
+      (p2, n2) = _plane_equation(plane_b),
+      d = LinearAlgebra.cross(n1, n2),
+      denom = dot(d, d)
+    denom <= parallelism_tolerance() ? nothing :
+      let c1 = dot(n1, p1), c2 = dot(n2, p2),
+          line_point = (LinearAlgebra.cross(d, n2) * c1 + LinearAlgebra.cross(n1, d) * c2) / denom
+        (line_point, d / sqrt(denom))
+      end
+  end
+
+# circle/plane: tangent iff the circle center's distance to the plane-intersection line ≈ radius.
+_circle_plane_kind(path, surface, opts) =
+  let (line_point, dir) = _plane_intersection_line(plane_surface(path.center), surface),
+      cw = in_world(path.center), center = SVector(cw.x, cw.y, cw.z),
+      t = dot(center - line_point, dir),
+      dist = sqrt(sum(abs2, (line_point + dir*t) - center))
+    abs(dist - Float64(path.radius)) <= opts.tolerance ? :tangent : :transversal
+  end
+
 function _analytic_intersections(line::LinePath, circle::Union{ArcPath,CircularPath}, opts::GeometryOperationOptions)
   points = _line_circle_points(line, circle, opts)
-  kind = length(points) == 1 ? :tangent : :transversal
+  kind = _line_circle_kind(line, circle, opts)
   elements = IntersectionElement[
     PointIntersection(p;
       parameters=(first=_point_on_segment_parameter(line, p),
@@ -932,7 +982,7 @@ function _analytic_intersections(a::Union{ArcPath,CircularPath}, b::Union{ArcPat
     return IntersectionSet(a, b, elements; tolerance=opts.tolerance)
   end
   points = _circle_circle_points(a, b, opts)
-  kind = length(points) == 1 ? :tangent : :transversal
+  kind = _circle_circle_kind(a, b, opts)
   elements = IntersectionElement[
     PointIntersection(p;
       parameters=(first=_path_parameter_for_angle(a, atan(in_cs(p, a.center.cs).y - a.center.y,
@@ -1028,7 +1078,7 @@ function _analytic_intersections(path::Union{ArcPath,CircularPath}, surface::Pla
   points === :coplanar && return IntersectionSet(path, surface, [CurveIntersection(path;
     parameters=(first=path_domain(path), second=nothing), kind=:overlap)];
     tolerance=opts.tolerance)
-  kind = length(points) == 1 ? :tangent : :transversal
+  kind = _circle_plane_kind(path, surface, opts)
   elements = IntersectionElement[
     PointIntersection(p;
       parameters=(first=_path_parameter_for_angle(path, atan(in_cs(p, path.center.cs).y - path.center.y,

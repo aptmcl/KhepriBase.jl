@@ -196,14 +196,20 @@ combine(constraints::Constraint...) =
 Disjoin two constraints: passes when at least one has no violations.
 If both fail, the fewer violations are reported.
 """
-either(a::Constraint, b::Constraint) = Constraint(
-  "$(a.name) | $(b.name)",
-  most_severe((a.severity, b.severity)),
-  a.category,
-  ctx -> let va = a.check(ctx), vb = b.check(ctx)
-    isempty(va) || isempty(vb) ? Violation[] :
-      length(va) <= length(vb) ? va : vb
-  end)
+either(a::Constraint, b::Constraint) =
+  let name = "$(a.name) | $(b.name)", sev = most_severe((a.severity, b.severity))
+    Constraint(name, sev, a.category,
+      ctx -> let va = a.check(ctx), vb = b.check(ctx)
+        isempty(va) || isempty(vb) ? Violation[] :
+          # Stamp the combined (most-severe) severity onto the chosen child's violations so they
+          # agree with this constraint's declared severity — mirroring with_severity, and KEEPING
+          # each v.constraint_name (ConstraintFixer substring-matches on it, so renaming would
+          # stop a fixer keyed on the child's name from ever matching).
+          [Violation(v.constraint_name, sev, v.category, v.target, v.message,
+                     v.actual_value, v.limit_value)
+           for v in (length(va) <= length(vb) ? va : vb)]
+      end)
+  end
 
 """
     when(predicate, constraint)

@@ -21,4 +21,19 @@ using KhepriBase
     @test_throws ErrorException KhepriBase.combine()
     @test_throws ErrorException KhepriBase.merge_constraints()
   end
+
+  @testset "either() stamps combined severity onto emitted violations (T21)" begin
+    # The chosen child's violations must carry the either-constraint's declared (most-severe)
+    # severity, not the child's own — while KEEPING v.constraint_name (ConstraintFixer substring-
+    # matches on it, so renaming would break a fixer keyed on the child's name).
+    cat = first(instances(KhepriBase.ConstraintCategory))
+    viol(nm) = KhepriBase.Violation(nm, KhepriBase.SOFT, cat, "tgt", "msg", 1.0, 0.0)
+    a = KhepriBase.Constraint("a", KhepriBase.HARD, cat, ctx -> [viol("a")])
+    b = KhepriBase.Constraint("b", KhepriBase.SOFT, cat, ctx -> [viol("b")])
+    let vs = KhepriBase.either(a, b).check(nothing)
+      @test length(vs) == 1
+      @test vs[1].severity == KhepriBase.HARD          # combined, not the child's SOFT
+      @test vs[1].constraint_name == "a"               # child name preserved
+    end
+  end
 end

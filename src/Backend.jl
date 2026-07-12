@@ -2773,7 +2773,9 @@ obj_file_path(obj_name) =
     faces    — Vector of Int arrays (1-based vertex indices)
 
   Only processes 'v' (vertex) and 'f' (face) lines.
-  Face indices with texture/normal components (v/vt/vn) are handled.
+  Face indices with texture/normal components (v/vt/vn) are handled, as are OBJ's negative
+  (relative) indices (-1 = the most recently defined vertex). A malformed/short 'v' line is padded
+  (not skipped) so it does not shift every subsequent 1-based face index.
 =#
 function read_obj_mesh(filepath)
   vertices = Vector{Float64}[]
@@ -2782,14 +2784,22 @@ function read_obj_mesh(filepath)
     for line in eachline(io)
       parts = split(strip(line))
       isempty(parts) && continue
-      if parts[1] == "v" && length(parts) >= 4
-        push!(vertices, [parse(Float64, parts[2]),
-                         parse(Float64, parts[3]),
-                         parse(Float64, parts[4])])
+      if parts[1] == "v"
+        if length(parts) >= 4
+          push!(vertices, [parse(Float64, parts[2]),
+                           parse(Float64, parts[3]),
+                           parse(Float64, parts[4])])
+        else
+          # Skipping a short 'v' line would shift every later 1-based face index by one; pad instead.
+          @warn "read_obj_mesh: malformed vertex line, padding to keep index alignment" line
+          push!(vertices, [i + 1 <= length(parts) ? parse(Float64, parts[i + 1]) : 0.0 for i in 1:3])
+        end
       elseif parts[1] == "f"
+        n = length(vertices)
         face = Int[]
         for i in 2:length(parts)
-          push!(face, parse(Int, split(parts[i], '/')[1]))
+          idx = parse(Int, split(parts[i], '/')[1])
+          push!(face, idx < 0 ? n + idx + 1 : idx)   # resolve negative/relative to a 1-based index
         end
         push!(faces, face)
       end
