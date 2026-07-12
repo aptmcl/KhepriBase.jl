@@ -1450,7 +1450,7 @@ function place_interior_connection!(conn, segments, edge_to_seg, walls,
     off = seg_offset[gs]
     ln  = segment_length(wg, gs)
     fwd = seg_forward[gs]
-    t0, t1 = fwd ? (off, off + ln) : (off, off + ln)  # chain-space always forward
+    t0, t1 = off, off + ln  # chain-space is always forward; `fwd` (pushed below) carries the world-space orientation
     push!(get!(by_wall, wall_idx, []), (i, t0, t1, seg[1], seg[2], fwd))
   end
   isempty(by_wall) &&

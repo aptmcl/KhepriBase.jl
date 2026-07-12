@@ -905,7 +905,7 @@ Blender Cycles, Rhino, AutoCAD, or POVJay is rendering it.
     has a slightly lower specular than plaster, which in turn is lower
     than clay, matching real-world observations.
 
-See also: `architectural_pbr_table` in ArchMaterials.jl (the iterable
+See also: `architectural_materials` in ArchMaterials.jl (the iterable
 version used by cross-backend tests and by the default-material closures in
 KhepriBlender / KhepriMitsuba / …).
 =#

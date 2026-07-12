@@ -179,7 +179,8 @@ most_severe(severities) = minimum(severities)
     combine(constraints...)
 
 Conjoin multiple constraints into one whose check returns the
-concatenation of all inputs' violations. Takes the maximum severity.
+concatenation of all inputs' violations. The combined constraint takes
+the most-severe input severity (`most_severe`, i.e. the numeric minimum).
 """
 combine(constraints::Constraint...) =
   isempty(constraints) ? error("combine: needs at least one constraint") :

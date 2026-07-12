@@ -88,7 +88,11 @@ finish_film() =
   end
 
 #=
-To generate the actual film from the set of frames, we need ffmpeg.
+To generate the actual film from the set of frames, we invoke ffmpeg through the
+codebase's established external-tool idiom (Sys.which-guard + run(pipeline)), the
+same pattern to_from/PDFFile show use in Utils.jl. Every render backend (POVRay,
+Mitsuba, Blender, …) shares this film assembly, preserving cross-backend
+equivalence.
 =#
 create_mp4_from_frames(name=film_filename()) =
   with(render_kind_dir, "Film") do
@@ -96,10 +100,17 @@ create_mp4_from_frames(name=film_filename()) =
       with(render_ext, "-film.mp4") do
         let film_path = prepare_for_saving_file(render_default_pathname(name))
           with(render_ext, "-frame*.png") do
-            let frames_path = render_pathname(name)
-              println(frames_path)
-              println(film_path)
-              println("`ffmpeg -pattern_type glob -i '$(frames_path)' -c:v libx264 -vf fps=25 -pix_fmt yuv420p $(film_path)`")
+            let frames_path = render_pathname(name),
+                ffmpeg = Sys.which("ffmpeg")
+              isnothing(ffmpeg) &&
+                error("Could not find ffmpeg on PATH; install it to assemble \"$(film_path)\" from the frames matching \"$(frames_path)\".")
+              # ffmpeg expands the -frame*.png glob itself (`-pattern_type glob`); Julia
+              # backticks do NOT shell-expand, so frames_path is passed as one literal
+              # argument. `-y` overwrites without an interactive prompt (stdout/stderr go
+              # to devnull, so a prompt would hang unseen).
+              run(pipeline(`$(ffmpeg) -y -pattern_type glob -i $(frames_path) -c:v libx264 -vf fps=25 -pix_fmt yuv420p $(film_path)`,
+                           stdout=devnull, stderr=devnull), wait=true)
+              film_path
             end
           end
         end
