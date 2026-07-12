@@ -273,17 +273,25 @@ KhepriBase.b_delete_all_shapes(b::KhepriBase.SocketBackend{TestSocketBackendKey,
       end
     end
 
-    @testset "b_surface_mesh accepts 0-based and 1-based faces" begin
+    @testset "b_surface_mesh treats faces as 0-based canonical (T21)" begin
       verts = [xy(0, 0), xy(1, 0), xy(0, 1)]
       with_mock_backend() do b
         refs = KhepriBase.b_surface_mesh(b, verts, [[0, 1, 2]], nothing)
         @test length(refs) == 1
         @test length(b.triangles) == 1
       end
+      # Vertex-0-unused regression: the old presence-of-a-0 heuristic guessed 1-based here and read the
+      # WRONG vertices. 0-based-canonical always maps face i → verts[i+1], so [[1,2,3]] addresses
+      # verts[2..4], NOT verts[1..3]. (Dual-base acceptance WAS the bug.)
       with_mock_backend() do b
-        refs = KhepriBase.b_surface_mesh(b, verts, [[1, 2, 3]], nothing)
-        @test length(refs) == 1
+        verts4 = [xy(0, 0), xy(1, 0), xy(0, 1), xy(1, 1)]
+        KhepriBase.b_surface_mesh(b, verts4, [[1, 2, 3]], nothing)
         @test length(b.triangles) == 1
+        let t = b.triangles[1]
+          @test t.p1.x ≈ 1 && t.p1.y ≈ 0     # verts4[2]
+          @test t.p2.x ≈ 0 && t.p2.y ≈ 1     # verts4[3]
+          @test t.p3.x ≈ 1 && t.p3.y ≈ 1     # verts4[4], not verts4[1..3]
+        end
       end
     end
 

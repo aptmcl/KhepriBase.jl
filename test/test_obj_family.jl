@@ -36,6 +36,30 @@ end
     @test faces[2] == [4, 3, 2]              # -1,-2,-3 resolved against the 4 vertices
   end
 
+  @testset "read_obj_mesh tracks per-face usemtl group (T21)" begin
+    p3 = joinpath(dir, "twomat.obj")
+    write(p3, "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 1 1 0\nusemtl red\nf 1 2 3\nusemtl blue\nf 2 4 3\n")
+    (verts, faces, face_mats) = KhepriBase.read_obj_mesh(p3)
+    @test length(faces) == 2
+    @test face_mats == ["red", "blue"]       # active usemtl captured per face
+  end
+
+  @testset "b_mesh_obj_fmt groups a 2-material OBJ (0-based faces, no loss)" begin
+    p3 = joinpath(dir, "twomat.obj")          # (written above)
+    write(joinpath(dir, "twomat.mtl"),
+          "newmtl red\nKd 1 0 0\nnewmtl blue\nKd 0 0 1\n")
+    mb = MockBackend()
+    KhepriBase.b_mesh_obj_fmt(mb, p3, u0())
+    @test length(mb.triangles) == 2          # one per face, split across two material groups, none lost
+    @test length(mb.boxes) == 0
+    # 0-based decrement correct: face "f 2 4 3" (1-based) → verts[2,4,3] = (1,0,0),(1,1,0),(0,1,0).
+    let t = mb.triangles[2]
+      @test (t.p1.x, t.p1.y) == (1.0, 0.0)
+      @test (t.p2.x, t.p2.y) == (1.0, 1.0)
+      @test (t.p3.x, t.p3.y) == (0.0, 1.0)
+    end
+  end
+
   @testset "obj_file_path passes through .obj / absolute paths" begin
     @test KhepriBase.obj_file_path(objpath) == objpath                    # absolute .obj → verbatim
     @test KhepriBase.obj_file_path("Porta/Porta") ==

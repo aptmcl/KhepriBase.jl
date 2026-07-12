@@ -752,17 +752,20 @@ maybe_interpolate_grid(ptss, smooth_u, smooth_v) =
 b_smooth_surface_grid(b::Backend, ptss, closed_u, closed_v, mat) =
   b_surface_grid(b, smooth_grid(ptss), closed_u, closed_v, true, true, mat)
 
+# Faces are canonically 0-based (the convention emitted by the `surface_mesh`/`mesh` shape default
+# `[[0,1,2]]` and by `tessellate_surface`). The old presence-of-a-literal-0 heuristic guessed the base
+# and misfired whenever vertex 0 was unused (treating a 0-based mesh as 1-based, off-by-one), and it
+# masked a real cross-backend divergence (Rhino assumed 1-based, Unreal 0-based). Producers that are
+# OBJ-native 1-based (read_obj_mesh) decrement to 0-based before reaching here.
 b_surface_mesh(b::Backend, vertices, faces, mat) =
-  let index_offset = any(face -> any(==(0), face), faces) ? 1 : 0
-    map(faces) do face
-      face_vertices = vertices[face .+ index_offset]
-      if length(face) == 3
-        b_trig(b, face_vertices..., mat)
-      elseif length(face) == 4
-        b_quad(b, face_vertices..., mat)
-      else
-        b_surface_polygon(b, face_vertices, mat)
-      end
+  map(faces) do face
+    face_vertices = vertices[face .+ 1]
+    if length(face) == 3
+      b_trig(b, face_vertices..., mat)
+    elseif length(face) == 4
+      b_quad(b, face_vertices..., mat)
+    else
+      b_surface_polygon(b, face_vertices, mat)
     end
   end
 
@@ -1009,19 +1012,31 @@ b_torus(b::Backend, c, ra, rb, mat) =
         mat)
   end
 
+# Realize an OBJ mesh grouped by `usemtl`: each face-material group is emitted as one b_surface_mesh
+# call carrying that group's material (unknown/blank names → `fallback_mat`), with the OBJ-native
+# 1-based faces converted to the canonical 0-based convention b_surface_mesh expects. A single-material
+# (or usemtl-less) OBJ collapses to one group, matching the previous single-colour behaviour.
+_b_surface_mesh_obj(b::Backend, verts, faces, face_mats, mtl_by_name, fallback_mat) =
+  let ref_for(name) = haskey(mtl_by_name, name) ? material_ref(b, mtl_by_name[name]) : fallback_mat
+    vcat((let is = findall(==(name), face_mats)
+            b_surface_mesh(b, verts, [faces[i] .- 1 for i in is], ref_for(name))
+          end
+          for name in unique(face_mats))...)
+  end
+
 public b_mesh_obj_fmt
 # Default: parse the OBJ file on the Julia side and emit a surface mesh, so OBJ-family elements
 # (sinks, chairs, doors, extracted Revit families, …) realize on ANY backend — not just those with a
 # native OBJ loader. Backends with native/instanced OBJ import (e.g. KhepriThreejs) override this.
 b_mesh_obj_fmt(b::Backend, obj_name, transform) =
   let objpath = obj_file_path(obj_name),
-      (verts, faces) = read_obj_mesh(objpath),
+      (verts, faces, face_mats) = read_obj_mesh(objpath),
       ps = transform_obj_vertices(verts, transform),
       # Recover colour from the .mtl sibling so OBJ-family meshes aren't grey on file backends without a
-      # native OBJ loader (KhepriThreejs overrides this and loads the .mtl itself).
-      m = _obj_sibling_material(objpath),
-      mat = isnothing(m) ? void_ref(b) : material_ref(b, m)
-    b_surface_mesh(b, ps, faces, mat)
+      # native OBJ loader (KhepriThreejs overrides this and loads the .mtl itself), grouped by usemtl.
+      (mtl, order) = parse_mtl(splitext(objpath)[1] * ".mtl"),
+      fb = isempty(order) ? void_ref(b) : material_ref(b, mtl[first(order)])
+    _b_surface_mesh_obj(b, ps, faces, face_mats, mtl, fb)
   end
 public b_set_environment
 @bdef(b_set_environment(env_name, set_background))
@@ -2768,18 +2783,22 @@ obj_file_path(obj_name) =
 #=
   read_obj_mesh(filepath)
 
-  Parse an OBJ file and return (vertices, faces) where:
-    vertices — Vector of [x, y, z] Float64 arrays
-    faces    — Vector of Int arrays (1-based vertex indices)
+  Parse an OBJ file and return (vertices, faces, face_materials) where:
+    vertices       — Vector of [x, y, z] Float64 arrays
+    faces          — Vector of Int arrays (1-based OBJ-native vertex indices)
+    face_materials — the active `usemtl` name for each face ("" before any usemtl), so multi-material
+                     meshes can be realized per material group
 
-  Only processes 'v' (vertex) and 'f' (face) lines.
-  Face indices with texture/normal components (v/vt/vn) are handled, as are OBJ's negative
-  (relative) indices (-1 = the most recently defined vertex). A malformed/short 'v' line is padded
-  (not skipped) so it does not shift every subsequent 1-based face index.
+  Only processes 'v' (vertex), 'usemtl', and 'f' (face) lines. Face indices with texture/normal
+  components (v/vt/vn) are handled, as are OBJ's negative (relative) indices (-1 = the most recently
+  defined vertex). A malformed/short 'v' line is padded (not skipped) so it does not shift every
+  subsequent 1-based face index.
 =#
 function read_obj_mesh(filepath)
   vertices = Vector{Float64}[]
   faces = Vector{Int}[]
+  face_materials = String[]
+  cur = ""                       # active usemtl group
   open(filepath) do io
     for line in eachline(io)
       parts = split(strip(line))
@@ -2794,6 +2813,8 @@ function read_obj_mesh(filepath)
           @warn "read_obj_mesh: malformed vertex line, padding to keep index alignment" line
           push!(vertices, [i + 1 <= length(parts) ? parse(Float64, parts[i + 1]) : 0.0 for i in 1:3])
         end
+      elseif parts[1] == "usemtl"
+        cur = length(parts) >= 2 ? String(parts[2]) : ""
       elseif parts[1] == "f"
         n = length(vertices)
         face = Int[]
@@ -2802,10 +2823,11 @@ function read_obj_mesh(filepath)
           push!(face, idx < 0 ? n + idx + 1 : idx)   # resolve negative/relative to a 1-based index
         end
         push!(faces, face)
+        push!(face_materials, cur)
       end
     end
   end
-  (vertices, faces)
+  (vertices, faces, face_materials)
 end
 
 # Parse a Wavefront .mtl into name → Material (base colour from Kd, opacity from d), so obj_model meshes

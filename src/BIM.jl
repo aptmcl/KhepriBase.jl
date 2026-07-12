@@ -1685,15 +1685,21 @@ realize(b::Backend, s::ObjModel) = b_obj_model(b, s.path, s.location, s.scale, s
 public b_obj_model
 b_obj_model(b::Backend, path, location, scale, material) =
   let objpath = obj_file_path(path),
-      (verts, faces) = read_obj_mesh(objpath),
+      (verts, faces, face_mats) = read_obj_mesh(objpath),
       # Place each (scaled) OBJ vertex in the location's frame: works whether `location` is a plain
       # world point or a full frame u0(cs=cs(o, vx, vy, vz)) as emitted by the geometric fallback.
-      placed = [in_world(location + vxyz(v[1] * scale, v[2] * scale, v[3] * scale)) for v in verts],
-      # When the obj_model carries no explicit material, recover colour from the .mtl sibling (the Revit
-      # exporter writes one next to each fallback .obj) so fallback meshes render coloured, not void/grey.
-      eff = isnothing(material) ? _obj_sibling_material(objpath) : material,
-      mat = isnothing(eff) ? void_ref(b) : material_ref(b, eff)
-    b_surface_mesh(b, placed, faces, mat)
+      placed = [in_world(location + vxyz(v[1] * scale, v[2] * scale, v[3] * scale)) for v in verts]
+    if isnothing(material)
+      # No explicit material: colour each usemtl group from the .mtl sibling (the Revit exporter writes
+      # one next to each fallback .obj) so fallback meshes render coloured, not void/grey.
+      let (mtl, order) = parse_mtl(splitext(objpath)[1] * ".mtl"),
+          fb = isempty(order) ? void_ref(b) : material_ref(b, mtl[first(order)])
+        _b_surface_mesh_obj(b, placed, faces, face_mats, mtl, fb)
+      end
+    else
+      # An explicit material overrides every group; faces are OBJ-native 1-based → canonical 0-based.
+      b_surface_mesh(b, placed, [f .- 1 for f in faces], material_ref(b, material))
+    end
   end
 
 @defcb lighting_analysis()
