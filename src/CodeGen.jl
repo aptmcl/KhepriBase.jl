@@ -239,7 +239,6 @@ function shapes_to_khepri_code(shapes, b; output_path=nothing)
                 extract_families(fmap),
                 add_backend_families(b, fmap),
                 loop_rerolling,
-                detect_level_repetition,
                 add_geometric_header(b)],
       code = expr_to_string(foldl((e, pass) -> pass(e), passes, init=raw_expr))
     output_path === nothing || open(io -> write(io, code), output_path, "w")
@@ -422,20 +421,21 @@ function _try_reroll(stmts)
   template = stmts[1]
   all_diffs = [expr_diff(template, s) for s in stmts[2:end]]
   isempty(all_diffs) && return nothing
-  ref_paths = Set([d[1] for d in all_diffs[1]])
-  all(ds -> Set([d[1] for d in ds]) == ref_paths, all_diffs) || return nothing
+  # ref_paths = the UNION of every path that varies in ANY consecutive pair. A 2-D grid varies
+  # in one axis for some pairs and in both for others, so no single pair sees all the varying
+  # paths — the old per-pair-equality test never reached the 2-D detector and left grids flat.
+  ref_paths = Set{Vector{Int}}()
+  for ds in all_diffs, (p, _, _) in ds
+    push!(ref_paths, p)
+  end
   paths = sort(collect(ref_paths))
   isempty(paths) && return nothing
-  # Collect value sequences for each varying path
-  value_lists = Dict{Vector{Int}, Vector{Any}}()
-  for p in paths
-    value_lists[p] = [_get_diff_value(template, p)]
-  end
-  for ds in all_diffs
-    for (p, _, v2) in ds
-      push!(value_lists[p], v2)
-    end
-  end
+  # Read one value per statement at each varying path — from EVERY statement, not just the ones
+  # where it happens to differ from the template — so the per-path lists stay aligned and each has
+  # length == length(stmts). (`loop_rerolling` only forms a run of structurally-identical calls
+  # with leaf-only diffs, so every path is a valid leaf path in every statement.)
+  value_lists = Dict{Vector{Int}, Vector{Any}}(
+    p => [_get_diff_value(s, p) for s in stmts] for p in paths)
   # Try to detect 2D grid pattern (two varying paths)
   if length(paths) == 2
     _try_reroll_2d(template, paths, value_lists)
@@ -548,14 +548,12 @@ function _try_make_range(vals)
   end
 end
 
-# 3.5 Detect level repetition: identical floor plans across levels → for loop
-detect_level_repetition(e::Expr) =
-  let stmts = e.head == :block ? collect(e.args) : [e]
-    # Group shape calls by their level reference
-    # This is a complex analysis — for now, return unchanged
-    # TODO: Implement when models with repeated floor plans are available
-    e
-  end
+# 3.5 Detect level repetition: identical floor plans across levels → for loop.
+# UNWIRED placeholder — this is the identity transform, so it is no longer inserted into any pipeline
+# (removing an identity pass changes no output). Kept defined and tested so the eventual real
+# implementation has a home and the direct identity test still compiles. Implement + re-wire when
+# models with repeated floor plans are available.
+detect_level_repetition(e::Expr) = e
 
 # 3.6 Add header
 add_header(b) = (e::Expr) ->

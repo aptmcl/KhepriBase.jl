@@ -41,7 +41,6 @@ run_pipeline(model) =
                 KB.extract_families(fmap),
                 KB.add_backend_families(revit, fmap),
                 KB.loop_rerolling,
-                KB.detect_level_repetition,
                 KB.add_header(revit)]
     normalize_src(KB.expr_to_string(foldl((e, p) -> p(e), passes, init = raw)))
   end
@@ -120,7 +119,7 @@ end
     # Structural sanity independent of the golden bytes:
     @test occursin("using KhepriRevit", src)
     @test occursin("level_0 = level(0.0)", src)
-    @test occursin("column(", src)                    # 4x3 grid present (see 2D-grid limitation below)
+    @test occursin("column(", src)                    # 4x3 grid present (rerolled into a nested for-loop)
     @test occursin("add_door(", src)                  # wall opening emitted portably
     @test occursin("set_backend_family(", src)        # backend family mappings emitted
     @test occursin("revit_file_family(", src)         # file-family branch (door/window/column)
@@ -188,16 +187,17 @@ end
     @test any(s -> s isa Expr && s.head == :for, rerolled.args)
   end
 
-  @testset "loop_rerolling: row-major 2D grid (known limitation)" begin
-    # A 4x3 row-major grid of identical calls varying in x (outer) and y (inner). The current
-    # _try_reroll derives ref_paths from only the FIRST pair (which varies in y alone), so the
-    # 2D detector (_try_reroll_2d/_detect_nesting) is never reached and the grid is left
-    # un-rerolled. Documented as @test_broken so it flips to passing once the fix (union of all
-    # varying paths across pairs) lands — at which point the reference_model golden is regenerated.
+  @testset "loop_rerolling: row-major 2D grid rerolls to a nested loop" begin
+    # A 4x3 row-major grid of identical calls varying in x (outer) and y (inner). `_try_reroll`
+    # now takes ref_paths as the UNION of every varying path across all pairs (not just the first
+    # pair, which varies in y alone), so the 2D detector (_try_reroll_2d/_detect_nesting) fires and
+    # the grid rerolls into an outer×inner nested for-loop reproducing all 12 placements.
     mk(x, y) = Expr(:call, :column, Expr(:call, :xy, Float64(x), Float64(y)))
     grid = Expr(:block, [mk(x, y) for x in 0:5:15 for y in 0:4:8]...)
     out = KB.loop_rerolling(grid)
-    @test_broken any(s -> s isa Expr && s.head == :for, out.args)
+    outer = only(filter(s -> s isa Expr && s.head == :for, out.args))
+    @test outer.head == :for                                     # outer loop present
+    @test any(s -> s isa Expr && s.head == :for, outer.args[2].args)  # nested inner loop
   end
 
   @testset "_try_make_range" begin

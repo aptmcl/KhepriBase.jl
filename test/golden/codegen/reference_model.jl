@@ -38,63 +38,12 @@ wall(open_polygonal_path([xy(0, 4), xy(0, 0)]),
 slab(region(closed_polygonal_path([xy(0, 0), xy(6, 0), xy(6, 4), xy(0, 4)])),
   level_0,
   slab_floor_generic_300mm)
-column(xy(0.0, 0.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(0.0, 4.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(0.0, 8.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(5.0, 0.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(5.0, 4.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(5.0, 8.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(10.0, 0.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(10.0, 4.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(10.0, 8.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(15.0, 0.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(15.0, 4.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
-column(xy(15.0, 8.0),
-  0,
-  level_0,
-  level_1,
-  column_m_concrete_rectangular_300_x_450mm)
+for x = range(0.0, step=5.0, length=4)
+  for y = range(0.0, step=4.0, length=3)
+    column(xy(x, y),
+      0,
+      level_0,
+      level_1,
+      column_m_concrete_rectangular_300_x_450mm)
+  end
+end
