@@ -1065,6 +1065,18 @@ b_surface(b::Backend, region::Region, mat) =
     BitVector([is_smooth_path(path) for path in region.paths]),
     mat)
 
+# Same region surfaced with the OPPOSITE outward normal: outer boundary reversed (flips the normal)
+# and holes left un-reversed (b_surface reverses them, so not reversing here keeps the hole winding
+# consistent with the flipped outer). Used for an extrusion's bottom cap, whose outward normal must
+# oppose the top cap's.
+_b_surface_reversed(b::Backend, region::Region, mat) =
+  b_surface_polygon_with_holes(
+    b,
+    reverse(path_vertices(outer_path(region))),
+    [path_vertices(path) for path in inner_paths(region)],
+    BitVector([is_smooth_path(path) for path in region.paths]),
+    mat)
+
 b_surface(b::Backend, surface::BezierSurface, mat) =
   b_bezier_surface(b, surface, mat)
 
@@ -1138,8 +1150,8 @@ b_extruded_surface(b::Backend, profile::Region, v, cb, bmat, tmat, smat) =
     b_solidify(b,
       vcat(b_extruded_curve(b, outer, v, cb, smat),
            [b_extruded_curve(b, inner, v, cb, smat) for inner in inners]...,
-           b_surface(b, path_on(profile, cb), bmat),
-           b_surface(b, translate(path_on(profile, cb), v), tmat)))
+           _b_surface_reversed(b, path_on(profile, cb), bmat),        # bottom cap: outward normal = -v
+           b_surface(b, translate(path_on(profile, cb), v), tmat)))   # top cap: outward normal = +v
   end
 b_extruded_curve(b::Backend, profile::CompositePath, v, cb, mat) =
   vcat([b_extruded_curve(b, subprofile, v, cb, mat) for subprofile in profile.pieces]...)
