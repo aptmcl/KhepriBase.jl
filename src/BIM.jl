@@ -273,7 +273,11 @@ macro deffamily(name, parent, fields...)
   field_names = map(field -> field.args[1].args[1], fields)
   field_types = map(field -> field.args[1].args[2], fields)
   field_inits = map(field -> field.args[2], fields)
-  field_renames = map(esc ∘ Symbol ∘ uppercasefirst ∘ string, field_names)
+  # Positional-arg names must not collide with any type used in the keyword annotations: Julia
+  # evaluates keyword annotations in the cascading argument scope, so a positional named `Material`
+  # shadows the type `Material` in `material::Material=Material` (isa against a value → TypeError).
+  # gensym keeps them unique; they are positional-only, so callers never see these names.
+  field_renames = map(esc ∘ gensym ∘ uppercasefirst ∘ string, field_names)
   field_replacements = Dict(zip(field_names, field_renames))
   struct_fields = map((name,typ) -> :($(name) :: $(typ)), field_names, field_types)
 #  opt_params = map((name,typ,init) -> :($(name) :: $(typ) = $(init)), field_renames, field_types, field_inits)
