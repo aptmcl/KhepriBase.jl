@@ -34,14 +34,12 @@ bim_model(; levels = [], walls = [], floors = [], columns = [], beams = [],
    railings = railings, groups = groups, family_meta = family_meta)
 
 # The full pipeline exactly as generate_khepri_code composes it, minus file IO, normalized.
+# codegen_passes is the SAME authoritative list generate_khepri_code uses — the golden locks the
+# real pipeline, not a test-local copy that could drift from it.
 run_pipeline(model) =
   let raw = KB.model_to_expr(model),
       fmap = KB.family_expr_map(model),
-      passes = [KB.extract_levels,
-                KB.extract_families(fmap),
-                KB.add_backend_families(revit, fmap),
-                KB.loop_rerolling,
-                KB.add_header(revit)]
+      passes = KB.codegen_passes(revit, fmap)
     normalize_src(KB.expr_to_string(foldl((e, p) -> p(e), passes, init = raw)))
   end
 
@@ -51,6 +49,11 @@ function check_golden(name::AbstractString, src::AbstractString)
   path = joinpath(GOLDEN_DIR, "$name.jl")
   if isfile(path)
     @test read(path, String) == src
+  elseif haskey(ENV, "KHEPRI_REQUIRE_GOLDEN")
+    # CI/stress mode: a missing golden is a failure, not an auto-mint — otherwise a deleted or
+    # renamed golden file silently turns a regression into a green run.
+    @error "golden missing (unset KHEPRI_REQUIRE_GOLDEN to mint)" path
+    @test isfile(path)
   else
     write(path, src)
     @info "Minted golden (delete to regenerate)" path

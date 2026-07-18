@@ -2,9 +2,16 @@
 # Generated on: <timestamp>
 using KhepriRevit
 
+columns_y_spacing = 4.0
+n_columns_y = 3
+columns_x_spacing = 5.0
+n_columns_x = 4
+floor_height = 3.0
+n_levels = 3
+
 level_0 = level(0.0)
-level_1 = level(3.0)
-level_2 = level(6.0)
+level_1 = level(floor_height)
+level_2 = level(2 * floor_height)
 
 wall_basic_wall_generic_200mm = wall_family("wall_family", 0.2, 0.0, 0.0)
 @isdefined(revit) && set_backend_family(wall_basic_wall_generic_200mm, revit, revit_system_family())
@@ -23,6 +30,10 @@ let __wall = wall(open_polygonal_path([xy(0, 0), xy(6, 0)]), bottom_level = leve
     __wall
 end
 
+wall(open_polygonal_path([xy(0, 4), xy(0, 0)]),
+  bottom_level=level_0,
+  top_level=level_1,
+  family=wall_basic_wall_generic_200mm)
 wall(open_polygonal_path([xy(6, 0), xy(6, 4)]),
   bottom_level=level_0,
   top_level=level_1,
@@ -31,15 +42,11 @@ wall(open_polygonal_path([xy(6, 4), xy(0, 4)]),
   bottom_level=level_0,
   top_level=level_1,
   family=wall_basic_wall_generic_200mm)
-wall(open_polygonal_path([xy(0, 4), xy(0, 0)]),
-  bottom_level=level_0,
-  top_level=level_1,
-  family=wall_basic_wall_generic_200mm)
 slab(region(closed_polygonal_path([xy(0, 0), xy(6, 0), xy(6, 4), xy(0, 4)])),
   level_0,
   slab_floor_generic_300mm)
-for x = range(0.0, step=5.0, length=4)
-  for y = range(0.0, step=4.0, length=3)
+for x = range(0.0, step=columns_x_spacing, length=n_columns_x)
+  for y = range(0.0, step=columns_y_spacing, length=n_columns_y)
     column(xy(x, y),
       0,
       level_0,

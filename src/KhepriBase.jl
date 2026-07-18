@@ -108,6 +108,7 @@ include("Backends.jl")
 include("Primitives.jl")
 include("Introspection.jl")     # portable CAD/BIM read-back vocabulary (FamilyMeta, …)
 include("CodeGen.jl")           # portable BIM-model → Julia-program code generation
+include("Summary.jl")           # model summary / comparison layer for round-trip stress testing
 include("Camera.jl")
 include("Simulation.jl")
 include("PluginManagement.jl")

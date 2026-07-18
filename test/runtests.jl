@@ -48,6 +48,8 @@ using Test
     include("test_default_ops.jl")
     include("test_profile_consumption.jl")
     include("test_roundtrip.jl")   # shape → source → shape round-trip stress tests (headless)
+    include("test_codegen_passes.jl")  # codegen abstraction/parametrization passes (headless)
+    include("test_summary.jl")     # model summary / comparison layer (headless)
   end
 
   # Phase 4: Extended Features tests

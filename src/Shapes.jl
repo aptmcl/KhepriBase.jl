@@ -1925,6 +1925,18 @@ map_division(f::Function, s::SurfaceGrid, nu::Int, nv::Int) =
 @defproxy(group, Shape0D, name::String="Group", shapes::Shapes = Shape[], factory::Union{Function,Nothing} = nothing)
 @defproxy(group_instance, Shape0D, group::Group=required(), loc::Loc=u0())
 
+# Default group realization for backends without a native group concept: the group itself is just a
+# container, and each instance re-creates the member shapes (via the factory) at the instance
+# location. Backends with native groups (Revit's CreateGroup) override both methods.
+realize(b::Backend, s::Group) = void_ref(b)
+realize(b::Backend, s::GroupInstance) =
+  with(current_cs, translated_cs(current_cs(), cx(s.loc), cy(s.loc), cz(s.loc))) do
+    let factory = s.group.factory
+      factory === nothing ? void_ref(b) :
+        (ref_values(b, collecting_shapes(factory)); void_ref(b))
+    end
+  end
+
 ################################################################################
 ## Key locations for bounding box approximation
 

@@ -541,7 +541,10 @@ http_response_with_file(path) =
 #=
 We need to support a PATH-based approach to resources.
 =#
-public resources_folder, add_resource_folder!
+# add_resource_folder! is exported (not merely public): generated programs call it unqualified in
+# their header to register the sibling khepri_obj_models folder.
+export add_resource_folder!
+public resources_folder
 const resources_folder = [joinpath(@__DIR__, "..", "resources")]
 const resources_folder_lock = ReentrantLock()
 

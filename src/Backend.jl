@@ -2786,11 +2786,25 @@ public obj_file_path, read_obj_mesh, transform_obj_vertices
     obj_family("Porta/Porta")  → resources/models/obj/Porta/Porta.obj  (subfolder)
     obj_family("Porta")        → resources/models/obj/Porta.obj        (flat)
 =#
-# A name already ending in ".obj" or an absolute path is used verbatim (e.g. a Revit-extracted OBJ
-# placed by the geometric fallback); a bare resource name resolves under resources/models/obj/.
-obj_file_path(obj_name) =
-  (isabspath(obj_name) || endswith(lowercase(obj_name), ".obj")) ? String(obj_name) :
-  joinpath("resources", "models", "obj", "$obj_name.obj")
+# An absolute path is used verbatim (e.g. a Revit-extracted OBJ placed by the geometric fallback).
+# A relative name searches the registered resource folders (add_resource_folder!) both flat —
+# the layout of a generated program's sibling khepri_obj_models folder — and under models/obj/
+# (the canonical resources layout), then falls back to the legacy relative default.
+function obj_file_path(obj_name)
+  isabspath(obj_name) && return String(obj_name)
+  let fname = endswith(lowercase(obj_name), ".obj") ? String(obj_name) : "$obj_name.obj",
+      folders = lock(resources_folder_lock) do
+        copy(resources_folder)
+      end
+    for root in folders
+      for candidate in (joinpath(root, fname), joinpath(root, "models", "obj", fname))
+        isfile(candidate) && return candidate
+      end
+    end
+    endswith(lowercase(obj_name), ".obj") ? String(obj_name) :
+      joinpath("resources", "models", "obj", fname)
+  end
+end
 
 #=
   read_obj_mesh(filepath)
