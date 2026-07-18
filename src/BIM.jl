@@ -1099,14 +1099,23 @@ mirror the path's first vertex and first-segment direction for backward compatib
   bottom_level::Level=default_level(),
   top_level::Level=upper_level(convert(Level, bottom_level)),
   family::StairFamily=default_stair_family(),
-  path::Union{Path, Nothing}=nothing)
+  path::Union{Path, Nothing}=nothing,
+  landings::Union{Vector{ClosedPolygonalPath}, Nothing}=nothing)
 
-# The auto-generated meta_program would always emit the 6th field; keep the classic
-# 5-arg form for straight stairs so existing generated programs stay stable.
+# `landings` (only meaningful with `path`): the exact footprint polygon of each
+# landing, bottom-up, each vertex at the landing's level-relative elevation. When
+# absent, realization synthesizes a rectangular plate per flat path segment.
+
+# The auto-generated meta_program would always emit the trailing fields; keep the
+# classic 5-arg form for straight stairs so existing generated programs stay stable.
 meta_program(v::Stair) =
   let args = Any[:stair, meta_program(v.base_point), meta_program(unitized(v.direction)),
                  meta_program(v.bottom_level), meta_program(v.top_level), meta_program(v.family)]
-    v.path === nothing || push!(args, meta_program(v.path))
+    if v.path !== nothing
+      push!(args, meta_program(v.path))
+      v.landings === nothing ||
+        push!(args, Expr(:vect, [meta_program(l) for l in v.landings]...))
+    end
     Expr(:call, args...)
   end
 
@@ -1123,7 +1132,7 @@ landing they put on top); the railing tracks the stair, not the landing.
 =#
 realize(b::Backend, s::Stair) =
   s.path !== nothing ?
-    let stair_refs = b_multi_run_stair(b, s.path, s.bottom_level, s.top_level, s.family)
+    let stair_refs = b_multi_run_stair(b, s.path, s.landings, s.bottom_level, s.top_level, s.family)
       s.family.with_railings ?
         vcat(stair_refs,
              [b_railing(b, offset_stair_edge_path(s.path, side * s.family.width / 2),

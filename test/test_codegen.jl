@@ -171,7 +171,11 @@ end
       walk = open_polygonal_path([xyz(0, 0, 0.0), xyz(-1.12, 0, 0.858),
                                   xyz(-1.72, 0.6, 0.858), xyz(-1.72, 3.4, 2.745),
                                   xyz(-1.12, 4.0, 2.745), xyz(-0.56, 4.0, 3.26)])
-      st = stair(xyz(0, 0, 0), vx(-1), l0, l1, sfam, walk)
+      lands = [closed_polygonal_path([xyz(-2.32, -0.6, 0.858), xyz(-2.32, 0.6, 0.858),
+                                      xyz(-1.12, 0.6, 0.858), xyz(-1.12, -0.6, 0.858)]),
+               closed_polygonal_path([xyz(-1.12, 3.4, 2.745), xyz(-2.32, 3.4, 2.745),
+                                      xyz(-2.32, 4.6, 2.745), xyz(-1.12, 4.6, 2.745)])]
+      st = stair(xyz(0, 0, 0), vx(-1), l0, l1, sfam, walk, lands)
       rl = railing(open_polygonal_path([xyz(0, 0.6, 0), xyz(-1.72, 0.6, 3.26)]),
                    level = l0, family = rfam)
       fm = IdDict{Any, FamilyMeta}(
@@ -181,9 +185,11 @@ end
                            is_system = true))
       src = run_pipeline(bim_model(levels = [l0, l1], stairs = [st], railings = [rl],
                                    family_meta = fm))
-      # The walk path is emitted (6-arg form) with climbing z values:
+      # The walk path is emitted (6-arg form) with climbing z values, and the exact
+      # landing footprints as a vector of closed polygons (7th argument):
       @test occursin("open_polygonal_path", src)
       @test occursin("0.858", src)
+      @test length(findall("closed_polygonal_path(", src)) >= 2
       # Nested-family extraction: the stair references the EXTRACTED family variable —
       # no inline `stair_family(` call remains at any use site:
       @test occursin("stair_cast_u", src)

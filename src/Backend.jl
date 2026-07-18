@@ -2034,9 +2034,11 @@ b_stair(b::Backend, base_point, direction, bottom_level, top_level, family) =
 # segments that climb are runs, segments at constant z are landings. Runs get
 # `n_treads = round(len/tread_depth)` treads with `dz/(n_treads+1)` risers — the final
 # riser steps onto the following landing (or the top level), matching how real stairs
-# meet their landings. Landings are flat plates of the stair's width; a corner landing
-# between two runs is covered by the convex hull of the adjoining run-end edges.
-b_multi_run_stair(b::Backend, path, bottom_level, top_level, family) =
+# meet their landings. Landings use the EXPLICIT footprint polygons when `landings` is
+# given (introspected models carry the exact shape); otherwise each flat segment gets a
+# RECTANGULAR plate in the frame of the adjoining run, spanning both run-end edges
+# (a square for the typical 90-degree turn).
+b_multi_run_stair(b::Backend, path, landings, bottom_level, top_level, family) =
   let bottom_h = level_height(b, bottom_level),
       vs = [in_world(p) + vz(bottom_h) for p in path_vertices(path)],
       w = family.width,
@@ -2071,16 +2073,31 @@ b_multi_run_stair(b::Backend, path, bottom_level, top_level, family) =
               end
             end
           end
-        elseif hlen > 1e-9
-          # Landing: flat plate covering the two adjoining run-end edges.
-          let prev_perp = i > 1 ? seg_perp(vs[i - 1], a) * (w / 2) : perp,
+        elseif hlen > 1e-9 && landings === nothing
+          # Synthesized landing: rectangle in the adjoining run's frame covering both
+          # run-end edges.
+          let dvec = i > 1 ? vxy(cx(a) - cx(vs[i - 1]), cy(a) - cy(vs[i - 1])) :
+                     i + 2 <= length(vs) ? vxy(cx(vs[i + 2]) - cx(c), cy(vs[i + 2]) - cy(c)) :
+                     vxy(cx(c) - cx(a), cy(c) - cy(a)),
+              d = norm(dvec) < 1e-9 ? vxy(1, 0) : unitized(dvec),
+              pd = unitized(cross(d, vz(1))),
+              prev_perp = i > 1 ? seg_perp(vs[i - 1], a) * (w / 2) : perp,
               next_perp = i + 2 <= length(vs) ? seg_perp(c, vs[i + 2]) * (w / 2) : perp,
               corners = [a - prev_perp, a + prev_perp, c - next_perp, c + next_perp],
-              center = xyz(sum(cx.(corners)) / 4, sum(cy.(corners)) / 4, cz(a)),
-              ordered = sort(corners, by = p -> atan(cy(p) - cy(center), cx(p) - cx(center)))
-            quad!(ordered, tmat)
+              us = [(cx(e) - cx(a)) * cx(d) + (cy(e) - cy(a)) * cy(d) for e in corners],
+              ws = [(cx(e) - cx(a)) * cx(pd) + (cy(e) - cy(a)) * cy(pd) for e in corners],
+              at = (u, v) -> a + d * u + pd * v
+            quad!([at(minimum(us), minimum(ws)), at(maximum(us), minimum(ws)),
+                   at(maximum(us), maximum(ws)), at(minimum(us), maximum(ws))], tmat)
           end
         end
+      end
+    end
+    # Explicit landing footprints (vertices already at their level-relative elevation).
+    if landings !== nothing
+      for l in landings
+        collect_ref!(refs, b_surface_polygon(
+          b, [in_world(p) + vz(bottom_h) for p in path_vertices(l)], tmat))
       end
     end
     refs
