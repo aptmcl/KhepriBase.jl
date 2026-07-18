@@ -591,6 +591,20 @@ http_response_with_resource_file(filename) =
           end
         end
       end
+      # models/obj requests also search each root FLAT: a generated program's sibling
+      # khepri_obj_models folder holds its .obj/.mtl/.rfa files without the models/obj nesting,
+      # and the browser-side OBJ loader always asks under resources/models/obj/.
+      if startswith(replace(rel, '\\' => '/'), "models/obj/")
+        let base = basename(rel)
+          for res_path in folders
+            let full_path = resource_file_in_root(res_path, base)
+              if full_path !== nothing && isfile(full_path)
+                return http_response_with_file(full_path)
+              end
+            end
+          end
+        end
+      end
       HTTP.Response(404, "File not found: $rel")
     end
   end

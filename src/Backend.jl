@@ -2897,11 +2897,15 @@ transform_obj_vertices(verts, transform) =
   [in_world(transform + vxyz(v[1], v[2], v[3])) for v in verts]
 
 public b_family_element
+# The location's z is LEVEL-RELATIVE (matching walls/slabs and Revit's native placement), so the
+# default lifts it by the level height — otherwise fixtures float at their relative z on mesh
+# backends while sitting correctly in Revit.
 b_family_element(b::Backend, loc, angle, level, family) =
-  let bf = maybe_backend_family(b, family)
+  let lifted = add_z(loc, level_height(level)),
+      bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
-      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(loc, bf)) :
-      b_box(b, loc - vxy(0.5, 0.5, loc.cs), 1.0, 1.0, 1.0, nothing)
+      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(lifted, bf)) :
+      b_box(b, lifted - vxy(0.5, 0.5, lifted.cs), 1.0, 1.0, 1.0, nothing)
   end
 
 # Lights

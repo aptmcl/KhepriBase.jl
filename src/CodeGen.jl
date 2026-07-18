@@ -1214,6 +1214,35 @@ add_geometric_header(b) = (e::Expr) ->
 
 stmts_of(e::Expr) = e.head == :block ? e.args : [e]
 
+# ─── Running a generated program on a backend ────────────────────────────────
+# Statement-by-statement execution of a generated AD program: binds the backend's guard symbol
+# (so `@isdefined(threejs) && …` mappings fire), selects the backend, skips the `using` line
+# (the caller's session already has its backend package loaded), and contains per-statement
+# failures so one bad element skips instead of aborting the run. Returns counts + deduped errors.
+function run_generated_program(path::AbstractString; b=top_backend(), skip_using=true)
+  let name = Symbol(backend_name(b))
+    isdefined(Main, name) || Core.eval(Main, Expr(:(=), name, b))
+  end
+  current_backend(b)
+  let ok = 0, failed = 0,
+      errors = Dict{String, Int}()
+    for e in Meta.parseall(read(path, String)).args
+      e isa LineNumberNode && continue
+      skip_using && e isa Expr && e.head == :using && continue
+      try
+        Core.eval(Main, e)
+        ok += 1
+      catch ex
+        failed += 1
+        let msg = first(sprint(showerror, ex), 140)
+          errors[msg] = get(errors, msg, 0) + 1
+        end
+      end
+    end
+    (ok=ok, failed=failed, errors=sort!(collect(errors), by=last, rev=true))
+  end
+end
+
 # ─── Phase 4: Pretty-Printing ─────────────────────────────────────────────────
 
 function expr_to_string(e::Expr; indent=0)

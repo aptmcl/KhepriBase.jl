@@ -120,7 +120,7 @@ khepribase_interface_file() = joinpath(@__DIR__, "Interface.jl")
 export RGB, RGBA, rgb, rgba, red, green, blue, alpha
 
 # Code generation (BIM model → Julia program) — see CodeGen.jl
-export model_to_expr, expr_to_string, guarded_backend_family_expr
+export model_to_expr, expr_to_string, guarded_backend_family_expr, run_generated_program
 
 # User-facing
 export and_mark_deleted, @remote, @get_remote
