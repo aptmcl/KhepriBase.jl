@@ -23,9 +23,26 @@ windows and doors.
 =#
 
 # Level
-@defproxy(level, UniqueProxy, height::Real=0, elements::BIMElements=BIMElement[])
+@defproxy(level, UniqueProxy, height::Real=0, elements::BIMElements=BIMElement[],
+  is_unconnected::Bool=false)
 
 convert(::Type{Level}, h::Real) = level(h)
+
+# The top "level" of an unconnected-top wall: a height marker, NOT a real building level. BIM
+# backends must not materialize it (Revit realizes it as the void ref, so wall reconstruction takes
+# the unconnected-wall path); geometry backends just use its height like any level. Without the
+# distinction, round-tripped unconnected walls minted phantom levels in the rebuilt model.
+export unconnected_level
+unconnected_level(h::Real) = level(h, is_unconnected=true)
+
+# Flush any deferred group construction. On most backends grouping happens inline and this is a
+# no-op; Revit defers NewGroup/PlaceGroup to here because creating elements AFTER a group exists
+# triggers regenerations that can silently delete it — a generated program calls finalize_groups()
+# as its last statement so every group is built when nothing further will disturb it.
+export finalize_groups
+finalize_groups(b::Backend=top_backend()) = b_finalize_groups(b)
+public b_finalize_groups
+b_finalize_groups(b::Backend) = nothing
 
 default_level = OptionParameter{Level}(level())
 default_level_to_level_height = Parameter{Real}(3)
@@ -46,7 +63,7 @@ upper_level(lvl=default_level(), height=default_level_to_level_height()) = level
 Base.:(==)(l1::Level, l2::Level) = l1.height == l2.height
 
 #default implementation
-b_level(b::Backend, h, elements) = h
+b_level(b::Backend, h, elements, is_unconnected=false) = h
 
 export all_levels, default_level, default_level_to_level_height, upper_level,
        default_window_sill_height
@@ -982,7 +999,7 @@ meta_program(w::Wall) =
 
 # Override auto-generated meta_program for Level to omit elements
 meta_program(l::Level) =
-  Expr(:call, :level, meta_program(l.height))
+  Expr(:call, l.is_unconnected ? :unconnected_level : :level, meta_program(l.height))
 
 # Railing
 

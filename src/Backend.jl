@@ -2864,16 +2864,35 @@ function parse_mtl(filepath)
   order = String[]   # declaration order — so "the first material" is deterministic (Dict is hash-ordered)
   isfile(filepath) || return (mats, order)
   name = ""; kd = [0.8, 0.8, 0.8]; d = 1.0
-  save() = name == "" || (mats[name] = material(name=name, base_color=rgba(kd[1], kd[2], kd[3], d)))
+  pr = nothing; pm = 0.0; ns = nothing; ke = nothing
+  reset() = (kd = [0.8, 0.8, 0.8]; d = 1.0; pr = nothing; pm = 0.0; ns = nothing; ke = nothing)
+  save() = name == "" ||
+    (mats[name] = let kwargs = Any[:base_color => rgba(kd[1], kd[2], kd[3], d),
+                                   # Pr is authoritative; without it derive roughness from the
+                                   # Blinn-Phong exponent (the standard sqrt(2/(Ns+2)) mapping).
+                                   :roughness => (pr !== nothing ? pr :
+                                                  ns !== nothing ? sqrt(2 / (ns + 2)) : 0.5),
+                                   :metallic => pm]
+       ke === nothing || push!(kwargs, :emission_color => rgba(ke[1], ke[2], ke[3], 1.0))
+       material(; name=name, kwargs...)
+     end)
   for line in eachline(filepath)
     parts = split(strip(line))
     isempty(parts) && continue
     if parts[1] == "newmtl" && length(parts) >= 2
-      save(); name = parts[2]; push!(order, name); kd = [0.8, 0.8, 0.8]; d = 1.0
+      save(); name = parts[2]; push!(order, name); reset()
     elseif parts[1] == "Kd" && length(parts) >= 4
       kd = [parse(Float64, parts[i]) for i in 2:4]
     elseif parts[1] == "d" && length(parts) >= 2
       d = parse(Float64, parts[2])
+    elseif parts[1] == "Pr" && length(parts) >= 2
+      pr = parse(Float64, parts[2])
+    elseif parts[1] == "Pm" && length(parts) >= 2
+      pm = parse(Float64, parts[2])
+    elseif parts[1] == "Ns" && length(parts) >= 2
+      ns = parse(Float64, parts[2])
+    elseif parts[1] == "Ke" && length(parts) >= 4
+      ke = [parse(Float64, parts[i]) for i in 2:4]
     end
   end
   save()

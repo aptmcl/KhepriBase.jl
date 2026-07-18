@@ -22,8 +22,8 @@ export model_summary, summary_string, write_summary, read_summary, compare_summa
 
 const summary_count_categories =
   (:levels, :walls, :curtain_walls, :floors, :ceilings, :roofs, :columns, :beams,
-   :doors, :windows, :stairs, :railings, :fixtures, :groups, :group_instances,
-   :fallback_meshes)
+   :doors, :windows, :stairs, :stairs_in_groups, :railings, :fixtures, :groups,
+   :group_instances, :fallback_meshes)
 
 # 3-decimal rounding, normalizing -0.0 so the serialized form is canonical.
 _summary_round3(v) =
@@ -102,6 +102,9 @@ function model_summary(model)
   group_insts(g) =
     hasproperty(g, :instances) ? g.instances :
     (g isa Tuple && length(g) >= 3) ? g[3] : []
+  group_membs(g) =
+    hasproperty(g, :members) ? g.members :
+    (g isa Tuple && length(g) >= 2) ? g[2] : []
   s = Dict{String,Any}(
     "count.levels" => length(levels),
     "count.walls" => length(plain_walls),
@@ -114,6 +117,10 @@ function model_summary(model)
     "count.doors" => sum(w -> hasproperty(w, :doors) ? length(w.doors) : 0, plain_walls; init=0),
     "count.windows" => sum(w -> hasproperty(w, :windows) ? length(w.windows) : 0, plain_walls; init=0),
     "count.stairs" => length(fld(:stairs)),
+    # Stairs living INSIDE groups: Revit auto-generates railings for them too, so the
+    # :stair_railings allowance must know about them (informational WARN-only in comparison).
+    "count.stairs_in_groups" =>
+      sum(g -> count(m -> m isa Stair, group_membs(g)), groups; init=0),
     "count.railings" => length(fld(:railings)),
     "count.fixtures" => length(fixtures),
     "count.groups" => length(groups),
@@ -255,8 +262,13 @@ function compare_summaries(src::Dict, rebuilt::Dict;
         rv - sv <= 2 ?
           warn("$k: src=$sv rebuilt=$rv (+$(rv - sv) template level(s) allowed)") :
           fail("$k: src=$sv rebuilt=$rv (exceeds +2 template-level allowance)")
+      elseif cat == :stairs_in_groups
+        # Informational: group membership is compared only loosely (member sets live inside
+        # group factories, not as top-level counts).
+        sv == rv ? pass("$k: $sv == $rv") : warn("$k: src=$sv rebuilt=$rv (informational)")
       elseif cat == :railings && :stair_railings in allow && rv > sv
-        let excess = rv - sv, allowed = 2 * cnt(src, "count.stairs")
+        let excess = rv - sv,
+            allowed = 2 * (cnt(src, "count.stairs") + cnt(src, "count.stairs_in_groups"))
           excess <= allowed + tol ?
             warn("$k: src=$sv rebuilt=$rv (+$excess stair-generated railing(s) allowed)") :
             fail("$k: src=$sv rebuilt=$rv (excess $excess > allowed $allowed)")

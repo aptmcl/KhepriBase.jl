@@ -216,6 +216,9 @@ function model_to_expr(model)
       push!(stmts, meta_program(m))
     end
   end
+  # Deferred-group flush as the LAST statement: backends that postpone group construction (Revit)
+  # build them here, when no further element creation can disturb them. No-op elsewhere.
+  isempty(model.groups) || push!(stmts, Expr(:call, :finalize_groups))
   Expr(:block, stmts...)
 end
 
@@ -274,7 +277,8 @@ translate_xyz_expr(e::Expr, dx, dy, dz) =
 # 3.1 Extract levels: deduplicate level(h) calls into named variables
 function extract_levels(e::Expr)
   level_calls = collect_exprs(
-    x -> x isa Expr && x.head == :call && x.args[1] == :level && length(x.args) == 2,
+    x -> x isa Expr && x.head == :call && x.args[1] in (:level, :unconnected_level) &&
+         length(x.args) == 2,
     e)
   unique_levels = unique(level_calls)
   isempty(unique_levels) && return e
@@ -329,10 +333,7 @@ extract_families(fmap) = function (e::Expr)
   end
   stmts = e.head == :block ? e.args : [e]
   # Find where levels end and elements start
-  first_non_assign = findfirst(
-    s -> !(s isa Expr && s.head == :(=) && s.args[2] isa Expr &&
-           s.args[2].head == :call && s.args[2].args[1] == :level),
-    stmts)
+  first_non_assign = findfirst(s -> !_is_any_level_assign(s), stmts)
   insert_pos = first_non_assign === nothing ? length(stmts) + 1 : first_non_assign
   body = map_expr(x -> get(replacements, x, x), Expr(:block, stmts...))
   Expr(:block, body.args[1:insert_pos-1]..., assignments..., body.args[insert_pos:end]...)
@@ -632,6 +633,12 @@ _is_level_assign(s) =
   s isa Expr && s.head == :(=) && s.args[2] isa Expr &&
   s.args[2].head == :call && s.args[2].args[1] == :level
 
+# Includes unconnected-top markers (unconnected_level): they group and section with the levels,
+# but parametrize_levels stays STRICT — a phantom top height must not break floor_height detection.
+_is_any_level_assign(s) =
+  s isa Expr && s.head == :(=) && s.args[2] isa Expr &&
+  s.args[2].head == :call && s.args[2].args[1] in (:level, :unconnected_level)
+
 # Statements the clone/repetition passes may lift into functions: plain element calls and
 # wall let-blocks. Families, levels, groups, backend mappings, and mesh fallbacks stay put.
 _clone_eligible(s) =
@@ -713,7 +720,7 @@ _normalize_level_syms(s, base, order) =
 
 function detect_level_repetition(e::Expr)
   stmts = collect(stmts_of(e))
-  level_syms = Symbol[s.args[1] for s in stmts if _is_level_assign(s)]
+  level_syms = Symbol[s.args[1] for s in stmts if _is_any_level_assign(s)]
   length(level_syms) >= 3 || return e
   order = Dict{Symbol, Int}(sym => i for (i, sym) in enumerate(level_syms))
   # Bucket element statements by the lowest level they reference (their floor).
@@ -1225,19 +1232,27 @@ function run_generated_program(path::AbstractString; b=top_backend(), skip_using
   end
   current_backend(b)
   let ok = 0, failed = 0,
-      errors = Dict{String, Int}()
-    for e in Meta.parseall(read(path, String)).args
-      e isa LineNumberNode && continue
-      skip_using && e isa Expr && e.head == :using && continue
-      try
-        Core.eval(Main, e)
-        ok += 1
-      catch ex
-        failed += 1
-        let msg = first(sprint(showerror, ex), 140)
-          errors[msg] = get(errors, msg, 0) + 1
+      errors = Dict{String, Int}(),
+      # Statement-wise eval has no source file, so `@__DIR__` in the program (its
+      # khepri_obj_models references) resolves to pwd — anchor pwd at the program's home.
+      prev_dir = pwd()
+    cd(dirname(abspath(path)))
+    try
+      for e in Meta.parseall(read(basename(path), String)).args
+        e isa LineNumberNode && continue
+        skip_using && e isa Expr && e.head == :using && continue
+        try
+          Core.eval(Main, e)
+          ok += 1
+        catch ex
+          failed += 1
+          let msg = first(sprint(showerror, ex), 140)
+            errors[msg] = get(errors, msg, 0) + 1
+          end
         end
       end
+    finally
+      cd(prev_dir)
     end
     (ok=ok, failed=failed, errors=sort!(collect(errors), by=last, rev=true))
   end
@@ -1285,7 +1300,7 @@ _stmt_section(s) =
       :levels
     elseif s.head == :(=) && s.args[2] isa Expr
       let rhs = s.args[2]
-        if rhs.head == :call && rhs.args[1] == :level
+        if rhs.head == :call && rhs.args[1] in (:level, :unconnected_level)
           :levels
         elseif rhs.head == :call && rhs.args[1] in _family_function_names
           :families

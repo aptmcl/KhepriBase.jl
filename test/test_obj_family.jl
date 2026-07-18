@@ -106,3 +106,32 @@ end
     end
   end
 end
+
+@testset "parse_mtl PBR keywords" begin
+  mtl = tempname() * ".mtl"
+  write(mtl, """
+  newmtl Painted_Metal
+  Kd 0.8000 0.2000 0.1000
+  d 0.9000
+  Pr 0.3500
+  Pm 0.2500
+  Ke 0.1000 0.0000 0.0000
+  Ns 400.0
+  illum 2
+
+  newmtl Legacy_Phong
+  Kd 0.1 0.6 0.2
+  Ns 198.0
+  """)
+  (mats, order) = KhepriBase.parse_mtl(mtl)
+  @test order == ["Painted_Metal", "Legacy_Phong"]
+  let m = mats["Painted_Metal"]
+    @test m.roughness == 0.35          # Pr wins over Ns
+    @test m.metallic == 0.25
+    @test red(m.emission_color) ≈ 0.1
+    @test alpha(m.base_color) ≈ 0.9
+  end
+  # Without Pr, roughness derives from the Blinn-Phong exponent: sqrt(2/(Ns+2)).
+  @test mats["Legacy_Phong"].roughness ≈ sqrt(2 / 200)
+  rm(mtl; force=true)
+end
