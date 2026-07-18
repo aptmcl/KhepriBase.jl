@@ -1478,7 +1478,13 @@ subpath_starting_at(path::OpenPolygonalPath, d::Real) =
         end
         abs(d) < coincidence_tolerance() ?
           path :
-          error("Exceeded path length by ", d)
+          # Same clamp policy as clamped_overshoot_location: a start just past the path end (e.g. a
+          # wall opening the source BIM tolerated at the wall's edge) yields the degenerate end
+          # segment instead of erroring; a large overshoot is a genuine misplacement.
+          0 < d < path_overshoot_tolerance() ?
+            (@warn "subpath_starting_at: overshoot clamped to path end" overshoot=d;
+             open_polygonal_path([pts[end], pts[end]])) :
+            error("Exceeded path length by ", d)
     end
 
 subpath_ending_at(path::OpenPolygonalPath, d::Real) =
@@ -1500,7 +1506,10 @@ subpath_ending_at(path::OpenPolygonalPath, d::Real) =
         end
         abs(d) < coincidence_tolerance() ?
           path :
-          error("Exceeded path length by ", d)
+          # An end just past the path end clamps to the whole path (see subpath_starting_at above).
+          0 < d < path_overshoot_tolerance() ?
+            (@warn "subpath_ending_at: overshoot clamped to path end" overshoot=d; path) :
+            error("Exceeded path length by ", d)
     end
 
 

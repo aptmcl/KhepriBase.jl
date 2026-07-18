@@ -2905,7 +2905,9 @@ b_family_element(b::Backend, loc, angle, level, family) =
       bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(lifted, bf)) :
-      b_box(b, lifted - vxy(0.5, 0.5, lifted.cs), 1.0, 1.0, 1.0, nothing)
+      # Placeholder box with a RESOLVED material ref — a raw `nothing` is not encodable on
+      # wire backends whose material slot is an id (KhepriThreejs).
+      b_box(b, lifted - vxy(0.5, 0.5, lifted.cs), 1.0, 1.0, 1.0, material_ref(b, material_basic))
   end
 
 # Lights
