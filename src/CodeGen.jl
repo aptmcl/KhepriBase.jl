@@ -334,6 +334,26 @@ extract_families(fmap) = function (e::Expr)
     push!(assignments, Expr(:(=), var, fc))
     replacements[fc] = var
   end
+  # map_expr replaces bottom-up, so a family whose argument is itself a family call
+  # (stair_family(..., railing_family(...))) has its inner call replaced by a variable
+  # BEFORE the outer expr is visited — the mutated outer expr no longer matches its
+  # key and stays inline (unextracted, unguarded). Register the inner-replaced form of
+  # each key as an alias for the same variable; repeat to a fixpoint for deeper nests.
+  let changed = true
+    while changed
+      changed = false
+      for (fc, var) in collect(replacements)
+        let normalized = Expr(fc.head, fc.args[1],
+                              [map_expr(x -> get(replacements, x, x), a)
+                               for a in fc.args[2:end]]...)
+          if normalized != fc && !haskey(replacements, normalized)
+            replacements[normalized] = var
+            changed = true
+          end
+        end
+      end
+    end
+  end
   stmts = e.head == :block ? e.args : [e]
   # Find where levels end and elements start
   first_non_assign = findfirst(s -> !_is_any_level_assign(s), stmts)

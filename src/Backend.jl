@@ -2030,6 +2030,62 @@ b_stair(b::Backend, base_point, direction, bottom_level, top_level, family) =
     refs
   end
 
+# Multi-run stair from a 3D plan CENTERLINE (z relative to bottom_level, added here):
+# segments that climb are runs, segments at constant z are landings. Runs get
+# `n_treads = round(len/tread_depth)` treads with `dz/(n_treads+1)` risers — the final
+# riser steps onto the following landing (or the top level), matching how real stairs
+# meet their landings. Landings are flat plates of the stair's width; a corner landing
+# between two runs is covered by the convex hull of the adjoining run-end edges.
+b_multi_run_stair(b::Backend, path, bottom_level, top_level, family) =
+  let bottom_h = level_height(b, bottom_level),
+      vs = [in_world(p) + vz(bottom_h) for p in path_vertices(path)],
+      w = family.width,
+      tmat = material_ref(b, family.tread_material),
+      rmat = material_ref(b, family.riser_material),
+      refs = new_refs(b),
+      quad! = (pts, mat) -> collect_ref!(refs, b_surface_polygon(b, pts, mat)),
+      seg_perp = (a, c) -> let h = vxy(cx(c) - cx(a), cy(c) - cy(a))
+                             norm(h) < 1e-9 ? vxy(1, 0) : unitized(cross(h, vz(1)))
+                           end
+    for i in 1:(length(vs) - 1)
+      let a = vs[i], c = vs[i + 1],
+          dz = cz(c) - cz(a),
+          hlen = sqrt((cx(c) - cx(a))^2 + (cy(c) - cy(a))^2),
+          perp = seg_perp(a, c) * (w / 2)
+        if abs(dz) > 1e-6 && hlen > 1e-9
+          # Run: treads along the segment, final riser onto what follows.
+          let dir = vxy((cx(c) - cx(a)) / hlen, (cy(c) - cy(a)) / hlen),
+              n_treads = max(1, Int(round(hlen / family.tread_depth))),
+              tread_d = hlen / n_treads,
+              riser_h = dz / (n_treads + 1)
+            for k in 0:n_treads
+              let base = a + dir * (k * tread_d) + vz(k * riser_h)
+                if family.has_risers
+                  quad!([base - perp, base + perp,
+                         base + perp + vz(riser_h), base - perp + vz(riser_h)], rmat)
+                end
+                k < n_treads &&
+                  quad!([base + vz(riser_h) - perp, base + vz(riser_h) + perp,
+                         base + dir * tread_d + vz(riser_h) + perp,
+                         base + dir * tread_d + vz(riser_h) - perp], tmat)
+              end
+            end
+          end
+        elseif hlen > 1e-9
+          # Landing: flat plate covering the two adjoining run-end edges.
+          let prev_perp = i > 1 ? seg_perp(vs[i - 1], a) * (w / 2) : perp,
+              next_perp = i + 2 <= length(vs) ? seg_perp(c, vs[i + 2]) * (w / 2) : perp,
+              corners = [a - prev_perp, a + prev_perp, c - next_perp, c + next_perp],
+              center = xyz(sum(cx.(corners)) / 4, sum(cy.(corners)) / 4, cz(a)),
+              ordered = sort(corners, by = p -> atan(cy(p) - cy(center), cx(p) - cx(center)))
+            quad!(ordered, tmat)
+          end
+        end
+      end
+    end
+    refs
+  end
+
 b_spiral_stair(b::Backend, center, radius, start_angle, included_angle,
                clockwise, bottom_level, top_level, family) =
   let bottom_h = level_height(b, bottom_level),

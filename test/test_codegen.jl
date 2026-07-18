@@ -158,6 +158,42 @@ end
     @test length(findall("revit_opening_file_family(", src)) >= 2   # distinct backend mappings, not collapsed (doors use the opening-file family)
   end
 
+  @testset "multi-run stair emission + nested family extraction" begin
+    # A U-shaped stair carries its 3D walk centerline as a 6th positional argument; the
+    # straight form keeps the classic 5-arg emission. The stair family nests a
+    # railing_family — pre-fix, bottom-up replacement mutated the outer expr before it
+    # was visited, so it stayed inline (unextracted, unguarded) inside the program.
+    with_introspection(revit) do
+      l0, l1 = level(0.0), level(3.26)
+      rfam = railing_family(height = 0.9, post_spacing = 1.0)
+      sfam = stair_family(width = 1.2, riser_height = 0.1716, tread_depth = 0.28,
+                          railing_family = rfam)
+      walk = open_polygonal_path([xyz(0, 0, 0.0), xyz(-1.12, 0, 0.858),
+                                  xyz(-1.72, 0.6, 0.858), xyz(-1.72, 3.4, 2.745),
+                                  xyz(-1.12, 4.0, 2.745), xyz(-0.56, 4.0, 3.26)])
+      st = stair(xyz(0, 0, 0), vx(-1), l0, l1, sfam, walk)
+      rl = railing(open_polygonal_path([xyz(0, 0.6, 0), xyz(-1.72, 0.6, 3.26)]),
+                   level = l0, family = rfam)
+      fm = IdDict{Any, FamilyMeta}(
+        sfam => FamilyMeta(category = :stair, family_name = "Cast", type_name = "U",
+                           is_system = true),
+        rfam => FamilyMeta(category = :railing, family_name = "Glass", type_name = "R",
+                           is_system = true))
+      src = run_pipeline(bim_model(levels = [l0, l1], stairs = [st], railings = [rl],
+                                   family_meta = fm))
+      # The walk path is emitted (6-arg form) with climbing z values:
+      @test occursin("open_polygonal_path", src)
+      @test occursin("0.858", src)
+      # Nested-family extraction: the stair references the EXTRACTED family variable —
+      # no inline `stair_family(` call remains at any use site:
+      @test occursin("stair_cast_u", src)
+      @test length(findall("stair_family(", src)) == 1     # the single assignment only
+      # The straight form stays 5-arg (no trailing `nothing`):
+      st2 = stair(xyz(0, 0, 0), vy(1), l0, l1)
+      @test !occursin("nothing", KB._expr_str(KB.meta_program(st2)))
+    end
+  end
+
   @testset "beam orientation round-trips (meta_program override)" begin
     with_introspection(revit) do
       hb = beam(xyz(0, 0, 0), xyz(5, 0, 0))   # horizontal beam via the 2-point constructor

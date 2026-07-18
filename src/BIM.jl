@@ -1085,12 +1085,30 @@ calls remain available for cases where the auto-railings are insufficient
 
 used_materials(f::StairFamily) = (f.tread_material, f.riser_material, f.stringer_material)
 
+#=
+Multi-run stairs (L/U-shaped, dog-leg) carry an optional `path`: the stair's plan
+CENTERLINE as a 3D polyline in coordinates relative to `bottom_level`. Segments whose
+endpoints differ in z are runs (steps climb along them); segments at constant z are
+landings (flat plates). A straight stair keeps `path == nothing` and uses
+base_point/direction as before. When `path` is present, base_point and direction
+mirror the path's first vertex and first-segment direction for backward compatibility.
+=#
 @defproxy(stair, BIMShape,
   base_point::Loc=u0(),
   direction::Vec=vy(1),
   bottom_level::Level=default_level(),
   top_level::Level=upper_level(convert(Level, bottom_level)),
-  family::StairFamily=default_stair_family())
+  family::StairFamily=default_stair_family(),
+  path::Union{Path, Nothing}=nothing)
+
+# The auto-generated meta_program would always emit the 6th field; keep the classic
+# 5-arg form for straight stairs so existing generated programs stay stable.
+meta_program(v::Stair) =
+  let args = Any[:stair, meta_program(v.base_point), meta_program(unitized(v.direction)),
+                 meta_program(v.bottom_level), meta_program(v.top_level), meta_program(v.family)]
+    v.path === nothing || push!(args, meta_program(v.path))
+    Expr(:call, args...)
+  end
 
 #=
 Auto-railing geometry must match the stair body exactly. Both consume the
@@ -1104,6 +1122,15 @@ occupies one tread-depth less than the user-visible footprint of any
 landing they put on top); the railing tracks the stair, not the landing.
 =#
 realize(b::Backend, s::Stair) =
+  s.path !== nothing ?
+    let stair_refs = b_multi_run_stair(b, s.path, s.bottom_level, s.top_level, s.family)
+      s.family.with_railings ?
+        vcat(stair_refs,
+             [b_railing(b, offset_stair_edge_path(s.path, side * s.family.width / 2),
+                        s.bottom_level, nothing, s.family.railing_family)
+              for side in (-1, 1)]...) :
+        stair_refs
+    end :
   let stair_refs = b_stair(b, s.base_point, s.direction, s.bottom_level, s.top_level, s.family)
     s.family.with_railings ?
       let bottom_h = level_height(b, s.bottom_level),
@@ -1123,6 +1150,25 @@ realize(b::Backend, s::Stair) =
              b_railing(b, right, s.bottom_level, nothing, s.family.railing_family))
       end :
       stair_refs
+  end
+
+# Edge path for a multi-run stair's auto-railing: each centerline vertex offset
+# horizontally by `d` along the perpendicular of its adjoining segment (naive miter —
+# adequate for the 90-degree turns of real stairs). Keeps the climbing z.
+offset_stair_edge_path(path::Path, d) =
+  let vs = path_vertices(path),
+      seg_perp = i -> let a = vs[max(i, 1)], b = vs[min(i + 1, length(vs))],
+                          h = vxy(cx(b) - cx(a), cy(b) - cy(a))
+                        norm(h) < 1e-9 ? vxy(0, 0) : unitized(cross(h, vz(1)))
+                      end
+    open_polygonal_path([let p = i == 1 ? seg_perp(1) :
+                                 i == length(vs) ? seg_perp(i - 1) :
+                                 let u = seg_perp(i - 1) + seg_perp(i)
+                                   norm(u) < 1e-9 ? seg_perp(i - 1) : unitized(u)
+                                 end
+                           vs[i] + p * d
+                         end
+                         for i in 1:length(vs)])
   end
 
 # Spiral Stair
