@@ -186,13 +186,16 @@ function model_to_expr(model)
         factory_var = Symbol("$(grp_name)_factory"),
         # Compute group origin from first instance location
         origin = g.instances[1],
-        # Build member shape expressions, translated to be group-relative
+        # Build member shape expressions, translated to be group-relative. Z is NOT translated:
+        # member heights live entirely in their levels/level-relative coordinates, so instances
+        # carry an xy offset only — a z here would double-count against the levels on mesh
+        # backends (Revit ignores curve z, which masked the imbalance).
         member_stmts = Expr[]
       for m in g.members
         push!(member_stmts, meta_program(m))
       end
       body_expr = Expr(:block, member_stmts...)
-      translated_body = translate_xyz_expr(body_expr, cx(origin), cy(origin), cz(origin))
+      translated_body = translate_xyz_expr(body_expr, cx(origin), cy(origin), 0.0)
       # Emit: factory function
       push!(stmts, Expr(:function, Expr(:call, factory_var), translated_body))
       # Emit: grp_var = group("name", factory=factory_var)
@@ -201,11 +204,11 @@ function model_to_expr(model)
           Expr(:parameters,
             Expr(:kw, :factory, factory_var)),
           grp_name)))
-      # Emit: group_instance(grp_var, xyz(...))
+      # Emit: group_instance(grp_var, xyz(x, y, 0)) — xy placement only; see the z note above.
       for loc in g.instances
         push!(stmts, Expr(:call, :group_instance, grp_var,
           Expr(:call, :xyz,
-            meta_program(cx(loc)), meta_program(cy(loc)), meta_program(cz(loc)))))
+            meta_program(cx(loc)), meta_program(cy(loc)), 0.0)))
       end
     end
   end
@@ -1227,7 +1230,10 @@ stmts_of(e::Expr) = e.head == :block ? e.args : [e]
 # (the caller's session already has its backend package loaded), and contains per-statement
 # failures so one bad element skips instead of aborting the run. Returns counts + deduped errors.
 function run_generated_program(path::AbstractString; b=top_backend(), skip_using=true)
-  let name = Symbol(backend_name(b))
+  # Bind BOTH the backend's display name and its lowercase form: the generated guards use the
+  # lowercase package-idiomatic symbol (`@isdefined(threejs)`), while backend_name(b) may be
+  # capitalized ("Threejs") — binding only the latter silently disabled every family mapping.
+  for name in unique([Symbol(backend_name(b)), Symbol(lowercase(backend_name(b)))])
     isdefined(Main, name) || Core.eval(Main, Expr(:(=), name, b))
   end
   current_backend(b)

@@ -780,7 +780,9 @@ realize(b::Backend, s::Union{Door, Window}) =
       let base_height = s.wall.bottom_level.height + s.loc.y,
           sp = subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width),
           loc = wall_obj_transform(sp[begin], sp[end], base_height, bf)
-        [ensure_ref(b, b_mesh_obj_fmt(b, bf.obj_name, loc))]
+        # Raw backend ref, like the generic branch below — wrapping in ensure_ref here made this
+        # branch's ref a NativeRef vector while consumers expect the wire value.
+        [b_mesh_obj_fmt(b, bf.obj_name, loc)]
       end
     else
       let base_height = s.wall.bottom_level.height + s.loc.y + 0.0001, #To avoid z-fighting :-(
