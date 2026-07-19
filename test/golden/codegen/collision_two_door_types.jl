@@ -12,8 +12,16 @@ door_single_flush_0915 = door_family("Single-Flush:0915", 1.0, 2.0, 0.05, frame_
 door_double_flush_1830 = door_family("Double-Flush:1830", 1.0, 2.0, 0.05, frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)))
 @isdefined(revit) && set_backend_family(door_double_flush_1830, revit, revit_opening_file_family(raw"C:\B.rfa"))
 
-let __wall = wall(open_polygonal_path([xy(0, 0), xy(6, 0)]), bottom_level = level_0, top_level = level_1, family = wall_w_t)
+# Storey storey_0 (level_0 = 0.0)
+
+function storey_0()
+  let __wall = wall(open_polygonal_path([xy(0, 0), xy(6, 0)]), bottom_level = level_0, top_level = level_1, family = wall_w_t)
     add_door(__wall, xy(1.0, 0.0), door_single_flush_0915)
     add_door(__wall, xy(4.0, 0.0), door_double_flush_1830)
     __wall
 end
+end
+
+# Build the storeys, bottom-up
+
+storey_0()

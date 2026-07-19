@@ -1190,11 +1190,165 @@ function wrap_program_in_function(e::Expr; name=:building)
        Expr(:call, name))
 end
 
+# 3.9 Sectionalize by storey — organize the flat element statements the way an AD
+# developer would write them: one named function per storey (real Revit storey names
+# when the introspection provides them), called bottom-up. Runs after unify_constants
+# (earlier passes iterate top-level statements only and must not find them wrapped)
+# and before wrap/header.
+#
+# Partition rules:
+# - Prologue (constant/level/family assigns, @isdefined guards) keeps its position.
+# - :call/:let/:for statements referencing level symbols go to the storey of the
+#   LOWEST level they reference (the same key detect_level_repetition buckets by);
+#   unconnected_level markers don't own storeys (they're wall-top heights).
+# - group_instance calls section by their group FACTORY's lowest referenced level
+#   (instances only depend on globally-defined factories, so this is order-safe).
+#   Factory/typical_floor function defs stay global.
+# - Statements with no level reference (obj_model fallbacks, finalize_groups,
+#   building_levels loops) keep their global position, so program semantics and
+#   sort_statements' canonical intra-run order are preserved exactly.
+# Sectioning is skipped for programs with fewer than 2 real storeys.
+
+_static_eval(x::Real, _) = Float64(x)
+_static_eval(x::Symbol, consts) = get(consts, x, nothing)
+_static_eval(x::Expr, consts) =
+  if x.head == :call && length(x.args) >= 2 && x.args[1] in (:+, :-, :*, :/)
+    let vals = [_static_eval(a, consts) for a in x.args[2:end]]
+      any(isnothing, vals) ? nothing :
+        foldl((a, b) -> Base.invokelatest(getfield(Base, x.args[1]), a, b), vals)
+    end
+  else
+    nothing
+  end
+_static_eval(x, _) = nothing
+
+_storey_fn_name(name, taken) =
+  let base = Symbol(sanitize_name(name)),
+      fn = base in taken ? Symbol(string(base, "_storey")) : base
+    while fn in taken
+      fn = Symbol(string(fn, "_"))
+    end
+    fn
+  end
+
+sectionalize_by_storey(level_names::Dict{Float64, String}=Dict{Float64, String}()) =
+  (e::Expr) -> _sectionalize_by_storey(e, level_names)
+
+function _sectionalize_by_storey(e::Expr, level_names)
+  stmts = collect(stmts_of(e))
+  consts = Dict{Symbol, Float64}()
+  level_heights = Dict{Symbol, Float64}()   # REAL storey levels only
+  level_syms = Set{Symbol}()                # incl. unconnected markers
+  factories = Dict{Symbol, Expr}()          # factory fn name => body
+  group_factory = Dict{Symbol, Symbol}()    # group var => factory fn name
+  taken = Set{Symbol}()
+  for s in stmts
+    if s isa Expr && s.head == :(=) && s.args[1] isa Symbol
+      push!(taken, s.args[1])
+      let v = s.args[1], rhs = s.args[2]
+        if rhs isa Real
+          consts[v] = Float64(rhs)
+        elseif rhs isa Expr && rhs.head == :call && length(rhs.args) >= 2
+          if rhs.args[1] == :level
+            let h = _static_eval(rhs.args[2], consts)
+              h === nothing || (level_heights[v] = h)
+            end
+            push!(level_syms, v)
+          elseif rhs.args[1] == :unconnected_level
+            push!(level_syms, v)
+          elseif rhs.args[1] == :group
+            for a in rhs.args
+              a isa Expr && a.head == :parameters && for kw in a.args
+                kw isa Expr && kw.head == :kw && kw.args[1] == :factory &&
+                  kw.args[2] isa Symbol && (group_factory[v] = kw.args[2])
+              end
+              a isa Expr && a.head == :kw && a.args[1] == :factory &&
+                a.args[2] isa Symbol && (group_factory[v] = a.args[2])
+            end
+          end
+        end
+      end
+    elseif s isa Expr && s.head == :function && s.args[1] isa Expr &&
+           s.args[1].head == :call && s.args[1].args[1] isa Symbol
+      push!(taken, s.args[1].args[1])
+      factories[s.args[1].args[1]] = s
+    end
+  end
+  length(level_heights) >= 2 || return e
+
+  # storey key = the level var with the LOWEST height among those referenced
+  storey_of_syms(syms) =
+    let real = [s for s in syms if haskey(level_heights, s)]
+      isempty(real) ? nothing : argmin(s -> level_heights[s], real)
+    end
+  refs_in(x) = collect_exprs(y -> y isa Symbol && y in level_syms, x)
+  storey_of(s) =
+    if s isa Expr && s.head == :call && s.args[1] == :group_instance &&
+       length(s.args) >= 2 && s.args[2] isa Symbol
+      let f = get(group_factory, s.args[2], nothing),
+          body = f === nothing ? nothing : get(factories, f, nothing)
+        body === nothing ? nothing : storey_of_syms(refs_in(body))
+      end
+    elseif s isa Expr && s.head in (:call, :let, :for)
+      storey_of_syms(refs_in(s))
+    else
+      nothing
+    end
+
+  sections = Dict{Symbol, Vector{Any}}()
+  out = Any[]
+  first_section_at = nothing
+  for s in stmts
+    let key = s isa Expr && s.head == :function ? nothing : storey_of(s)
+      if key === nothing
+        push!(out, s)
+      else
+        push!(get!(sections, key, Any[]), s)
+        first_section_at === nothing && (first_section_at = length(out) + 1)
+      end
+    end
+  end
+  isempty(sections) && return e
+
+  ordered = sort(collect(keys(sections)), by=v -> level_heights[v])
+  fnames = Dict{Symbol, Symbol}()
+  for v in ordered
+    let name = let h = level_heights[v],
+                   k = findfirst(kh -> abs(kh - h) < 0.005, collect(keys(level_names)))
+                 k === nothing ? "storey_" * string(v)[7:end] :
+                                 level_names[collect(keys(level_names))[k]]
+               end
+      fnames[v] = _storey_fn_name(name, taken)
+      push!(taken, fnames[v])
+    end
+  end
+  defs = Any[]
+  for v in ordered
+    push!(defs, Expr(:toplevel_comment,
+                     "Storey $(fnames[v]) ($(v) = $(round(level_heights[v], digits=3)))"))
+    push!(defs, Expr(:function, Expr(:call, fnames[v]), Expr(:block, sections[v]...)))
+  end
+  calls = Any[Expr(:toplevel_comment, "Build the storeys, bottom-up")]
+  for v in ordered
+    push!(calls, Expr(:call, fnames[v]))
+  end
+  # Defs go where the first sectioned statement stood; the CALLS go after every
+  # remaining global statement (sectioned group_instances reference group vars
+  # defined in the global tail) but before a trailing finalize_groups().
+  tail_split = (!isempty(out) && out[end] isa Expr && out[end].head == :call &&
+                out[end].args[1] == :finalize_groups) ? length(out) - 1 : length(out)
+  Expr(:block, out[1:min(first_section_at - 1, tail_split)]..., defs...,
+       out[min(first_section_at, tail_split + 1):tail_split]...,
+       calls...,
+       out[tail_split+1:end]...)
+end
+
 # ─── The standard pass list ──────────────────────────────────────────────────
 # One authoritative order shared by the BIM (Revit) and geometric (AutoCAD) pipelines so they
 # cannot drift. `header` is the backend-appropriate header pass; `wrap` inserts the optional
 # function wrapper before it.
-codegen_passes(b, fmap; header=add_header(b), wrap=false) =
+codegen_passes(b, fmap; header=add_header(b), wrap=false,
+               level_names=Dict{Float64, String}()) =
   let passes = Any[extract_levels,
                    extract_families(fmap),
                    add_backend_families(b, fmap),
@@ -1204,7 +1358,8 @@ codegen_passes(b, fmap; header=add_header(b), wrap=false) =
                    loop_rerolling,
                    parametrize_levels,
                    symbolize_ranges,
-                   unify_constants]
+                   unify_constants,
+                   sectionalize_by_storey(level_names)]
     wrap && push!(passes, wrap_program_in_function)
     push!(passes, header)
     passes
@@ -1586,7 +1741,7 @@ codegen_pass_names(; wrap=false) =
   let names = ["extract_levels", "extract_families", "add_backend_families",
                "detect_level_repetition", "extract_functions", "sort_statements",
                "loop_rerolling", "parametrize_levels", "symbolize_ranges",
-               "unify_constants"]
+               "unify_constants", "sectionalize_by_storey"]
     wrap && push!(names, "wrap_program_in_function")
     push!(names, "header")
     names

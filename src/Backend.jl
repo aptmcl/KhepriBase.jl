@@ -2739,7 +2739,25 @@ function standalone_obj_transform(position, bf::OBJFileFamily, extra_angle=0.0)
       # wall cabinets render with their depth on the wrong side of the wall.
       my = (cx(xw) * cy(yw) - cy(xw) * cx(yw)) < -1e-12 ? -1.0 : 1.0,
       θ = bf.rotation + extra_angle + φ,
-      cθ = cos(θ), sθ = sin(θ)
+      cθ = cos(θ), sθ = sin(θ),
+      zw = in_world(position + vz(1, position.cs)) - p
+    # A TILTED placement frame (face-based instance on a vertical host: the cs
+    # z-axis is not world-vertical) cannot be reduced to a plan angle — apply the
+    # cs axes directly, spinning any explicit rotation about the frame's own z.
+    # φ already rides in xw, so θf excludes it. Plan-aligned frames (zw ≈ ẑ) take
+    # the branches below unchanged.
+    if norm(vxy(cx(zw), cy(zw))) > 1e-6
+      let θf = bf.rotation + extra_angle,
+          cf = cos(θf), sf = sin(θf),
+          fx = (xw * cf + yw * sf) * s,
+          fy = (xw * -sf + yw * cf) * s,
+          fz = zw * s,
+          # y_is_up OBJs map local Y to the frame's z and local Z to -y.
+          (vx, vy, vz) = bf.y_is_up ? (fx, fz, fy * -1) : (fx, fy, fz),
+          local_offset = vx * bf.offset.x + vy * bf.offset.y + vz * bf.offset.z
+        return u0(cs_from_o_vx_vy_vz(p + local_offset, vx, vy, vz))
+      end
+    end
     if bf.y_is_up
       # Y-up OBJ → Z-up world: X→X, Y→Z (up), Z→-Y (preserves handedness)
       let vx = vxyz(cθ * s, sθ * s, 0),
