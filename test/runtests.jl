@@ -39,6 +39,7 @@ using Test
     include("test_metamorphic.jl")
     include("test_topology.jl")
     include("test_mock_record.jl")
+    include("test_measure_conformance.jl")
   end
 
   # Phase 3: Shape System tests

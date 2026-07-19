@@ -105,6 +105,7 @@ include("DesignLayout.jl")
 # `Spaces.jl` (which defines both types).
 include("ConstraintLibrary.jl")
 include("Backends.jl")
+include("Measure.jl")
 include("Primitives.jl")
 include("Introspection.jl")     # portable CAD/BIM read-back vocabulary (FamilyMeta, …)
 include("CodeGen.jl")           # portable BIM-model → Julia-program code generation

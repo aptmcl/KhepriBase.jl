@@ -200,6 +200,48 @@ end
     end
   end
 
+  @testset "pass-equivalence oracle" begin
+    # The transformation passes must preserve realized geometry: raw model_to_expr
+    # output vs the transformed program, measured on a MeasureBackend, must match
+    # as a shape multiset. Headless — this is the layer that catches the
+    # translate/reorder/reroll bug class without Revit.
+    let model = reference_model(),
+        rep = pass_equivalence_report(revit, model)
+      @test rep.ok
+      rep.ok || @info "pass-equivalence failure" rep
+    end
+    # Multi-run stair + landings + railing (groups the straight fixture lacks):
+    with_introspection(revit) do
+      let l0 = level(0.0), l1 = level(3.26),
+          sfam = stair_family(width = 1.2, riser_height = 0.1716),
+          walk = open_polygonal_path([xyz(0, 0, 0.0), xyz(-1.12, 0, 0.858),
+                                      xyz(-1.72, 0.6, 0.858), xyz(-1.72, 3.4, 2.745)]),
+          lands = [closed_polygonal_path([xyz(-2.32, -0.6, 0.858), xyz(-2.32, 0.6, 0.858),
+                                          xyz(-1.12, 0.6, 0.858), xyz(-1.12, -0.6, 0.858)])],
+          st = stair(xyz(0, 0, 0), vx(-1), l0, l1, sfam, walk, lands),
+          rl = railing(open_polygonal_path([xyz(4, 0, 0), xyz(4, 3, 0)]), level = l0,
+                       family = railing_family(infill_material = material_glass)),
+          rep = pass_equivalence_report(
+            revit, bim_model(levels = [l0, l1], stairs = [st], railings = [rl]))
+        @test rep.ok
+        rep.ok || @info "stair/railing pass-equivalence failure" rep
+      end
+    end
+    # Sensitivity: a corrupted pass (literal-coordinate shift) must be DETECTED
+    # and NAMED. This is the oracle's own acceptance test — without it, tolerance
+    # drift could silently blind the whole layer.
+    let model = reference_model(),
+        fmap = KB.family_expr_map(model),
+        good = KB.codegen_passes(revit, fmap),
+        corrupt = e -> KB.translate_xyz_expr(e, 1.0, 0.0, 0.0),
+        passes = vcat(good[1:5], corrupt, good[6:end]),
+        names = vcat(KB.codegen_pass_names()[1:5], "CORRUPT", KB.codegen_pass_names()[6:end]),
+        rep = pass_equivalence_report(revit, model; passes = passes, pass_names = names)
+      @test !rep.ok
+      @test rep.pass_name == "CORRUPT"
+    end
+  end
+
   @testset "beam orientation round-trips (meta_program override)" begin
     with_introspection(revit) do
       hb = beam(xyz(0, 0, 0), xyz(5, 0, 0))   # horizontal beam via the 2-point constructor

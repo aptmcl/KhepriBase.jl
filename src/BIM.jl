@@ -780,12 +780,15 @@ realize(b::Backend, s::Union{Door, Window}) =
       let base_height = s.wall.bottom_level.height + s.loc.y,
           sp = subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width),
           # flip_x mirrors the leaf/hinge side: reverse the tangent (a rotation by pi
-          # about the opening center, keeping the mesh in the wall plane).
+          # about the opening center, keeping the mesh in the wall plane). flip_y
+          # mirrors the swing/facing side ACROSS the wall plane — a true mirror
+          # (chirality flips), carried by the transform's negated normal axis.
           (pa, pc) = s.flip_x ? (sp[end], sp[begin]) : (sp[begin], sp[end]),
           # Revit door/window families put their origin at the opening CENTER (the
           # revit-side instance map compensates with +width/2); anchor the mesh there,
           # keeping the tangent from the opening's own direction.
-          loc = wall_obj_transform(intermediate_loc(pa, pc), pc, base_height, bf)
+          loc = wall_obj_transform(intermediate_loc(pa, pc), pc, base_height, bf,
+                                   normal_sign=s.flip_y ? -1.0 : 1.0)
         # Raw backend ref, like the generic branch below — wrapping in ensure_ref here made this
         # branch's ref a NativeRef vector while consumers expect the wire value.
         [b_mesh_obj_fmt(b, bf.obj_name, loc)]
@@ -905,8 +908,11 @@ frame_path(s::Window, subpath, height) =
 ##
 
 export add_door
-add_door(w::Wall=required(), loc::Loc=u0(), family::DoorFamily=default_door_family()) =
-  let d = door(w, loc, family=family)
+# `flip_x` mirrors the leaf/hinge side about the opening center (Revit HandFlipped);
+# `flip_y` mirrors the swing/facing side across the wall plane (Revit FacingFlipped).
+add_door(w::Wall=required(), loc::Loc=u0(), family::DoorFamily=default_door_family();
+         flip_x::Bool=false, flip_y::Bool=false) =
+  let d = door(w, loc, flip_x, flip_y, family=family)
     push!(w.doors, d)
     delete_shape(w)
     maybe_realize(w)
@@ -922,8 +928,9 @@ add!(d::Door) =
   end
 
 export add_window
-add_window(w::Wall=required(), loc::Loc=u0(), family::WindowFamily=default_window_family()) =
-  let d = window(w, loc, family=family)
+add_window(w::Wall=required(), loc::Loc=u0(), family::WindowFamily=default_window_family();
+           flip_x::Bool=false, flip_y::Bool=false) =
+  let d = window(w, loc, flip_x, flip_y, family=family)
     push!(w.windows, d)
     delete_shape(w)
     maybe_realize(w)
@@ -995,9 +1002,17 @@ meta_program(w::Wall) =
       Expr(:let,
            Expr(:(=), :__wall, Expr(:call, :wall, path, kwargs...)),
            Expr(:block,
-                (Expr(:call, :add_door, :__wall, meta_program(d.loc), meta_program(d.family))
+                (let args = Any[:add_door, :__wall, meta_program(d.loc), meta_program(d.family)]
+                   d.flip_x && push!(args, Expr(:kw, :flip_x, true))
+                   d.flip_y && push!(args, Expr(:kw, :flip_y, true))
+                   Expr(:call, args...)
+                 end
                  for d in w.doors)...,
-                (Expr(:call, :add_window, :__wall, meta_program(wn.loc), meta_program(wn.family))
+                (let args = Any[:add_window, :__wall, meta_program(wn.loc), meta_program(wn.family)]
+                   wn.flip_x && push!(args, Expr(:kw, :flip_x, true))
+                   wn.flip_y && push!(args, Expr(:kw, :flip_y, true))
+                   Expr(:call, args...)
+                 end
                  for wn in w.windows)...,
                 :__wall))
     else
@@ -1014,9 +1029,12 @@ meta_program(l::Level) =
 # `infill_material` (e.g. material_glass): render a continuous panel between the posts
 # under the top rail — glass-balustrade railings (common on balconies) would otherwise
 # reproduce as skeletal rail+posts on mesh backends.
+# `with_posts=false`: post-free assemblies (glass clamped at the slab edge, e.g.
+# "Over Slab" glassline balustrades) — the default posts are invented geometry there.
 @deffamily(railing_family, Family,
   height::Real=0.9,
   post_spacing::Real=1.0,
+  with_posts::Bool=true,
   material::Material=material_metal,
   infill_material::Union{Material, Nothing}=nothing)
 

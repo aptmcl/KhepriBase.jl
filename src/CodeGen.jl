@@ -1565,3 +1565,74 @@ _expr_str(x::Bool) = string(x)
 _expr_str(x::QuoteNode) = string(x.value)
 _expr_str(::Nothing) = "nothing"
 _expr_str(x) = string(x)
+
+# ─── Pass-equivalence oracle ─────────────────────────────────────────────────
+#=
+The transformation passes must PRESERVE GEOMETRY: the raw `model_to_expr` output
+and the transformed program, both realized on a MeasureBackend, must produce the
+same shape multiset (within the passes' declared snapping tolerance — the reroll
+passes snap values to arithmetic progressions within ~1e-3). The oracle folds the
+pipeline pass-by-pass, so a regression names the offending pass directly. Fully
+headless: no Revit, no golden files; this is the layer that catches the
+translate/reorder/reroll class of bugs (a grouped slab landing at double its
+offset, a rerolled loop dropping an element) in CI.
+
+Statement-level realization errors in ANY stage are failures — the raw program
+is the semantic reference and must realize cleanly.
+=#
+export pass_equivalence_report, codegen_pass_names
+
+codegen_pass_names(; wrap=false) =
+  let names = ["extract_levels", "extract_families", "add_backend_families",
+               "detect_level_repetition", "extract_functions", "sort_statements",
+               "loop_rerolling", "parametrize_levels", "symbolize_ranges",
+               "unify_constants"]
+    wrap && push!(names, "wrap_program_in_function")
+    push!(names, "header")
+    names
+  end
+
+function pass_equivalence_report(b, model; tol_pos=2e-3, tol_size=2e-3,
+                                 passes=nothing, pass_names=nothing)
+  let fmap = family_expr_map(model),
+      raw = model_to_expr(model),
+      # The header pass adds `using`/comments only — geometry-neutral by
+      # construction, but included anyway: the oracle re-verifies it.
+      passes = passes === nothing ? codegen_passes(b, fmap) : passes,
+      pass_names = pass_names === nothing ? codegen_pass_names() : pass_names,
+      # Per-SHAPE granularity: a rerolled for-loop or an extracted function call
+      # registers one shape per created element, exactly like the unrolled raw
+      # program — per-statement aggregation would spuriously mismatch after
+      # loop_rerolling collapses N statements into one.
+      stage_measurements = e ->
+        let mb = measure_backend(),
+            rows = measured_statements(e; b=mb),
+            errs = [(r.index, r.error) for r in rows if r.error !== nothing]
+          ([r.measurement for r in measured_shapes(mb) if r.measurement.n_trigs > 0],
+           errs)
+        end,
+      (base, base_errs) = stage_measurements(raw)
+    isempty(base_errs) ||
+      return (ok=false, failing_pass=0, pass_name="raw (model_to_expr)",
+              errors=base_errs, unmatched_raw=Int[], unmatched_stage=Int[],
+              n_raw=length(base), n_stage=0)
+    let stage = raw
+      for (k, p) in enumerate(passes)
+        stage = p(stage)
+        let (ms, errs) = stage_measurements(stage),
+            res = match_measurements(base, ms; tol_pos=tol_pos, tol_size=tol_size)
+          if !isempty(errs) || !isempty(res.unmatched_a) || !isempty(res.unmatched_b)
+            return (ok=false, failing_pass=k,
+                    pass_name=k <= length(pass_names) ? pass_names[k] : "pass $k",
+                    errors=errs,
+                    unmatched_raw=res.unmatched_a, unmatched_stage=res.unmatched_b,
+                    n_raw=length(base), n_stage=length(ms))
+          end
+        end
+      end
+      (ok=true, failing_pass=nothing, pass_name=nothing, errors=[],
+       unmatched_raw=Int[], unmatched_stage=Int[],
+       n_raw=length(base), n_stage=length(base))
+    end
+  end
+end

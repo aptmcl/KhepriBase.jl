@@ -1952,8 +1952,9 @@ b_railing(b::Backend, path, level, host, family) =
       vcat(
         b_sweep(b, translate(path, vz(base + h)),
                 rectangular_profile(0.05, 0.05), 0, 1, mat),
-        [b_cylinder(b, add_z(in_world(pt), base), 0.025, h, mat, mat, mat)
-         for pt in post_locs]...,
+        (family.with_posts ?
+           [b_cylinder(b, add_z(in_world(pt), base), 0.025, h, mat, mat, mat)
+            for pt in post_locs] : [])...,
         railing_infill_panels(b, path, base, h, family)...)
     end
   end
@@ -2770,11 +2771,14 @@ end
     Y = vertical (up) or wall normal, depending on y_is_up
     Z = wall normal or vertical (up)
 =#
-function wall_obj_transform(sp_begin, sp_end, base_height, bf::OBJFileFamily)
+function wall_obj_transform(sp_begin, sp_end, base_height, bf::OBJFileFamily;
+                            normal_sign=1.0)
   let p = in_world(sp_begin) + vz(base_height),
       tangent = unitized(in_world(sp_end) - in_world(sp_begin)),
       up = vz(1),
-      normal = unitized(cross(tangent, up)),
+      # normal_sign = -1 mirrors the mesh across the wall plane (facing flip) —
+      # a genuine mirror: the frame determinant goes negative.
+      normal = unitized(cross(tangent, up)) * normal_sign,
       s = bf.scale,
       θ = bf.rotation,
       cθ = cos(θ), sθ = sin(θ),
