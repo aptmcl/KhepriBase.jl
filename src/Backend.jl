@@ -1920,7 +1920,11 @@ b_slab(b::Backend, profile, level, family) =
       bmat = material_ref(b, family.bottom_material),
       smat = material_ref(b, family.side_material),
       v = vz(slab_family_thickness(b, family))
-    b_extruded_surface(b, profile, v, z(level_height(b, level) + slab_family_elevation(b, family)), bmat, tmat, smat)
+    # The height cb must be WORLD-frame: xyz()/z() bake current_cs at construction, so
+    # inside a group factory (translated current_cs) BOTH the positioned profile and a
+    # current_cs z(h) would carry the group translation — path_on then applies it twice
+    # and every grouped slab lands at double its group offset.
+    b_extruded_surface(b, profile, v, z(level_height(b, level) + slab_family_elevation(b, family), world_cs), bmat, tmat, smat)
    end
 
 b_roof(b::Backend, region, level, family) =
@@ -1932,7 +1936,7 @@ b_ceiling(b::Backend, profile, level, family) =
       smat = material_ref(b, family.side_material),
       th = ceiling_family_thickness(b, family)
     b_extruded_surface(b, profile, vz(th),
-      z(level_height(b, level) - th + ceiling_family_elevation(b, family)),
+      z(level_height(b, level) - th + ceiling_family_elevation(b, family), world_cs),
       bmat, tmat, smat)
   end
 
@@ -1949,8 +1953,25 @@ b_railing(b::Backend, path, level, host, family) =
         b_sweep(b, translate(path, vz(base + h)),
                 rectangular_profile(0.05, 0.05), 0, 1, mat),
         [b_cylinder(b, add_z(in_world(pt), base), 0.025, h, mat, mat, mat)
-         for pt in post_locs]...)
+         for pt in post_locs]...,
+        railing_infill_panels(b, path, base, h, family)...)
     end
+  end
+
+# Continuous infill panel between the posts (glass balustrades): one vertical quad per
+# path segment, from just above the base to just under the top rail, each vertex keeping
+# its own z so the panel climbs with a sloped (stair) path.
+railing_infill_panels(b::Backend, path, base, h, family) =
+  family.infill_material === nothing ? [] :
+  let vs = path_vertices(path),
+      imat = material_ref(b, family.infill_material)
+    [b_surface_polygon(b,
+       [add_z(in_world(vs[i]), base + 0.02),
+        add_z(in_world(vs[i + 1]), base + 0.02),
+        add_z(in_world(vs[i + 1]), base + h - 0.03),
+        add_z(in_world(vs[i]), base + h - 0.03)],
+       imat)
+     for i in 1:(length(vs) - 1)]
   end
 
 b_ramp(b::Backend, path, bottom_level, top_level, family) =
@@ -2701,23 +2722,35 @@ public standalone_obj_transform, wall_obj_transform
   Compute a Loc (4×4 transform) for placing an OBJ mesh at a world
   position (no wall context). Rotation is around the world Z (vertical) axis.
 =#
-function standalone_obj_transform(position, bf::OBJFileFamily)
+function standalone_obj_transform(position, bf::OBJFileFamily, extra_angle=0.0)
   let p = in_world(position),
       s = bf.scale,
-      θ = bf.rotation,
+      # The position's own cs orientation participates: Table/Chair (and rotated
+      # family_element locs) bake the instance angle into the loc via loc_from_o_phi,
+      # which in_world(p) alone would silently DROP — every OBJ fixture then renders
+      # unrotated (the wall-crossing-cabinet bug). Any explicitly-passed instance
+      # angle is added on top.
+      xw = in_world(position + vx(1, position.cs)) - p,
+      yw = in_world(position + vy(1, position.cs)) - p,
+      φ = norm(vxy(cx(xw), cy(xw))) < 1e-9 ? 0.0 : atan(cy(xw), cx(xw)),
+      # A MIRRORED placement (Revit hand-flip: plan determinant < 0) cannot be expressed
+      # as a rotation — honor it by flipping the frame's second plan axis, else mirrored
+      # wall cabinets render with their depth on the wrong side of the wall.
+      my = (cx(xw) * cy(yw) - cy(xw) * cx(yw)) < -1e-12 ? -1.0 : 1.0,
+      θ = bf.rotation + extra_angle + φ,
       cθ = cos(θ), sθ = sin(θ)
     if bf.y_is_up
       # Y-up OBJ → Z-up world: X→X, Y→Z (up), Z→-Y (preserves handedness)
       let vx = vxyz(cθ * s, sθ * s, 0),
           vy = vxyz(0, 0, s),
-          vz = vxyz(sθ * s, -cθ * s, 0),
+          vz = vxyz(sθ * s * my, -cθ * s * my, 0),
           local_offset = vx * bf.offset.x + vy * bf.offset.y + vz * bf.offset.z
         u0(cs_from_o_vx_vy_vz(p + local_offset, vx, vy, vz))
       end
     else
       # Z-up OBJ (default): identity axis mapping
       let vx = vxyz(cθ * s, sθ * s, 0),
-          vy = vxyz(-sθ * s, cθ * s, 0),
+          vy = vxyz(-sθ * s * my, cθ * s * my, 0),
           vz = vxyz(0, 0, s),
           local_offset = vx * bf.offset.x + vy * bf.offset.y + vz * bf.offset.z
         u0(cs_from_o_vx_vy_vz(p + local_offset, vx, vy, vz))
@@ -2986,7 +3019,10 @@ _obj_sibling_material(objpath) =
   to raw OBJ vertex positions. Returns world-space Loc points.
 =#
 transform_obj_vertices(verts, transform) =
-  [in_world(transform + vxyz(v[1], v[2], v[3])) for v in verts]
+  # The offset vector MUST live in the transform's cs — a bare vxyz() is built in the
+  # CURRENT cs (usually world), which silently bypasses the frame's rotation/mirror:
+  # every OBJ placed through the Julia-parse path rendered unrotated.
+  [in_world(transform + vxyz(v[1], v[2], v[3], transform.cs)) for v in verts]
 
 public b_family_element
 # The location's z is LEVEL-RELATIVE (matching walls/slabs and Revit's native placement), so the
@@ -2996,7 +3032,7 @@ b_family_element(b::Backend, loc, angle, level, family) =
   let lifted = add_z(loc, level_height(level)),
       bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
-      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(lifted, bf)) :
+      b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(lifted, bf, angle)) :
       # Placeholder box with a RESOLVED material ref — a raw `nothing` is not encodable on
       # wire backends whose material slot is an id (KhepriThreejs).
       b_box(b, lifted - vxy(0.5, 0.5, lifted.cs), 1.0, 1.0, 1.0, material_ref(b, material_basic))

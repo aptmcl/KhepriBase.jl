@@ -347,7 +347,7 @@ macro deffamily(name, parent, fields...)
     KhepriBase.meta_program(v::$(struct_name)) =
         let args = Any[$(map(field_name -> :(meta_program(v.$(field_name))),
                              [fn for (fn, ft) in zip(field_names, field_types)
-                              if ft != :Material])...)]
+                              if !(ft in (:Material, :(Union{Material, Nothing})))])...)]
             # Non-material fields are positional (as before); non-default material fields are appended as
             # keyword args when material emission is enabled — so backends whose appearance comes from the
             # family material (not a native type) reproduce it, and default materials stay silent.
@@ -355,7 +355,7 @@ macro deffamily(name, parent, fields...)
                 $(map(((fn, fi),) -> :(v.$(fn) == $(fi) ||
                           push!(args, Expr(:kw, $(QuoteNode(fn)), meta_program(v.$(fn))))),
                       [(fn, fi) for (fn, ft, fi) in zip(field_names, field_types, field_inits)
-                       if ft == :Material])...)
+                       if ft in (:Material, :(Union{Material, Nothing}))])...)
             end
             Expr(:call, $(Expr(:quote, name)), args...)
         end
@@ -779,10 +779,13 @@ realize(b::Backend, s::Union{Door, Window}) =
     if bf isa OBJFamily
       let base_height = s.wall.bottom_level.height + s.loc.y,
           sp = subpath(s.wall.path, s.loc.x, s.loc.x + s.family.width),
+          # flip_x mirrors the leaf/hinge side: reverse the tangent (a rotation by pi
+          # about the opening center, keeping the mesh in the wall plane).
+          (pa, pc) = s.flip_x ? (sp[end], sp[begin]) : (sp[begin], sp[end]),
           # Revit door/window families put their origin at the opening CENTER (the
           # revit-side instance map compensates with +width/2); anchor the mesh there,
           # keeping the tangent from the opening's own direction.
-          loc = wall_obj_transform(intermediate_loc(sp[begin], sp[end]), sp[end], base_height, bf)
+          loc = wall_obj_transform(intermediate_loc(pa, pc), pc, base_height, bf)
         # Raw backend ref, like the generic branch below — wrapping in ensure_ref here made this
         # branch's ref a NativeRef vector while consumers expect the wire value.
         [b_mesh_obj_fmt(b, bf.obj_name, loc)]
@@ -1008,12 +1011,17 @@ meta_program(l::Level) =
 
 # Railing
 
+# `infill_material` (e.g. material_glass): render a continuous panel between the posts
+# under the top rail — glass-balustrade railings (common on balconies) would otherwise
+# reproduce as skeletal rail+posts on mesh backends.
 @deffamily(railing_family, Family,
   height::Real=0.9,
   post_spacing::Real=1.0,
-  material::Material=material_metal)
+  material::Material=material_metal,
+  infill_material::Union{Material, Nothing}=nothing)
 
-used_materials(f::RailingFamily) = (f.material, )
+used_materials(f::RailingFamily) =
+  f.infill_material === nothing ? (f.material,) : (f.material, f.infill_material)
 
 @defproxy(railing, BIMShape,
   path::Path=open_polygonal_path([u0(), ux()]),
@@ -1769,7 +1777,9 @@ b_obj_model(b::Backend, path, location, scale, material) =
       (verts, faces, face_mats) = read_obj_mesh(objpath),
       # Place each (scaled) OBJ vertex in the location's frame: works whether `location` is a plain
       # world point or a full frame u0(cs=cs(o, vx, vy, vz)) as emitted by the geometric fallback.
-      placed = [in_world(location + vxyz(v[1] * scale, v[2] * scale, v[3] * scale)) for v in verts]
+      # The offset vector must live in the location's cs (a bare vxyz() is built in the
+      # current cs and would bypass the frame's rotation).
+      placed = [in_world(location + vxyz(v[1] * scale, v[2] * scale, v[3] * scale, location.cs)) for v in verts]
     if isnothing(material)
       # No explicit material: colour each usemtl group from the .mtl sibling (the Revit exporter writes
       # one next to each fallback .obj) so fallback meshes render coloured, not void/grey.
