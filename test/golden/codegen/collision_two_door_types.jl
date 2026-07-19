@@ -6,7 +6,7 @@ level_0 = level(0.0)
 level_1 = level(3.0)
 
 wall_w_t = wall_family("wall_family", 0.2, 0.0, 0.0)
-@isdefined(revit) && set_backend_family(wall_w_t, revit, revit_system_family())
+@isdefined(revit) && set_backend_family(wall_w_t, revit, revit_system_family(type_name="W:T"))
 door_single_flush_0915 = door_family("Single-Flush:0915", 1.0, 2.0, 0.05, frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)))
 @isdefined(revit) && set_backend_family(door_single_flush_0915, revit, revit_opening_file_family(raw"C:\A.rfa"))
 door_double_flush_1830 = door_family("Double-Flush:1830", 1.0, 2.0, 0.05, frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)))

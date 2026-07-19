@@ -387,59 +387,18 @@ end
 b_spline(b::Backend, ps, mat) =
   b_spline(b, ps, false, false, mat)
 
+#=
+Every open interpolating spline draws the SAME canonical curve: the chord-
+parameterized cubic that location_at/sweeps already follow, with forward end
+tangents that are either user-supplied directions or extracted from that
+interpolant (see open_spline_bezier_path in Paths.jl). Backends with a native
+interpolating-spline primitive (AutoCAD, Rhino) override b_spline and feed
+those tangents to their fit APIs; everyone else receives the exact curve as a
+cubic Bezier chain, drawn natively where the backend supports Beziers and
+sampled otherwise.
+=#
 b_spline(b::Backend, ps, v0, v1, mat) =
-  if !(v0 isa Vec) && !(v1 isa Vec)
-    let ci = curve_interpolator(ps, false),
-        cps = curve_control_points(ci),
-        n = length(cps),
-        knots = curve_knots(ci)
-      b_nurbs_curve(b, ps, 5, cps, knots, fill(1.0, n), false, mat)
-    end
-  else
-    # Cubic Hermite spline with endpoint tangent constraints
-    let coords = [raw_point(p) for p in ps],
-        n = length(coords),
-        # Compute tangents: Catmull-Rom for interior, user-specified for endpoints
-        tangents = [
-          (v0 isa Vec ?
-            let v = raw_point(in_world(v0)),
-                d = sqrt(sum((coords[2][j] - coords[1][j])^2 for j in 1:3))
-              (v[1]*d, v[2]*d, v[3]*d) end :
-            ((coords[2][j] - coords[1][j]) for j in 1:3) |> Tuple);
-          [((coords[i+1][j] - coords[i-1][j]) / 2 for j in 1:3) |> Tuple
-           for i in 2:n-1];
-          (v1 isa Vec ?
-            let v = raw_point(in_world(v1)),
-                d = sqrt(sum((coords[n][j] - coords[n-1][j])^2 for j in 1:3))
-              (v[1]*d, v[2]*d, v[3]*d) end :
-            ((coords[n][j] - coords[n-1][j]) for j in 1:3) |> Tuple)],
-        # Sample segments proportionally to chord length
-        seg_lengths = [sqrt(sum((coords[i+1][j] - coords[i][j])^2 for j in 1:3)) for i in 1:n-1],
-        total_length = sum(seg_lengths),
-        n_total = max(n * 16, 64),
-        sampled = let result = [xyz(coords[1]..., world_cs)]
-          for seg in 1:n-1
-            n_seg = max(round(Int, n_total * seg_lengths[seg] / total_length), 2)
-            p0, p1 = coords[seg], coords[seg+1]
-            m0, m1 = tangents[seg], tangents[seg+1]
-            for k in 1:n_seg
-              t = k / n_seg
-              h00 = 2t^3 - 3t^2 + 1
-              h10 = t^3 - 2t^2 + t
-              h01 = -2t^3 + 3t^2
-              h11 = t^3 - t^2
-              push!(result, xyz(
-                h00*p0[1] + h10*m0[1] + h01*p1[1] + h11*m1[1],
-                h00*p0[2] + h10*m0[2] + h01*p1[2] + h11*m1[2],
-                h00*p0[3] + h10*m0[3] + h01*p1[3] + h11*m1[3],
-                world_cs))
-            end
-          end
-          result
-        end
-      b_line(b, sampled, mat)
-    end
-  end
+  b_bezier_curve(b, open_spline_bezier_path(ps, v0, v1), mat)
 
 b_closed_spline(b::Backend, ps, mat) =
   let ci = curve_interpolator(ps, true),
@@ -2746,7 +2705,7 @@ function standalone_obj_transform(position, bf::OBJFileFamily, extra_angle=0.0)
     # cs axes directly, spinning any explicit rotation about the frame's own z.
     # φ already rides in xw, so θf excludes it. Plan-aligned frames (zw ≈ ẑ) take
     # the branches below unchanged.
-    if norm(vxy(cx(zw), cy(zw))) > 1e-6
+    if norm(vxy(cx(zw), cy(zw))) > 0.05
       let θf = bf.rotation + extra_angle,
           cf = cos(θf), sf = sin(θf),
           fx = (xw * cf + yw * sf) * s,

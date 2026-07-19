@@ -1212,7 +1212,7 @@ end
 _static_eval(x::Real, _) = Float64(x)
 _static_eval(x::Symbol, consts) = get(consts, x, nothing)
 _static_eval(x::Expr, consts) =
-  if x.head == :call && length(x.args) >= 2 && x.args[1] in (:+, :-, :*, :/)
+  if x.head == :call && length(x.args) >= 3 && x.args[1] in (:+, :-, :*, :/)
     let vals = [_static_eval(a, consts) for a in x.args[2:end]]
       any(isnothing, vals) ? nothing :
         foldl((a, b) -> Base.invokelatest(getfield(Base, x.args[1]), a, b), vals)
@@ -1275,6 +1275,12 @@ function _sectionalize_by_storey(e::Expr, level_names)
     end
   end
   length(level_heights) >= 2 || return e
+  # Storey functions must not shadow anything the program CALLS (a storey named
+  # "Roof" would define function roof() and break every roof(...) statement) —
+  # seed the taken set with every call-position symbol in the program.
+  for c in collect_exprs(x -> x isa Expr && x.head == :call && x.args[1] isa Symbol, e)
+    push!(taken, c.args[1])
+  end
 
   # storey key = the level var with the LOWEST height among those referenced
   storey_of_syms(syms) =
@@ -1314,7 +1320,7 @@ function _sectionalize_by_storey(e::Expr, level_names)
   fnames = Dict{Symbol, Symbol}()
   for v in ordered
     let name = let h = level_heights[v],
-                   k = findfirst(kh -> abs(kh - h) < 0.005, collect(keys(level_names)))
+                   k = findfirst(kh -> abs(kh - h) < 0.05, collect(keys(level_names)))
                  k === nothing ? "storey_" * string(v)[7:end] :
                                  level_names[collect(keys(level_names))[k]]
                end
