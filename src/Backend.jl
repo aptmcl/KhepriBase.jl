@@ -3041,8 +3041,13 @@ b_family_element(b::Backend, loc, angle, level, family) =
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(lifted, bf, angle)) :
       # Placeholder box with a RESOLVED material ref — a raw `nothing` is not encodable on
-      # wire backends whose material slot is an id (KhepriThreejs).
-      b_box(b, lifted - vxy(0.5, 0.5, lifted.cs), 1.0, 1.0, 1.0, material_ref(b, material_basic))
+      # wire backends whose material slot is an id (KhepriThreejs). The box is built in the
+      # WORLD frame: b_box extrudes along the corner loc's cs axes, and a mirrored placement
+      # cs carries a cross-derived downward z-axis that sank the box below its level.
+      let w = in_world(lifted)
+        b_box(b, xyz(cx(w) - 0.5, cy(w) - 0.5, cz(w), world_cs), 1.0, 1.0, 1.0,
+              material_ref(b, material_basic))
+      end
   end
 
 # Lights
