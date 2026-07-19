@@ -611,7 +611,11 @@ dispatcher that chooses faces-vs-offsets at render time).
           offset::Real=is_closed_path(path) ? 1/2 : 0, # offset is relative to the thickness
           doors::Shapes=Shape[], windows::Shapes=Shape[],
           left_face_path::Union{Nothing, Path}=nothing,
-          right_face_path::Union{Nothing, Path}=nothing)
+          right_face_path::Union{Nothing, Path}=nothing,
+          # Vertical offsets from the levels (Revit base/top offsets): a parapet band
+          # spans bottom+base_offset .. top+top_offset, not the full storey.
+          base_offset::Real=0,
+          top_offset::Real=0)
 
 # To deal with incremental creation, it is necessary to use transactions.
 export with_wall
@@ -642,15 +646,15 @@ realize(::HasBooleanOps{true}, b::Backend, w::Wall) =
   end
 
 realize_wall_no_openings(b::Backend, w::Wall) =
-  let w_base_height = w.bottom_level.height,
-      w_height = w.top_level.height - w_base_height,
+  let w_base_height = w.bottom_level.height + w.base_offset,
+      w_height = w.top_level.height + w.top_offset - w_base_height,
       w_path = translate(w.path, vz(w_base_height))
     ensure_ref(b, b_wall(b, w_path, w_height, w.family, w.offset, WallOpening[]))
   end
 
 realize_wall_openings(b::Backend, w::Wall, w_ref, openings) =
-  let w_base_height = w.bottom_level.height,
-      w_height = w.top_level.height - w_base_height,
+  let w_base_height = w.bottom_level.height + w.base_offset,
+      w_height = w.top_level.height + w.top_offset - w_base_height,
       w_path = translate(w.path, vz(w_base_height)),
       r_thickness = r_thickness(w),
       l_thickness = l_thickness(w)
@@ -672,8 +676,8 @@ realize_wall_opening(b::Backend, w_ref, w_path, l_thickness, r_thickness, op, fa
 # For backends that do not support boolean operations, we use a different approach
 
 realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
-  let w_base_height = w.bottom_level.height,
-      w_height = w.top_level.height - w_base_height,
+  let w_base_height = w.bottom_level.height + w.base_offset,
+      w_height = w.top_level.height + w.top_offset - w_base_height,
       lift = vz(w_base_height),
       w_path = translate(w.path, lift),
       l_face = isnothing(w.left_face_path)  ? nothing : translate(w.left_face_path,  lift),
@@ -992,6 +996,10 @@ meta_program(w::Wall) =
         Expr(:kw, :bottom_level, meta_program(w.bottom_level)),
         Expr(:kw, :top_level, meta_program(w.top_level)),
         Expr(:kw, :family, meta_program(w.family))],
+      _ = (w.base_offset == 0 ||
+             push!(kwargs, Expr(:kw, :base_offset, meta_program(w.base_offset)));
+           w.top_offset == 0 ||
+             push!(kwargs, Expr(:kw, :top_offset, meta_program(w.top_offset)))),
       has_doors = !isempty(w.doors),
       has_windows = !isempty(w.windows)
     if has_doors || has_windows

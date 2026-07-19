@@ -3032,8 +3032,11 @@ public b_family_element
 # The location's z is LEVEL-RELATIVE (matching walls/slabs and Revit's native placement), so the
 # default lifts it by the level height — otherwise fixtures float at their relative z on mesh
 # backends while sitting correctly in Revit.
+# The lift is along WORLD z, not loc.cs z: a mirrored placement cs (improper 2D
+# basis, e.g. Revit facing/hand flips) carries a cross-derived DOWNWARD z-axis,
+# and add_z along it would sink the fixture below its level.
 b_family_element(b::Backend, loc, angle, level, family) =
-  let lifted = add_z(loc, level_height(level)),
+  let lifted = loc + vz(level_height(level), world_cs),
       bf = maybe_backend_family(b, family)
     bf isa OBJFamily ?
       b_mesh_obj_fmt(b, bf.obj_name, standalone_obj_transform(lifted, bf, angle)) :
