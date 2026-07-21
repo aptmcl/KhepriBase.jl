@@ -188,6 +188,44 @@ end
   @test hoist_opening_frames(single) === single
 end
 
+@testset "protected constructs are never aliased or mined" begin
+  # Composition (hoist -> dims -> unify), the codegen_passes relative order: the hoisted
+  # frame_family loses the transitive protection it had INSIDE door_family, so it must be
+  # protected by name — a wall dimension equal to the casing width must not be aliased into
+  # the casing profile.
+  frame = :(frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)))
+  prog = Expr(:block,
+    Expr(:(=), :door_a, Expr(:call, :door_family, "A", 1.4, 2.0, 0.05, frame)),
+    Expr(:(=), :door_b, Expr(:call, :door_family, "B", 0.7, 2.0, 0.05, frame)),
+    [Expr(:call, :wall, :p, Expr(:kw, :top_offset, 0.16)) for _ in 1:5]...)
+  src = expr_to_string(unify_constants(extract_shared_dimensions(hoist_opening_frames(prog))))
+  @test occursin("wall_top_offset = 0.16", src)
+  @test occursin("rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)", src)   # casing NOT aliased
+  # Dim params must not leak into unconnected_level heights or group_instance placements.
+  prog2 = Expr(:block,
+    [Expr(:call, :wall, :p, Expr(:kw, :top_offset, -0.163)) for _ in 1:4]...,
+    Expr(:(=), :level_3, :(unconnected_level(-0.163))),
+    :(group_instance(grp, xyz(-0.163, 0.0, 0.0))))
+  src2 = expr_to_string(unify_constants(extract_shared_dimensions(prog2)))
+  @test occursin("top_offset=wall_top_offset", src2)
+  @test occursin("unconnected_level(-0.163)", src2)
+  @test occursin("group_instance(grp, xyz(-0.163, 0.0, 0.0))", src2)
+end
+
+@testset "extract_shared_dimensions: Int kwargs are counts, not dimensions" begin
+  # Ints recurring as kwargs must survive untouched (lifting them as Float64 params
+  # changes call-site types: range(length=7.0) throws).
+  prog = Expr(:block, [Expr(:call, :truss, :p, Expr(:kw, :n_panels, 6)) for _ in 1:5]...)
+  @test extract_shared_dimensions(prog) === prog
+  # An Int and a Float of the same numeric value must not merge.
+  prog2 = Expr(:block,
+    [Expr(:call, :wall, :p, Expr(:kw, :top_offset, 3.0)) for _ in 1:4]...,
+    Expr(:call, :truss, :p, Expr(:kw, :n_panels, 3)))
+  src2 = expr_to_string(extract_shared_dimensions(prog2))
+  @test occursin("n_panels=3", src2)
+  @test occursin("top_offset=wall_top_offset", src2)
+end
+
 @testset "extract_shared_dimensions" begin
   # A value recurring >= threshold under one (callee, keyword) → named <callee>_<keyword>.
   walls = [Expr(:call, :wall, :(open_polygonal_path([xy($x, 0.0), xy($(x + 1.0), 0.0)])),

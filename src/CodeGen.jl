@@ -82,6 +82,37 @@ const _family_function_names = Set([:wall_family, :curtain_wall_family, :slab_fa
                     :toilet_family, :sink_family, :closet_family,
                     :stair_family, :railing_family])
 
+#=
+LOCAL-coordinate contexts: subtrees whose xy/xyz leaves are NOT world positions
+— wall-relative opening positions (add_door/add_window and the doors=/windows=
+kwargs) and family-local frame profiles (family constructors and the family=
+kwarg). The translate/anchor/collect passes must never rebase inside them.
+One predicate, consumed by translate_xyz_expr, _anchor_relative_expr and
+_collect_world_xy, so the three can never drift apart again.
+=#
+_local_coord_context(e::Expr) =
+  (e.head == :kw && e.args[1] in (:doors, :windows, :family)) ||
+  (e.head == :call && (e.args[1] in (:add_door, :add_window) || e.args[1] in _family_function_names))
+
+#=
+Constructs whose interior numeric leaves must never be parametrized or aliased
+(unify_constants, extract_shared_dimensions): families and their frame_family
+casing profiles, levels (incl. unconnected markers), opening positions, backend
+mappings, groups and their placements, obj fallbacks, resource registration.
+frame_family is here for a subtle reason: hoist_opening_frames lifts it OUT of
+the door/window family constructor whose protection used to cover it
+transitively — hoisted, it must be protected by name, or a wall dimension that
+happens to equal the casing width gets aliased into the frame profile.
+NOTE: _clone_eligible's list is intentionally DIFFERENT (it decides what may be
+lifted into functions, not what must stay literal) — do not merge them.
+=#
+const _protected_callee_set =
+  Set([_family_function_names...,
+       :frame_family, :level, :unconnected_level, :add_door, :add_window,
+       :set_backend_family, :obj_model, :group, :group_instance,
+       :add_resource_folder!])
+_protected_callee(c) = c in _protected_callee_set
+
 # Family metadata is carried explicitly in `model.family_meta` (an IdDict family → FamilyMeta) built
 # by introspection, not in module globals — see family_expr_map below.
 
@@ -255,8 +286,7 @@ end
 # Skips door/window positions (wall-relative, not world coords).
 translate_xyz_expr(x, dx, dy, dz) = x
 translate_xyz_expr(e::Expr, dx, dy, dz) =
-  if (e.head == :kw && e.args[1] in (:doors, :windows, :family)) ||
-     (e.head == :call && (e.args[1] in (:add_door, :add_window) || e.args[1] in _family_function_names))
+  if _local_coord_context(e)
     # These carry LOCAL coordinates — wall-relative opening positions and family-local frame
     # profiles — not world positions, so they must not be shifted to group-relative coordinates.
     e
@@ -281,8 +311,7 @@ translate_xyz_expr(e::Expr, dx, dy, dz) =
 # vectors (vxy/vxyz) are left untouched. `anchor` is the symbol of the placement parameter.
 _anchor_relative_expr(x, px, py, anchor) = x
 _anchor_relative_expr(e::Expr, px, py, anchor) =
-  if (e.head == :kw && e.args[1] in (:doors, :windows, :family)) ||
-     (e.head == :call && (e.args[1] in (:add_door, :add_window) || e.args[1] in _family_function_names))
+  if _local_coord_context(e)
     e
   elseif e.head == :call && e.args[1] == :xyz && length(e.args) == 4 && all(a -> a isa Real, e.args[2:4])
     Expr(:call, :+, anchor,
@@ -298,9 +327,7 @@ _anchor_relative_expr(e::Expr, px, py, anchor) =
 # Collect (x, y) of every WORLD position (same skip list) — used to pick a storey's anchor corner.
 _collect_world_xy(x, acc) = nothing
 function _collect_world_xy(e::Expr, acc)
-  ((e.head == :kw && e.args[1] in (:doors, :windows, :family)) ||
-   (e.head == :call && (e.args[1] in (:add_door, :add_window) || e.args[1] in _family_function_names))) &&
-    return nothing
+  _local_coord_context(e) && return nothing
   if e.head == :call && e.args[1] in (:xy, :xyz) && length(e.args) >= 3 &&
      e.args[2] isa Real && e.args[3] isa Real
     push!(acc, (Float64(e.args[2]), Float64(e.args[3])))
@@ -1132,7 +1159,9 @@ function parametrize_levels(e::Expr)
       end
       # Also express unconnected TOP levels (wall-top markers, e.g. a roof datum) as a multiple of
       # floor_height plus a remainder, matching the regular levels' form — they were previously left
-      # as a raw literal, inconsistent with level_1/level_2. Value-preserving (exact float equality).
+      # as a raw literal, inconsistent with level_1/level_2. Value-preserving within meta_program's
+      # 8-sigdigit rounding (~1e-8; floor_height and the remainder are each rounded when printed),
+      # the same tolerance class as the regular level parametrization above.
       for (i, s) in enumerate(stmts)
         (_is_any_level_assign(s) && !_is_level_assign(s) && s.args[2].args[2] isa Real) || continue
         let h = Float64(s.args[2].args[2]), k = round(Int, (h - base) / d)
@@ -1235,9 +1264,7 @@ _distinctive(v) = abs(v - round(v, digits=1)) > 5e-4
 _unify_expr(x, table) =
   x isa AbstractFloat && haskey(table, Float64(x)) ? table[Float64(x)] : x
 _unify_expr(e::Expr, table) =
-  (e.head == :call &&
-   (e.args[1] in _family_function_names || e.args[1] in (:add_door, :add_window, :level,
-                                                         :set_backend_family, :obj_model))) ?
+  (e.head == :call && e.args[1] isa Symbol && _protected_callee(e.args[1])) ?
     e :
     Expr(e.head, [_unify_expr(a, table) for a in e.args]...)
 
@@ -1308,23 +1335,19 @@ symbolize_angles(e::Expr) =
 # offset, …) are one physical dimension repeated across many elements. Lift each value that recurs
 # at least `_dim_min_occurrences` times under a single (callee, keyword) context into a named
 # parameter `<callee>_<keyword>` and replace its occurrences, so the shared dimension becomes one
-# editable knob. Values are lifted verbatim (exact float equality), so geometry is untouched.
+# editable knob. Float kwargs only — an Int kwarg is a count, not a dimension, and lifting it as a
+# Float64 param silently changes call-site types (range(length=7.0) throws). Values are lifted
+# verbatim, so geometry is untouched.
 const _dim_min_occurrences = 4
 
-# Constructs whose interior numeric leaves must not be parametrized (families, levels, openings,
-# groups, backend mappings, obj fallbacks) — mirrors unify_constants' / clone passes' skip set.
-_dim_protected_callee(c) =
-  c in _family_function_names ||
-  c in (:level, :unconnected_level, :add_door, :add_window, :set_backend_family, :obj_model,
-        :group, :group_instance, :add_resource_folder!)
-
-# Count (callee, kw-key, value) over element calls, never descending into protected constructs.
+# Count (callee, kw-key, value) over element calls, never descending into protected constructs
+# (the shared _protected_callee set).
 _collect_kw_dims(x, counts) = nothing
 function _collect_kw_dims(e::Expr, counts)
-  (e.head == :call && e.args[1] isa Symbol && _dim_protected_callee(e.args[1])) && return nothing
+  (e.head == :call && e.args[1] isa Symbol && _protected_callee(e.args[1])) && return nothing
   if e.head == :call && e.args[1] isa Symbol
     for a in e.args[2:end]
-      if a isa Expr && a.head == :kw && _num(a.args[2])
+      if a isa Expr && a.head == :kw && a.args[2] isa AbstractFloat
         let k = (e.args[1], a.args[1], Float64(a.args[2]))
           counts[k] = get(counts, k, 0) + 1
         end
@@ -1340,10 +1363,10 @@ end
 # Replace matching kw values with their param symbol; symmetric skip so protected subtrees untouched.
 _replace_kw_dims(x, table) = x
 _replace_kw_dims(e::Expr, table) =
-  (e.head == :call && e.args[1] isa Symbol && _dim_protected_callee(e.args[1])) ? e :
+  (e.head == :call && e.args[1] isa Symbol && _protected_callee(e.args[1])) ? e :
   e.head == :call && e.args[1] isa Symbol ?
     Expr(:call, e.args[1],
-         [a isa Expr && a.head == :kw && _num(a.args[2]) &&
+         [a isa Expr && a.head == :kw && a.args[2] isa AbstractFloat &&
             haskey(table, (e.args[1], a.args[1], Float64(a.args[2]))) ?
             Expr(:kw, a.args[1], table[(e.args[1], a.args[1], Float64(a.args[2]))]) :
             _replace_kw_dims(a, table)
