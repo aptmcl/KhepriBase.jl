@@ -1710,6 +1710,64 @@ function _sectionalize_by_storey(e::Expr, level_names)
        out[tail_split+1:end]...)
 end
 
+# 3.10 Parametrize the level SERIES — make n_levels a LIVE cardinality knob. parametrize_levels
+# (3.7a) emits `n_levels = k`, but the level assigns stayed individually enumerated, so editing
+# the flagship count parameter changed nothing. Rewrite
+#   level_0 = level(0.0); level_1 = level(floor_height); …
+# into the exemplar idiom (Isenberg's `for i in 1:floors`, Astana's division-driven levels):
+#   levels = [level(i * floor_height) for i = 0:n_levels - 1]
+#   level_0 = levels[1]; level_1 = levels[2]; …
+# (with base_level_height when present), and when detect_level_repetition emitted the
+# full-building typical-floor loop, retie `building_levels = levels` and the loop bound to
+# `1:n_levels - 1` — so editing n_levels adds real levels AND replicates the typical storeys.
+# Runs AFTER sectionalize_by_storey, whose _static_eval needs the scalar level(...) forms.
+# Unconnected markers are untouched (already floor_height-relative or deliberately literal).
+function parametrize_level_series(e::Expr)
+  stmts = collect(stmts_of(e))
+  nidx = findfirst(s -> s isa Expr && s.head == :(=) && s.args[1] == :n_levels &&
+                        s.args[2] isa Int, stmts)
+  nidx === nothing && return e
+  n = stmts[nidx].args[2]
+  li = [i for (i, s) in enumerate(stmts) if _is_level_assign(s)]
+  length(li) == n || return e
+  all(k -> stmts[li[k]].args[1] == Symbol("level_$(k-1)"), 1:n) || return e
+  # Conservative collision guard: bail rather than mint a second `levels` binding.
+  any(s -> s isa Expr && s.head == :(=) && s.args[1] == :levels, stmts) && return e
+  let has_base = any(s -> s isa Expr && s.head == :(=) && s.args[1] == :base_level_height, stmts),
+      hexpr = has_base ? :(base_level_height + i * floor_height) : :(i * floor_height),
+      compr = Expr(:comprehension,
+                   Expr(:generator, Expr(:call, :level, hexpr),
+                        Expr(:(=), :i, Expr(:call, :(:), 0, Expr(:call, :-, :n_levels, 1))))),
+      series_vect = [Symbol("level_$(k-1)") for k in 1:n],
+      out = Any[]
+    for (i, s) in enumerate(stmts)
+      if i == li[1]
+        push!(out, Expr(:(=), :levels, compr))
+        for k in 1:n
+          push!(out, Expr(:(=), series_vect[k], Expr(:ref, :levels, k)))
+        end
+      elseif i in li
+        # consumed into the series above
+      elseif s isa Expr && s.head == :(=) && s.args[1] == :building_levels &&
+             s.args[2] isa Expr && s.args[2].head == :vect && s.args[2].args == series_vect
+        push!(out, Expr(:(=), :building_levels, :levels))
+      elseif s isa Expr && s.head == :for && s.args[1] isa Expr &&
+             s.args[1].args[2] isa Expr && s.args[1].args[2].head == :call &&
+             s.args[1].args[2].args[1] == :(:) && s.args[1].args[2].args[2] == 1 &&
+             s.args[1].args[2].args[3] == n - 1 &&
+             !isempty(collect_exprs(x -> x == :building_levels, s))
+        push!(out, Expr(:for,
+                        Expr(:(=), s.args[1].args[1],
+                             Expr(:call, :(:), 1, Expr(:call, :-, :n_levels, 1))),
+                        s.args[2]))
+      else
+        push!(out, s)
+      end
+    end
+    Expr(:block, out...)
+  end
+end
+
 # ─── The standard pass list ──────────────────────────────────────────────────
 # One authoritative order shared by the BIM (Revit) and geometric (AutoCAD) pipelines so they
 # cannot drift. `header` is the backend-appropriate header pass; `wrap` inserts the optional
@@ -1729,7 +1787,8 @@ codegen_passes(b, fmap; header=add_header(b), wrap=false,
                    symbolize_angles,
                    extract_shared_dimensions,
                    unify_constants,
-                   sectionalize_by_storey(level_names)]
+                   sectionalize_by_storey(level_names),
+                   parametrize_level_series]
     wrap && push!(passes, wrap_program_in_function)
     push!(passes, header)
     passes
@@ -1848,6 +1907,14 @@ _stmt_section(s) =
       :params
     elseif s.head == :(=) && s.args[2] isa Expr && s.args[2].head == :vect &&
            all(a -> a isa Symbol, s.args[2].args)
+      :levels
+    elseif s.head == :(=) && s.args[2] isa Expr && s.args[2].head == :comprehension
+      # The parametrize_level_series comprehension IS the level block.
+      :levels
+    elseif s.head == :(=) && s.args[2] isa Expr && s.args[2].head == :ref &&
+           s.args[2].args[1] == :levels
+      :levels
+    elseif s.head == :(=) && s.args[2] === :levels
       :levels
     elseif s.head == :(=) && s.args[2] isa Expr
       let rhs = s.args[2]
@@ -2126,7 +2193,7 @@ codegen_pass_names(; wrap=false) =
                "detect_level_repetition", "extract_functions", "sort_statements",
                "loop_rerolling", "parametrize_levels", "symbolize_ranges",
                "symbolize_angles", "extract_shared_dimensions", "unify_constants",
-               "sectionalize_by_storey"]
+               "sectionalize_by_storey", "parametrize_level_series"]
     wrap && push!(names, "wrap_program_in_function")
     push!(names, "header")
     names

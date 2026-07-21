@@ -10,9 +10,10 @@ n_columns_x = 2
 floor_height = 3.26
 n_levels = 3
 
-level_0 = level(0.0)
-level_1 = level(floor_height)
-level_2 = level(2 * floor_height)
+levels = [level(i * floor_height) for i = 0:n_levels - 1]
+level_0 = levels[1]
+level_1 = levels[2]
+level_2 = levels[3]
 level_3 = unconnected_level(2 * floor_height + 0.5)
 
 wall_basic_wall_generic_200mm = wall_family("wall_family", 0.2, 0.0, 0.0)

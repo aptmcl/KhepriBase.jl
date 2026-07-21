@@ -4,7 +4,7 @@
 using Test
 using KhepriBase
 using KhepriBase: sort_statements, extract_functions, detect_level_repetition,
-  parametrize_levels, symbolize_ranges, symbolize_angles, extract_shared_dimensions,
+  parametrize_levels, parametrize_level_series, symbolize_ranges, symbolize_angles, extract_shared_dimensions,
   unify_constants, wrap_program_in_function,
   loop_rerolling, extract_levels, extract_families, hoist_opening_frames,
   sectionalize_by_storey, expr_to_string,
@@ -176,6 +176,71 @@ end
   @test occursin("wall_top_offset_2 = -0.163", src2)
   @test occursin("top_offset=wall_top_offset_2", src2)
   @test !occursin("wall_top_offset_x", src2)
+end
+
+@testset "parametrize_level_series: n_levels is live" begin
+  lvl(i, rhs) = Expr(:(=), Symbol("level_$i"), rhs)
+  prog = Expr(:block,
+    Expr(:(=), :floor_height, 3.0), Expr(:(=), :n_levels, 3),
+    lvl(0, :(level(0.0))), lvl(1, :(level(floor_height))), lvl(2, :(level(2 * floor_height))),
+    Expr(:(=), :building_levels, Expr(:vect, :level_0, :level_1, :level_2)),
+    Expr(:for, Expr(:(=), :i, Expr(:call, :(:), 1, 2)),
+         Expr(:block, :(typical_floor(building_levels[i], building_levels[i + 1])))))
+  src = expr_to_string(parametrize_level_series(prog))
+  @test occursin("levels = [", src) && occursin("for i = 0:n_levels - 1", src)
+  @test occursin("level(i * floor_height)", src)
+  @test occursin("level_0 = levels[1]", src)
+  @test occursin("level_2 = levels[3]", src)
+  @test occursin("building_levels = levels", src)
+  @test occursin("for i = 1:n_levels - 1", src)
+  @test Meta.parseall(src) isa Expr
+  # base_level_height variant.
+  prog2 = Expr(:block,
+    Expr(:(=), :base_level_height, 1.2), Expr(:(=), :floor_height, 3.0), Expr(:(=), :n_levels, 2),
+    lvl(0, :(level(base_level_height))), lvl(1, :(level(base_level_height + floor_height))))
+  @test occursin("level(base_level_height + i * floor_height)",
+                 expr_to_string(parametrize_level_series(prog2)))
+  # No n_levels parameter: identity (parametrize_levels bailed on irregular spacing).
+  prog3 = Expr(:block, lvl(0, :(level(0.0))), lvl(1, :(level(3.0))))
+  @test parametrize_level_series(prog3) === prog3
+  # Unconnected markers stay outside the series.
+  prog4 = Expr(:block,
+    Expr(:(=), :floor_height, 3.0), Expr(:(=), :n_levels, 2),
+    lvl(0, :(level(0.0))), lvl(1, :(level(floor_height))),
+    Expr(:(=), :level_2, :(unconnected_level(2 * floor_height + 0.5))))
+  @test occursin("level_2 = unconnected_level(2 * floor_height + 0.5)",
+                 expr_to_string(parametrize_level_series(prog4)))
+end
+
+@testset "n_levels drives storey replication (measure)" begin
+  # The cardinality knob must be REAL: patching n_levels 3 -> 5 in the emitted program adds two
+  # levels AND two typical storeys of geometry. Dead-parameter regression (the review's I2).
+  lvl(i, rhs) = Expr(:(=), Symbol("level_$i"), rhs)
+  tf = Expr(:function, Expr(:call, :typical_floor, :lvl_0, :lvl_1),
+            Expr(:block,
+              :(wall(open_polygonal_path([xy(0.0, 0.0), xy(6.0, 0.0)]),
+                     bottom_level=lvl_0, top_level=lvl_1, family=wall_fam))))
+  prog = Expr(:block,
+    Expr(:(=), :floor_height, 3.0), Expr(:(=), :n_levels, 3),
+    lvl(0, :(level(0.0))), lvl(1, :(level(floor_height))), lvl(2, :(level(2 * floor_height))),
+    :(wall_fam = wall_family("wall_family", 0.2, 0.0, 0.0)),
+    tf,
+    Expr(:(=), :building_levels, Expr(:vect, :level_0, :level_1, :level_2)),
+    Expr(:for, Expr(:(=), :i, Expr(:call, :(:), 1, 2)),
+         Expr(:block, :(typical_floor(building_levels[i], building_levels[i + 1])))))
+  ser = parametrize_level_series(prog)
+  patch(e, n) =
+    Expr(:block, [s isa Expr && s.head == :(=) && s.args[1] == :n_levels ?
+                    Expr(:(=), :n_levels, n) : s
+                  for s in KhepriBase.stmts_of(e)]...)
+  measure_count(e) =
+    let mb = KhepriBase.measure_backend(),
+        rows = KhepriBase.measured_statements(e; b=mb)
+      @test all(r -> r.error === nothing, rows)
+      length([m for m in KhepriBase.measured_shapes(mb) if m.measurement.n_trigs > 0])
+    end
+  @test measure_count(ser) == 2
+  @test measure_count(patch(ser, 5)) == 4
 end
 
 @testset "wrap_program_in_function" begin

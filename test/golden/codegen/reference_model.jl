@@ -9,9 +9,10 @@ n_columns_x = 4
 floor_height = 3.0
 n_levels = 3
 
-level_0 = level(0.0)
-level_1 = level(floor_height)
-level_2 = level(2 * floor_height)
+levels = [level(i * floor_height) for i = 0:n_levels - 1]
+level_0 = levels[1]
+level_1 = levels[2]
+level_2 = levels[3]
 
 opening_frame = frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16))
 

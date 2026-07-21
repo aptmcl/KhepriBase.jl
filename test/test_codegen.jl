@@ -189,7 +189,8 @@ end
     check_golden("reference_model", src)
     # Structural sanity independent of the golden bytes:
     @test occursin("using KhepriRevit", src)
-    @test occursin("level_0 = level(0.0)", src)
+    @test occursin("levels = [", src)                 # live n_levels series (parametrize_level_series)
+    @test occursin("level_0 = levels[1]", src)
     @test occursin("column(", src)                    # 4x3 grid present (rerolled into a nested for-loop)
     @test occursin("add_door(", src)                  # wall opening emitted portably
     @test occursin("set_backend_family(", src)        # backend family mappings emitted
