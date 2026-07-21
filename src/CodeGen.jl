@@ -1403,53 +1403,127 @@ symbolize_angles(e::Expr) =
 # at least `_dim_min_occurrences` times under a single (callee, keyword) context into a named
 # parameter `<callee>_<keyword>` and replace its occurrences, so the shared dimension becomes one
 # editable knob. Float kwargs only — an Int kwarg is a count, not a dimension, and lifting it as a
-# Float64 param silently changes call-site types (range(length=7.0) throws). Values are lifted
-# verbatim, so geometry is untouched.
+# Float64 param silently changes call-site types (range(length=7.0) throws).
+#
+# Counting is by ELEMENT, not by statement: a statement inside a rerolled for-loop counts once per
+# iteration (statically-known range length), and a pass-emitted function body counts once per call
+# site — otherwise the dimension shared by the MOST repetitive geometry (8 rerolled parapet walls)
+# never reaches the threshold while 4 flat walls elsewhere do, splitting one physical dimension.
+# Values within the reroll snap class (1e-3) merge into one knob whose value is the
+# heaviest-weighted member (introspection wobble like -0.19999999 joins -0.2's knob; the ≤1e-3
+# shift is the same tolerance class the reroll passes already introduce).
 const _dim_min_occurrences = 4
+const _dim_snap_tolerance = 1e-3
+
+# The static multiplicity context: Int-valued prologue constants (for resolving symbolic range
+# lengths) and per-function call counts (for weighing pass-emitted def bodies).
+function _dim_weight_context(e::Expr)
+  stmts = collect(stmts_of(e))
+  consts = Dict{Symbol, Int}(s.args[1] => s.args[2] for s in stmts
+                             if s isa Expr && s.head == :(=) && s.args[1] isa Symbol &&
+                                s.args[2] isa Int)
+  callcounts = Dict{Symbol, Int}()
+  for c in collect_exprs(x -> x isa Expr && x.head == :call && x.args[1] isa Symbol, e)
+    callcounts[c.args[1]] = get(callcounts, c.args[1], 0) + 1
+  end
+  (consts = consts, callcounts = callcounts)
+end
+
+_static_range_length(rng, consts) =
+  rng isa Expr && rng.head == :call && rng.args[1] == :range ?
+    let i = findfirst(a -> a isa Expr && a.head == :kw && a.args[1] == :length, rng.args)
+      i === nothing ? nothing :
+        let v = rng.args[i].args[2]
+          v isa Int ? v : v isa Symbol ? get(consts, v, nothing) : nothing
+        end
+    end :
+  rng isa Expr && rng.head == :call && rng.args[1] == :(:) && length(rng.args) == 3 &&
+  rng.args[2] isa Int && rng.args[3] isa Int ?
+    max(rng.args[3] - rng.args[2] + 1, 0) :
+    nothing
+
+# The multiplicity a subtree contributes with: loops multiply by their static length, function
+# bodies by their call count (a def that is never called still counts once — its dimensions are
+# real even if latent).
+_stmt_weight(s, ctx) =
+  s isa Expr && s.head == :for ?
+    something(_static_range_length(s.args[1].args[2], ctx.consts), 1) :
+  s isa Expr && s.head == :function && s.args[1] isa Expr && s.args[1].head == :call ?
+    max(get(ctx.callcounts, s.args[1].args[1], 1), 1) :
+    1
+
+# Merge (value, weight) pairs whose values lie within the snap tolerance; each bucket keeps its
+# member values (all get replaced) and takes the heaviest member as the representative.
+function _snap_buckets(pairs)
+  sorted = sort(pairs, by = first)
+  buckets = Vector{Vector{Tuple{Float64, Int}}}()
+  for (v, c) in sorted
+    if !isempty(buckets) && v - buckets[end][end][1] <= _dim_snap_tolerance
+      push!(buckets[end], (v, c))
+    else
+      push!(buckets, [(v, c)])
+    end
+  end
+  [(rep = argmax(p -> p[2], b)[1], total = sum(p[2] for p in b),
+    members = [p[1] for p in b]) for b in buckets]
+end
+
+# The kwargs of a call, whether direct `Expr(:kw, ...)` args or children of an
+# `Expr(:parameters, ...)` block (pbr_material and group emit the latter form).
+_call_kwargs(e::Expr) =
+  [kw for a in e.args[2:end]
+      for kw in (a isa Expr && a.head == :parameters ? a.args : (a,))
+      if kw isa Expr && kw.head == :kw]
 
 # Count (callee, kw-key, value) over element calls, never descending into protected constructs
-# (the shared _protected_callee set).
-_collect_kw_dims(x, counts) = nothing
-function _collect_kw_dims(e::Expr, counts)
+# (the shared _protected_callee set), weighted by static multiplicity.
+_collect_kw_dims(x, counts, mult, ctx) = nothing
+function _collect_kw_dims(e::Expr, counts, mult, ctx)
   (e.head == :call && e.args[1] isa Symbol && _protected_callee(e.args[1])) && return nothing
   if e.head == :call && e.args[1] isa Symbol
-    for a in e.args[2:end]
+    for a in _call_kwargs(e)
       # :angle kwargs are rotations, not dimensions — symbolize_angles (which runs first)
       # owns them; mining a recurring angle as "<callee>_angle = 1.5707963" would freeze a
       # rotation into a pseudo-length knob.
-      if a isa Expr && a.head == :kw && a.args[1] != :angle && a.args[2] isa AbstractFloat
+      if a.args[1] != :angle && a.args[2] isa AbstractFloat
         let k = (e.args[1], a.args[1], Float64(a.args[2]))
-          counts[k] = get(counts, k, 0) + 1
+          counts[k] = get(counts, k, 0) + mult
         end
       end
     end
   end
-  for a in e.args
-    _collect_kw_dims(a, counts)
+  let m = mult * _stmt_weight(e, ctx)
+    for a in e.args
+      _collect_kw_dims(a, counts, m, ctx)
+    end
   end
   nothing
 end
 
-# Replace matching kw values with their param symbol; symmetric skip so protected subtrees untouched.
+# Replace matching kw values with their param symbol; symmetric skip so protected subtrees
+# untouched; handles both direct kw args and :parameters blocks.
+_replace_kw_dim_arg(callee, a, table) =
+  a isa Expr && a.head == :kw && a.args[2] isa AbstractFloat &&
+    haskey(table, (callee, a.args[1], Float64(a.args[2]))) ?
+    Expr(:kw, a.args[1], table[(callee, a.args[1], Float64(a.args[2]))]) :
+    _replace_kw_dims(a, table)
 _replace_kw_dims(x, table) = x
 _replace_kw_dims(e::Expr, table) =
   (e.head == :call && e.args[1] isa Symbol && _protected_callee(e.args[1])) ? e :
   e.head == :call && e.args[1] isa Symbol ?
     Expr(:call, e.args[1],
-         [a isa Expr && a.head == :kw && a.args[2] isa AbstractFloat &&
-            haskey(table, (e.args[1], a.args[1], Float64(a.args[2]))) ?
-            Expr(:kw, a.args[1], table[(e.args[1], a.args[1], Float64(a.args[2]))]) :
-            _replace_kw_dims(a, table)
+         [a isa Expr && a.head == :parameters ?
+            Expr(:parameters, [_replace_kw_dim_arg(e.args[1], kw, table) for kw in a.args]...) :
+            _replace_kw_dim_arg(e.args[1], a, table)
           for a in e.args[2:end]]...) :
     Expr(e.head, [_replace_kw_dims(a, table) for a in e.args]...)
 
 function extract_shared_dimensions(e::Expr)
   counts = Dict{Tuple{Symbol, Symbol, Float64}, Int}()
-  _collect_kw_dims(e, counts)
-  keep = [(k, c) for (k, c) in counts if c >= _dim_min_occurrences && k[3] != 0.0]
-  isempty(keep) && return e
+  _collect_kw_dims(e, counts, 1, _dim_weight_context(e))
   bykey = Dict{Tuple{Symbol, Symbol}, Vector{Tuple{Float64, Int}}}()
-  for ((callee, key, v), c) in keep
+  for ((callee, key, v), c) in counts
+    v == 0.0 && continue
     push!(get!(bykey, (callee, key), Tuple{Float64, Int}[]), (v, c))
   end
   used = Set{Symbol}(s.args[1] for s in stmts_of(e)
@@ -1457,13 +1531,18 @@ function extract_shared_dimensions(e::Expr)
   table = Dict{Tuple{Symbol, Symbol, Float64}, Symbol}()
   assigns = Expr[]
   for (callee, key) in sort(collect(keys(bykey)))                 # deterministic order
-    for (i, (v, _)) in enumerate(sort(bykey[(callee, key)], by = x -> (-x[2], x[1])))
-      let name = _fresh_param(i == 1 ? "$(callee)_$(key)" : "$(callee)_$(key)_$(i)", used)
-        push!(assigns, Expr(:(=), name, v))
-        table[(callee, key, v)] = name
+    let kept = [b for b in _snap_buckets(bykey[(callee, key)]) if b.total >= _dim_min_occurrences]
+      for (i, b) in enumerate(sort(kept, by = b -> (-b.total, b.rep)))
+        let name = _fresh_param(i == 1 ? "$(callee)_$(key)" : "$(callee)_$(key)_$(i)", used)
+          push!(assigns, Expr(:(=), name, b.rep))
+          for v in b.members
+            table[(callee, key, v)] = name
+          end
+        end
       end
     end
   end
+  isempty(assigns) && return e
   Expr(:block, assigns..., stmts_of(_replace_kw_dims(e, table))...)
 end
 
@@ -1768,6 +1847,123 @@ function parametrize_level_series(e::Expr)
   end
 end
 
+# 3.11 Extract coordinate dimensions — after the anchor rebase, add_xy/add_xyz deltas are clean
+# plan dimensions: the room width appears as the same 6.0 in every wall endpoint and the slab
+# boundary. Mine recurring non-zero numeric x/y deltas (axis-scoped and signed: a 6.0 width is
+# not a 6.0 depth), weighted by static loop lengths and def call counts like the kw mining, and
+# lift each snap-bucket whose weight reaches the threshold into plan_width/plan_depth (+_k)
+# parameters. This is the exemplar idiom (Isenberg's building_width/inner_radius, Astana's
+# block_l/block_h feeding dozens of expressions): editing plan_width now resizes walls AND the
+# slab together instead of requiring eight coordinated literal edits. z deltas belong to the
+# levels and are never mined.
+_collect_coord_dims(x, counts, mult, ctx) = nothing
+function _collect_coord_dims(e::Expr, counts, mult, ctx)
+  if e.head == :call && e.args[1] in (:add_xy, :add_xyz) && length(e.args) >= 4 && e.args[2] == :p0
+    e.args[3] isa AbstractFloat && e.args[3] != 0.0 &&
+      (counts[(:x, Float64(e.args[3]))] = get(counts, (:x, Float64(e.args[3])), 0) + mult)
+    e.args[4] isa AbstractFloat && e.args[4] != 0.0 &&
+      (counts[(:y, Float64(e.args[4]))] = get(counts, (:y, Float64(e.args[4])), 0) + mult)
+  end
+  let m = mult * _stmt_weight(e, ctx)
+    for a in e.args
+      _collect_coord_dims(a, counts, m, ctx)
+    end
+  end
+  nothing
+end
+
+_replace_coord_dims(x, table) = x
+_replace_coord_dims(e::Expr, table) =
+  e.head == :call && e.args[1] in (:add_xy, :add_xyz) && length(e.args) >= 4 && e.args[2] == :p0 ?
+    Expr(:call, e.args[1], :p0,
+         e.args[3] isa AbstractFloat && haskey(table, (:x, Float64(e.args[3]))) ?
+           table[(:x, Float64(e.args[3]))] : e.args[3],
+         e.args[4] isa AbstractFloat && haskey(table, (:y, Float64(e.args[4]))) ?
+           table[(:y, Float64(e.args[4]))] : e.args[4],
+         e.args[5:end]...) :
+    Expr(e.head, [_replace_coord_dims(a, table) for a in e.args]...)
+
+function extract_coordinate_dimensions(e::Expr)
+  counts = Dict{Tuple{Symbol, Float64}, Int}()
+  _collect_coord_dims(e, counts, 1, _dim_weight_context(e))
+  used = Set{Symbol}(s.args[1] for s in stmts_of(e)
+                     if s isa Expr && s.head == :(=) && s.args[1] isa Symbol)
+  table = Dict{Tuple{Symbol, Float64}, Symbol}()
+  assigns = Expr[]
+  for (axis, base) in ((:x, "plan_width"), (:y, "plan_depth"))
+    let pairs = [(v, c) for ((ax, v), c) in counts if ax == axis],
+        kept = [b for b in _snap_buckets(pairs) if b.total >= _dim_min_occurrences]
+      for (i, b) in enumerate(sort(kept, by = b -> (-b.total, b.rep)))
+        let name = _fresh_param(i == 1 ? base : "$(base)_$(i)", used)
+          push!(assigns, Expr(:(=), name, b.rep))
+          for v in b.members
+            table[(axis, v)] = name
+          end
+        end
+      end
+    end
+  end
+  isempty(assigns) && return e
+  Expr(:block, assigns..., stmts_of(_replace_coord_dims(e, table))...)
+end
+
+# 3.12 Derive parameter relations — exemplar parameter blocks define derived values
+# (outer_radius = inner_radius + building_width, isenberg_BIM.jl; wall tops at -slab_thickness).
+# For each prologue Float parameter, try to express it via EARLIER parameters as -p, p+q, p-q,
+# k*p or p/k (k ∈ 2:4) within combined meta_program rounding (1e-6 relative), and rewrite the
+# RHS symbolically, so editing the independent knob propagates. Guarded against numerology:
+# only _distinctive (non-round) values participate — 6.0 = 2 * 3.0 would be a coincidence
+# coupling, exactly the false-relation class unify_constants avoids; identity relations are
+# skipped for the same reason (two same-valued dims stay independent knobs).
+function derive_parameter_relations(e::Expr)
+  stmts = collect(stmts_of(e))
+  isparam = s -> s isa Expr && s.head == :(=) && s.args[1] isa Symbol && s.args[2] isa AbstractFloat
+  rel_tol(v) = max(1e-9, 1e-6 * abs(v))
+  out = collect(stmts)
+  earlier = Tuple{Symbol, Float64}[]
+  changed = false
+  for (i, s) in enumerate(stmts)
+    isparam(s) || continue
+    let v = Float64(s.args[2])
+      if _distinctive(v)
+        found = nothing
+        for (p, pv) in earlier
+          _distinctive(pv) || continue
+          abs(v - pv) <= rel_tol(v) && continue                    # identity: keep knobs separate
+          if abs(v + pv) <= rel_tol(v)
+            found = Expr(:call, :-, p)
+          else
+            for k in 2:4
+              abs(v - k * pv) <= rel_tol(v) && (found = Expr(:call, :*, k, p))
+              abs(v - pv / k) <= rel_tol(v) && (found = Expr(:call, :/, p, k))
+              found === nothing || break
+            end
+          end
+          found === nothing || break
+        end
+        if found === nothing
+          for (p, pv) in earlier, (q, qv) in earlier
+            p === q && continue
+            (_distinctive(pv) || _distinctive(qv)) || continue
+            if abs(v - (pv + qv)) <= rel_tol(v)
+              found = Expr(:call, :+, p, q)
+            elseif abs(v - (pv - qv)) <= rel_tol(v)
+              found = Expr(:call, :-, p, q)
+            end
+            found === nothing || break
+          end
+        end
+        if found !== nothing
+          out[i] = Expr(:(=), s.args[1], found)
+          changed = true
+        end
+      end
+      push!(earlier, (s.args[1], v))
+    end
+  end
+  changed ? Expr(:block, out...) : e
+end
+
 # ─── The standard pass list ──────────────────────────────────────────────────
 # One authoritative order shared by the BIM (Revit) and geometric (AutoCAD) pipelines so they
 # cannot drift. `header` is the backend-appropriate header pass; `wrap` inserts the optional
@@ -1788,7 +1984,9 @@ codegen_passes(b, fmap; header=add_header(b), wrap=false,
                    extract_shared_dimensions,
                    unify_constants,
                    sectionalize_by_storey(level_names),
-                   parametrize_level_series]
+                   parametrize_level_series,
+                   extract_coordinate_dimensions,
+                   derive_parameter_relations]
     wrap && push!(passes, wrap_program_in_function)
     push!(passes, header)
     passes
@@ -2193,7 +2391,8 @@ codegen_pass_names(; wrap=false) =
                "detect_level_repetition", "extract_functions", "sort_statements",
                "loop_rerolling", "parametrize_levels", "symbolize_ranges",
                "symbolize_angles", "extract_shared_dimensions", "unify_constants",
-               "sectionalize_by_storey", "parametrize_level_series"]
+               "sectionalize_by_storey", "parametrize_level_series",
+               "extract_coordinate_dimensions", "derive_parameter_relations"]
     wrap && push!(names, "wrap_program_in_function")
     push!(names, "header")
     names

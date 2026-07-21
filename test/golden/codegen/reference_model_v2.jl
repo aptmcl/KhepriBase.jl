@@ -2,6 +2,10 @@
 # Generated on: <timestamp>
 using KhepriRevit
 
+plan_width = 6.0
+plan_depth = 4.0
+plan_depth_2 = 3.0
+plan_depth_3 = 1.0
 wall_top_offset = -0.163
 columns_y_spacing = 2.0
 n_columns_y = 2
@@ -30,23 +34,23 @@ building_origin = xy(0.0, 0.0)
 # Storey storey_0 (level_0 = 0.0)
 
 function storey_0(p0=building_origin)
-  wall(open_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, 6.0, 0.0)]),
+  wall(open_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, plan_width, 0.0)]),
     bottom_level=level_0,
     top_level=level_1,
     family=wall_basic_wall_generic_200mm)
-  wall(open_polygonal_path([add_xy(p0, 0.0, 4.0), add_xy(p0, 0.0, 0.0)]),
+  wall(open_polygonal_path([add_xy(p0, 0.0, plan_depth), add_xy(p0, 0.0, 0.0)]),
     bottom_level=level_0,
     top_level=level_1,
     family=wall_basic_wall_generic_200mm)
-  wall(open_polygonal_path([add_xy(p0, 6.0, 0.0), add_xy(p0, 6.0, 4.0)]),
+  wall(open_polygonal_path([add_xy(p0, plan_width, 0.0), add_xy(p0, plan_width, plan_depth)]),
     bottom_level=level_0,
     top_level=level_1,
     family=wall_basic_wall_generic_200mm)
-  wall(open_polygonal_path([add_xy(p0, 6.0, 4.0), add_xy(p0, 0.0, 4.0)]),
+  wall(open_polygonal_path([add_xy(p0, plan_width, plan_depth), add_xy(p0, 0.0, plan_depth)]),
     bottom_level=level_0,
     top_level=level_1,
     family=wall_basic_wall_generic_200mm)
-  slab(region(closed_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, 6.0, 0.0), add_xy(p0, 6.0, 4.0), add_xy(p0, 0.0, 4.0)])),
+  slab(region(closed_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, plan_width, 0.0), add_xy(p0, plan_width, plan_depth), add_xy(p0, 0.0, plan_depth)])),
     level_0,
     slab_floor_generic_300mm)
   for x = range(1.0, step=columns_x_spacing, length=n_columns_x)
@@ -58,42 +62,42 @@ function storey_0(p0=building_origin)
         column_m_concrete_rectangular_300_x_450mm)
     end
   end
-  family_element(add_xy(p0, 1.5, 3.0),
+  family_element(add_xy(p0, 1.5, plan_depth_2),
     pi / 2,
     level_0,
     family_element_desk_lamp_std)
-  family_element(add_xy(p0, 3.0, 3.0),
+  family_element(add_xy(p0, 3.0, plan_depth_2),
     pi,
     level_0,
     family_element_desk_lamp_std)
-  family_element(add_xy(p0, 4.5, 3.0),
+  family_element(add_xy(p0, 4.5, plan_depth_2),
     -(pi / 2),
     level_0,
     family_element_desk_lamp_std)
 
-  group_instance(group_desk, add_xyz(p0, 2.0, 1.0, 0.0))
-  group_instance(group_desk, add_xyz(p0, 8.0, 1.0, 0.0))
+  group_instance(group_desk, add_xyz(p0, 2.0, plan_depth_3, 0.0))
+  group_instance(group_desk, add_xyz(p0, 8.0, plan_depth_3, 0.0))
 end
 
 # Storey storey_1 (level_1 = 3.26)
 
 function storey_1(p0=building_origin)
-  wall(open_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, 6.0, 0.0)]),
+  wall(open_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, plan_width, 0.0)]),
     bottom_level=level_1,
     top_level=level_2,
     family=wall_basic_wall_generic_200mm,
     top_offset=wall_top_offset)
-  wall(open_polygonal_path([add_xy(p0, 0.0, 4.0), add_xy(p0, 0.0, 0.0)]),
+  wall(open_polygonal_path([add_xy(p0, 0.0, plan_depth), add_xy(p0, 0.0, 0.0)]),
     bottom_level=level_1,
     top_level=level_2,
     family=wall_basic_wall_generic_200mm,
     top_offset=wall_top_offset)
-  wall(open_polygonal_path([add_xy(p0, 6.0, 0.0), add_xy(p0, 6.0, 4.0)]),
+  wall(open_polygonal_path([add_xy(p0, plan_width, 0.0), add_xy(p0, plan_width, plan_depth)]),
     bottom_level=level_1,
     top_level=level_2,
     family=wall_basic_wall_generic_200mm,
     top_offset=wall_top_offset)
-  wall(open_polygonal_path([add_xy(p0, 6.0, 4.0), add_xy(p0, 0.0, 4.0)]),
+  wall(open_polygonal_path([add_xy(p0, plan_width, plan_depth), add_xy(p0, 0.0, plan_depth)]),
     bottom_level=level_1,
     top_level=level_2,
     family=wall_basic_wall_generic_200mm,
@@ -103,7 +107,7 @@ end
 # Storey storey_2 (level_2 = 6.52)
 
 function storey_2(p0=building_origin)
-  wall(open_polygonal_path([add_xy(p0, 0.0, 4.0), add_xy(p0, 6.0, 4.0)]),
+  wall(open_polygonal_path([add_xy(p0, 0.0, plan_depth), add_xy(p0, plan_width, plan_depth)]),
     bottom_level=level_2,
     top_level=level_3,
     family=wall_basic_wall_generic_200mm)

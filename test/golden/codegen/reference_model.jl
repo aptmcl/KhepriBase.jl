@@ -2,6 +2,8 @@
 # Generated on: <timestamp>
 using KhepriRevit
 
+plan_width = 6.0
+plan_depth = 4.0
 columns_y_spacing = 4.0
 n_columns_y = 3
 columns_x_spacing = 5.0
@@ -32,26 +34,26 @@ building_origin = xy(0.0, 0.0)
 # Storey storey_0 (level_0 = 0.0)
 
 function storey_0(p0=building_origin)
-  let __wall = wall(open_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, 6.0, 0.0)]), bottom_level=level_0, top_level=level_1, family=wall_basic_wall_generic_200mm)
+  let __wall = wall(open_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, plan_width, 0.0)]), bottom_level=level_0, top_level=level_1, family=wall_basic_wall_generic_200mm)
     add_door(__wall, xy(1.0, 0.0), door_single_flush_0915_x_2134mm)
     add_window(__wall, xy(3.0, 0.9), window_fixed_0915_x_1220mm)
 
     __wall
   end
 
-  wall(open_polygonal_path([add_xy(p0, 0.0, 4.0), add_xy(p0, 0.0, 0.0)]),
+  wall(open_polygonal_path([add_xy(p0, 0.0, plan_depth), add_xy(p0, 0.0, 0.0)]),
     bottom_level=level_0,
     top_level=level_1,
     family=wall_basic_wall_generic_200mm)
-  wall(open_polygonal_path([add_xy(p0, 6.0, 0.0), add_xy(p0, 6.0, 4.0)]),
+  wall(open_polygonal_path([add_xy(p0, plan_width, 0.0), add_xy(p0, plan_width, plan_depth)]),
     bottom_level=level_0,
     top_level=level_1,
     family=wall_basic_wall_generic_200mm)
-  wall(open_polygonal_path([add_xy(p0, 6.0, 4.0), add_xy(p0, 0.0, 4.0)]),
+  wall(open_polygonal_path([add_xy(p0, plan_width, plan_depth), add_xy(p0, 0.0, plan_depth)]),
     bottom_level=level_0,
     top_level=level_1,
     family=wall_basic_wall_generic_200mm)
-  slab(region(closed_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, 6.0, 0.0), add_xy(p0, 6.0, 4.0), add_xy(p0, 0.0, 4.0)])),
+  slab(region(closed_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, plan_width, 0.0), add_xy(p0, plan_width, plan_depth), add_xy(p0, 0.0, plan_depth)])),
     level_0,
     slab_floor_generic_300mm)
   for x = range(0.0, step=columns_x_spacing, length=n_columns_x)

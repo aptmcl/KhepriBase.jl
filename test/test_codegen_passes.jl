@@ -4,7 +4,8 @@
 using Test
 using KhepriBase
 using KhepriBase: sort_statements, extract_functions, detect_level_repetition,
-  parametrize_levels, parametrize_level_series, symbolize_ranges, symbolize_angles, extract_shared_dimensions,
+  parametrize_levels, parametrize_level_series, extract_coordinate_dimensions,
+  derive_parameter_relations, symbolize_ranges, symbolize_angles, extract_shared_dimensions,
   unify_constants, wrap_program_in_function,
   loop_rerolling, extract_levels, extract_families, hoist_opening_frames,
   sectionalize_by_storey, expr_to_string,
@@ -139,6 +140,81 @@ end
   prog4 = Expr(:block, lvl(0, 0.0), lvl(1, 3.0), lvl(2, 6.0),
                Expr(:(=), :level_3, :(unconnected_level(-2.0))))
   @test occursin("unconnected_level(-2.0)", expr_to_string(parametrize_levels(prog4)))
+end
+
+@testset "extract_coordinate_dimensions: plan dims from rebased deltas" begin
+  # Eight 6.0 x-deltas + six 4.0 y-deltas (the reference-room shape) become plan_width/plan_depth.
+  w(x1, y1, x2, y2) =
+    :(wall(open_polygonal_path([add_xy(p0, $x1, $y1), add_xy(p0, $x2, $y2)]),
+           bottom_level=level_0, top_level=level_1, family=wall_fam))
+  prog = Expr(:block,
+    w(0.0, 0.0, 6.0, 0.0), w(6.0, 0.0, 6.0, 4.0), w(6.0, 4.0, 0.0, 4.0), w(0.0, 4.0, 0.0, 0.0),
+    :(slab(region(closed_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, 6.0, 0.0),
+                                         add_xy(p0, 6.0, 4.0), add_xy(p0, 0.0, 4.0)])),
+           level_0, slab_fam)))
+  src = expr_to_string(extract_coordinate_dimensions(prog))
+  @test occursin("plan_width = 6.0", src)
+  @test occursin("plan_depth = 4.0", src)
+  @test occursin("add_xy(p0, plan_width, plan_depth)", src)
+  @test !occursin("add_xy(p0, 6.0", src)
+  @test Meta.parseall(src) isa Expr
+  # Loop weighting: one statement in a length-6 loop reaches the threshold.
+  prog2 = Expr(:block,
+    Expr(:for, Expr(:(=), :x, Expr(:call, :range, 0.0, Expr(:kw, :step, 2.0), Expr(:kw, :length, 6))),
+         Expr(:block, :(column(add_xy(p0, x, 7.5), 0, level_0, level_1, col_fam)))))
+  @test occursin("plan_depth = 7.5", expr_to_string(extract_coordinate_dimensions(prog2)))
+  # Below threshold: untouched.
+  prog3 = Expr(:block, w(0.0, 0.0, 9.0, 0.0))
+  @test extract_coordinate_dimensions(prog3) === prog3
+end
+
+@testset "derive_parameter_relations: distinctive relations only" begin
+  prog = Expr(:block,
+    Expr(:(=), :slab_thickness, 0.163),
+    Expr(:(=), :wall_top_offset, -0.163),          # = -slab_thickness
+    Expr(:(=), :parapet_rise, 0.326),              # = 2 * slab_thickness
+    Expr(:(=), :plan_width, 6.0),                  # round: never a relation target
+    Expr(:(=), :floor_height, 3.0))                # 6.0 = 2*3.0 must NOT couple
+  src = expr_to_string(derive_parameter_relations(prog))
+  @test occursin("wall_top_offset = -(slab_thickness)", src) || occursin("wall_top_offset = -slab_thickness", src)
+  @test occursin("parapet_rise = 2 * slab_thickness", src)
+  @test occursin("plan_width = 6.0", src)
+  # Identity values stay independent knobs.
+  prog2 = Expr(:block, Expr(:(=), :a_dim, 0.163), Expr(:(=), :b_dim, 0.163))
+  @test derive_parameter_relations(prog2) === prog2
+  # Sum relation with at least one distinctive operand.
+  prog3 = Expr(:block,
+    Expr(:(=), :inner_radius, 10.163),
+    Expr(:(=), :building_width, 5.0),
+    Expr(:(=), :outer_radius, 15.163))
+  @test occursin("outer_radius = inner_radius + building_width",
+                 expr_to_string(derive_parameter_relations(prog3)))
+end
+
+@testset "extract_shared_dimensions: reroll weighting, bucketing, :parameters kwargs" begin
+  # A single rerolled statement in a length-8 loop reaches the threshold.
+  prog = Expr(:block,
+    Expr(:(=), :n_walls, 8),
+    Expr(:for, Expr(:(=), :x, Expr(:call, :range, 0.0, Expr(:kw, :step, 3.0), Expr(:kw, :length, :n_walls))),
+         Expr(:block, Expr(:call, :wall, :p, Expr(:kw, :top_offset, -0.26)))))
+  src = expr_to_string(extract_shared_dimensions(prog))
+  @test occursin("wall_top_offset = -0.26", src)
+  @test occursin("top_offset=wall_top_offset", src)
+  # Introspection wobble merges into one knob (snap bucketing).
+  prog2 = Expr(:block,
+    [Expr(:call, :wall, :p, Expr(:kw, :top_offset, -0.2)) for _ in 1:3]...,
+    [Expr(:call, :wall, :p, Expr(:kw, :top_offset, -0.19999999)) for _ in 1:2]...)
+  src2 = expr_to_string(extract_shared_dimensions(prog2))
+  @test occursin("wall_top_offset = -0.2", src2)
+  @test !occursin("-0.19999999", src2)
+  @test length(findall("wall_top_offset", src2)) == 6   # 1 assign + 5 uses
+  # kwargs inside an Expr(:parameters, ...) block (pbr_material emission form) are mined too.
+  prog3 = Expr(:block,
+    [Expr(:call, :pbr_material, Expr(:parameters, Expr(:kw, :roughness, 0.30000001)), "m$(i)")
+     for i in 1:4]...)
+  src3 = expr_to_string(extract_shared_dimensions(prog3))
+  @test occursin("pbr_material_roughness = 0.30000001", src3)
+  @test occursin("roughness=pbr_material_roughness", src3)
 end
 
 @testset "symbolize_angles: tolerance and extended coverage" begin
