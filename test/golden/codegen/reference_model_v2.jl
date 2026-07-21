@@ -6,7 +6,6 @@ using KhepriRevit
 plan_width = 6.0
 plan_depth = 4.0
 plan_depth_2 = 3.0
-plan_depth_3 = 1.0
 wall_top_offset = -0.163
 columns_x_spacing = 4.0
 n_columns_x = 2
@@ -76,8 +75,8 @@ function storey_0(p0=building_origin)
     level_0,
     family_element_desk_lamp_std)
 
-  group_instance(group_desk, add_xyz(p0, 2.0, plan_depth_3, 0.0))
-  group_instance(group_desk, add_xyz(p0, 8.0, plan_depth_3, 0.0))
+  group_instance(group_desk, add_xyz(p0, 2.0, 1.0, 0.0))
+  group_instance(group_desk, add_xyz(p0, 8.0, 1.0, 0.0))
 end
 
 # Storey storey_1 (level_1 = 3.26)

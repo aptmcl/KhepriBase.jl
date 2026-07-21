@@ -166,6 +166,18 @@ end
   # Below threshold: untouched.
   prog3 = Expr(:block, w(0.0, 0.0, 9.0, 0.0))
   @test extract_coordinate_dimensions(prog3) === prog3
+  # Position spam is capped: a real floor plan has MANY recurring aligned-wall offsets — only
+  # the top-2 dominant knobs per axis are lifted, the rest stay literal (live-corpus moradia3
+  # regression: plan_width..plan_width_30).
+  spam = Expr(:block,
+    vcat([[:(wall(open_polygonal_path([add_xy(p0, $v, 0.0), add_xy(p0, $v, 9.0)]),
+              bottom_level=level_0, top_level=level_1, family=wall_fam)) for _ in 1:4]
+          for v in [1.1, 2.2, 3.3, 4.4, 5.5]]...)...)
+  srcs = expr_to_string(extract_coordinate_dimensions(spam))
+  @test occursin("plan_width = 1.1", srcs)
+  @test occursin("plan_width_2 = 2.2", srcs)
+  @test !occursin("plan_width_3", srcs)
+  @test occursin("add_xy(p0, 3.3, 0.0)", srcs)          # beyond the cap: literal
 end
 
 @testset "derive_parameter_relations: distinctive relations only" begin

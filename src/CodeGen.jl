@@ -1913,6 +1913,12 @@ _replace_coord_dims(e::Expr, table) =
          e.args[5:end]...) :
     Expr(e.head, [_replace_coord_dims(a, table) for a in e.args]...)
 
+# On a REAL floor plan almost every wall x-offset recurs ≥4 times (aligned walls), so an
+# uncapped mining lifts dozens of position knobs — parameter spam, worse than the literals it
+# replaces (live-corpus moradia3 emitted plan_width..plan_width_30). Only the DOMINANT extents
+# are dimensions in the exemplar sense; the rest are positions and stay literal.
+const _coord_dim_max_per_axis = 2
+
 function extract_coordinate_dimensions(e::Expr)
   counts = Dict{Tuple{Symbol, Float64}, Int}()
   _collect_coord_dims(e, counts, 1, _dim_weight_context(e))
@@ -1922,8 +1928,9 @@ function extract_coordinate_dimensions(e::Expr)
   assigns = Expr[]
   for (axis, base) in ((:x, "plan_width"), (:y, "plan_depth"))
     let pairs = [(v, c) for ((ax, v), c) in counts if ax == axis],
-        kept = [b for b in _snap_buckets(pairs) if b.total >= _dim_min_occurrences]
-      for (i, b) in enumerate(sort(kept, by = b -> (-b.total, b.rep)))
+        kept = sort([b for b in _snap_buckets(pairs) if b.total >= _dim_min_occurrences],
+                    by = b -> (-b.total, b.rep))
+      for (i, b) in enumerate(kept[1:min(length(kept), _coord_dim_max_per_axis)])
         let name = _fresh_param(i == 1 ? base : "$(base)_$(i)", used)
           push!(assigns, Expr(:(=), name, b.rep))
           for v in b.members
@@ -1947,7 +1954,13 @@ end
 # skipped for the same reason (two same-valued dims stay independent knobs).
 function derive_parameter_relations(e::Expr)
   stmts = collect(stmts_of(e))
-  isparam = s -> s isa Expr && s.head == :(=) && s.args[1] isa Symbol && s.args[2] isa AbstractFloat
+  # Mined plan_* params are POSITIONS (aligned-wall offsets), not lengths: any arithmetic
+  # relation among them is a coincidence of the floor plan (live-corpus moradia3 derived a
+  # depth from two widths). They stay independent, as targets AND as sources.
+  mined = s -> s isa Expr && s.head == :(=) && s.args[1] isa Symbol &&
+               startswith(String(s.args[1]), "plan_")
+  isparam = s -> s isa Expr && s.head == :(=) && s.args[1] isa Symbol &&
+                 s.args[2] isa AbstractFloat && !mined(s)
   rel_tol(v) = max(1e-9, 1e-6 * abs(v))
   out = collect(stmts)
   earlier = Tuple{Symbol, Float64}[]
