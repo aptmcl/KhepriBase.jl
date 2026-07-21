@@ -148,15 +148,32 @@ function model_summary(model)
     catch
     end
   end
+  # Column anchors and fixture locations carry LEVEL-RELATIVE z (realization re-adds the
+  # level height) — pushing them raw created phantom bbox extents: an architectural column
+  # at z=-1.8 on level 0 dragged the whole-model bbox 1.8 m below anything that exists
+  # (racbasic's 3.8 m bbox FAIL was this phantom on both sides of the comparison). Lift into
+  # world z with the shape's own level.
   for c in columns
     try
-      hasproperty(c, :cb) && push!(pts, _summary_world_xyz(c.cb))
+      if hasproperty(c, :cb)
+        let (x, y, z) = _summary_world_xyz(c.cb),
+            lift = hasproperty(c, :bottom_level) && hasproperty(c.bottom_level, :height) ?
+                     Float64(c.bottom_level.height) : 0.0
+          push!(pts, (x, y, z + lift))
+        end
+      end
     catch
     end
   end
   for f in fixtures
     try
-      hasproperty(f, :loc) && push!(pts, _summary_world_xyz(f.loc))
+      if hasproperty(f, :loc)
+        let (x, y, z) = _summary_world_xyz(f.loc),
+            lift = hasproperty(f, :level) && hasproperty(f.level, :height) ?
+                     Float64(f.level.height) : 0.0
+          push!(pts, (x, y, z + lift))
+        end
+      end
     catch
     end
   end
