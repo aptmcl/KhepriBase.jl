@@ -30,8 +30,8 @@ Essential operations for backend functionality.
 | `b_polygon` | Create a closed polygon |
 | `b_regular_polygon` | Create a regular n-gon |
 | `b_nurbs_curve` | Create a NURBS curve |
-| `b_spline` | Create a spline |
-| `b_closed_spline` | Create a closed spline |
+| `b_spline` | Create an interpolating spline. `v0`/`v1` are optional FORWARD end tangents (direction of travel; magnitude ignored); `false` means natural. Backends must draw the canonical chord-parameterized cubic — use `open_spline_tangents`/`open_spline_bezier_path` (KhepriBase) for missing tangents or exact Bézier-chain geometry; never derive an end tangent from a reversed chord like `ps[end-1]-ps[end]` |
+| `b_closed_spline` | Create a closed spline (periodic chord-parameterized cubic) |
 | `b_circle` | Create a circle |
 | `b_arc` | Create an arc |
 | `b_ellipse` | Create an ellipse |

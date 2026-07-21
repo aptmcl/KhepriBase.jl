@@ -131,3 +131,67 @@ end
     end
   end
 end
+
+#=
+Probe backend for the DEFAULT b_spline chain. The default (Backend.jl) draws
+the canonical chord-parameterized cubic via open_spline_bezier_path (Paths.jl)
+and bottoms out at b_line through sampled_curve. The hook and the helpers once
+went out of lockstep — a committed default referenced open_spline_* that
+existed only in an uncommitted working tree, so every backend without a native
+b_spline override threw UndefVarError at draw time and no test noticed,
+because MockBackend overrides b_spline. This probe deliberately does NOT
+override it, so the default method body itself runs.
+=#
+if !@isdefined(SplineProbeKey)
+  abstract type SplineProbeKey end
+  mutable struct SplineProbeBackend <: KhepriBase.Backend{SplineProbeKey, Int}
+    lines::Vector{Vector{KhepriBase.Loc}}
+    refs::KhepriBase.References{SplineProbeKey, Int}
+  end
+  SplineProbeBackend() =
+    SplineProbeBackend(Vector{KhepriBase.Loc}[], KhepriBase.References{SplineProbeKey, Int}())
+  KhepriBase.backend_name(b::SplineProbeBackend) = "SplineProbe"
+  KhepriBase.void_ref(b::SplineProbeBackend) = 0
+  KhepriBase.b_line(b::SplineProbeBackend, ps, mat) = begin
+    push!(b.lines, collect(ps))
+    length(b.lines)
+  end
+end
+
+@testset "default b_spline draws the canonical curve (helper/hook lockstep)" begin
+  let ps = [xy(0, 0), xy(1, 2), xy(3, 1), xy(5, 3), xy(7, 0)],
+      sample_step = 9.5 / max(path_smoothness_segments(), (length(ps) - 1) * 8)
+    # No tangents: must realize through open_spline_bezier_path without error
+    # and pass near every interpolation point (within the sampling step).
+    let b = SplineProbeBackend()
+      KhepriBase.b_spline(b, ps, false, false, 0)
+      @test length(b.lines) == 1
+      let vs = b.lines[1]
+        @test length(vs) >= length(ps)
+        for p in ps
+          @test minimum(distance(p, v) for v in vs) < sample_step
+        end
+        # Independent oracle: every drawn vertex lies on the Dierckx
+        # chord-parameterized interpolant that location_at/sweeps follow.
+        let ci = KhepriBase.curve_interpolator(ps, false),
+            dense = [xyz(KhepriBase.Dierckx.evaluate(ci, t)..., world_cs)
+                     for t in 0:0.00005:1]
+          @test maximum(minimum(distance(v, q) for q in dense) for v in vs) < 1e-3
+        end
+      end
+    end
+    # Supplied FORWARD tangents: the drawn polyline leaves along v0 and
+    # arrives along v1 (the end-of-spline wiggle regression, default chain).
+    # The sampled vertices are oriented frames (z along the curve tangent), so
+    # direction math must happen on their WORLD positions.
+    let b = SplineProbeBackend()
+      KhepriBase.b_spline(b, ps, vxy(1, 0), vxy(0, -1), 0)
+      let vs = [KhepriBase.in_world(v) for v in b.lines[1]],
+          d0 = KhepriBase.unitized(vs[2] - vs[1]),
+          d1 = KhepriBase.unitized(vs[end] - vs[end-1])
+        @test d0.x > 0.98
+        @test d1.y < -0.98
+      end
+    end
+  end
+end

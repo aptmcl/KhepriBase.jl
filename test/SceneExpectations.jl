@@ -109,10 +109,13 @@ arcs_expectation() =
    exhaustive=true)
 
 #= spline_curve: spline through five literal control points; Tier 1 asserts
-   the control points verbatim, not the curve between them (Tier 3). =#
+   the control points verbatim, not the curve between them (Tier 3). Splines
+   are emitted as the canonical cubic Bézier chain (open_spline_bezier_path),
+   so they parse as :bezier whose chain endpoints ARE the interpolation
+   points. =#
 spline_curve_expectation() =
   (splines=[(pts=[xyz3(0, 0), xyz3(1, 2), xyz3(3, 1), xyz3(5, 3), xyz3(7, 0)],
-             kind=:spline)],
+             kind=:bezier)],
    exhaustive=true)
 
 #= rectangles: rectangle(xy(0,0),4,3), rectangle(xy(5,0),2,5),

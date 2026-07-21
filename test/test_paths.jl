@@ -767,4 +767,82 @@ using KhepriBase
     @test len ≈ 5 atol=1e-1  # Approximate since it's iterative
   end
 
+  @testset "canonical open spline" begin
+    bernstein(cps, τ) =
+      let (p0, p1, p2, p3) = Tuple(cps),
+          s = 1 - τ
+        xyz(s^3*p0.x + 3s^2*τ*p1.x + 3s*τ^2*p2.x + τ^3*p3.x,
+            s^3*p0.y + 3s^2*τ*p1.y + 3s*τ^2*p2.y + τ^3*p3.y,
+            s^3*p0.z + 3s^2*τ*p1.z + 3s*τ^2*p2.z + τ^3*p3.z,
+            world_cs)
+      end
+    max_dev_vs_interpolator(ps) =
+      let ci = KhepriBase.curve_interpolator(ps, false),
+          path = open_spline_bezier_path(ps),
+          wpts = [KhepriBase.in_world(p) for p in ps],
+          ds = [distance(wpts[i], wpts[i+1]) for i in 1:length(wpts)-1],
+          h = ds ./ sum(ds),
+          u = [0.0, cumsum(h)...]
+        maximum(distance(bernstein(path.spans[i].control_points, τ),
+                         xyz(KhepriBase.Dierckx.evaluate(ci, u[i] + τ*h[i])..., world_cs))
+                for i in 1:length(path.spans), τ in 0:0.05:1)
+      end
+
+    @testset "no-tangent case reproduces the location_at interpolant" begin
+      # The clamped solve with Dierckx-extracted end derivatives must yield
+      # the SAME curve location_at/sweeps follow, to machine precision.
+      for ps in ([xy(0, 0), xy(10, -4), xy(20, 0)],
+                 [xy(0, 0), xy(1, 2), xy(3, 1), xy(5, 3), xy(7, 0)],
+                 [xyz(0, 0, 0), xyz(2, 3, 1), xyz(5, 2, 3), xyz(8, 0, 2)],
+                 [xy(0, 0), xy(5, 5)],
+                 [xy(0, 0), xy(1, 0), xy(2, 0), xy(3, 0)])
+        @test max_dev_vs_interpolator(ps) < 1e-9
+      end
+    end
+
+    vdist(a, b) = sqrt(sum((a - b).raw .^ 2))
+
+    @testset "supplied tangents are honored as forward directions" begin
+      # Regression for the AutoCAD end-tangent wiggle: tangents are FORWARD
+      # (direction of travel), and magnitude of the supplied vector is ignored.
+      let ps = [xy(0, 0), xy(10, -4), xy(20, 0)],
+          (t0, t1) = open_spline_tangents(ps, vxy(1, 0), vxy(10, 10)),
+          path = open_spline_bezier_path(ps, vxy(1, 0), vxy(10, 10)),
+          first_cps = path.spans[1].control_points,
+          last_cps = path.spans[end].control_points
+        @test vdist(KhepriBase.unitized(t0), vxyz(1, 0, 0, world_cs)) < 1e-12
+        @test vdist(KhepriBase.unitized(t1), vxyz(√0.5, √0.5, 0, world_cs)) < 1e-12
+        @test KhepriBase.unitized(first_cps[2] - first_cps[1]).y ≈ 0 atol=1e-12
+        @test KhepriBase.unitized(last_cps[4] - last_cps[3]).y ≈ √0.5 atol=1e-12
+        # scaling the supplied tangent must not change the curve
+        @test all(distance.(open_spline_bezier_path(ps, vxy(2, 0), vxy(1, 1)).spans[1].control_points,
+                            path.spans[1].control_points) .< 1e-12)
+      end
+    end
+
+    @testset "mixed case takes the natural tangent at the free end" begin
+      let ps = [xy(0, 0), xy(10, -4), xy(20, 0)],
+          ci = KhepriBase.curve_interpolator(ps, false),
+          (_, t1) = open_spline_tangents(ps, vxy(1, 0), false),
+          dd = KhepriBase.Dierckx.derivative(ci, 1.0)
+        @test vdist(t1, vxyz(dd..., world_cs)) < 1e-12
+      end
+    end
+
+    @testset "interpolation through all points" begin
+      let ps = [xy(0, 0), xy(1, 2), xy(3, 1), xy(5, 3), xy(7, 0)],
+          path = open_spline_bezier_path(ps, vxy(0, 1), vxy(0, -1))
+        for (i, span) in enumerate(path.spans)
+          @test distance(span.control_points[1], ps[i]) < 1e-12
+        end
+        @test distance(path.spans[end].control_points[4], ps[end]) < 1e-12
+      end
+    end
+
+    @testset "degenerate inputs" begin
+      @test_throws ArgumentError open_spline_bezier_path([xy(0, 0)])
+      @test_throws ArgumentError open_spline_bezier_path([xy(0, 0), xy(0, 0)])
+    end
+  end
+
 end

@@ -108,6 +108,9 @@ export empty_path,
        path_frames,
        path_interpolated_frames,
        curve_interpolator,
+       open_spline_tangents,
+       open_spline_derivatives,
+       open_spline_bezier_path,
        mirrored_path,
        mirrored_on_x,
        mirrored_on_y,
@@ -2218,6 +2221,88 @@ curve_control_points(interpolator) =
   end
 curve_knots(interpolator) =
   get_knots(interpolator)
+
+#=
+Canonical open interpolating spline.
+The curve every backend must draw for spline(ps, v0, v1) is the chord-
+parameterized cubic that curve_interpolator -- and therefore location_at,
+sweeps, and divisions -- already follows. v0/v1 are FORWARD tangents (the
+direction of travel at each end). A supplied tangent acts as a direction only:
+it is normalized and scaled to the total chord length, the standard fit-spline
+end-derivative magnitude. An unsupplied end (false/nothing) takes its
+derivative from the Dierckx interpolant itself, so the clamped C2 solve in
+open_spline_derivatives reproduces that interpolant EXACTLY in the no-tangent
+case: a C2 piecewise cubic interpolating the same points on the same parameter
+grid with the same end derivatives is unique. Native fit splines fed these
+tangents, the Bezier chain below, and sampled fallbacks therefore all agree.
+=#
+open_spline_chord_grid(wpts) =
+  let n = length(wpts)
+    n < 2 && throw(ArgumentError("open spline: needs at least 2 interpolation points, got $n"))
+    let ds = [distance(wpts[i], wpts[i+1]) for i in 1:n-1],
+        l = sum(ds)
+      any(iszero, ds) && throw(ArgumentError("open spline: coincident consecutive interpolation points"))
+      (ds ./ l, l)
+    end
+  end
+
+open_spline_tangents(ps, v0=false, v1=false) =
+  let (_, l) = open_spline_chord_grid([in_world(p) for p in ps]),
+      # The Dierckx interpolant is only consulted for a MISSING tangent; with
+      # both supplied, skip the FITPACK fit entirely.
+      ci = v0 isa Vec && v1 isa Vec ? nothing : curve_interpolator(ps, false),
+      canonical(t) = vxyz(derivative(ci, t)..., world_cs),
+      supplied(v) = unitized(in_world(v)) * l
+    (v0 isa Vec ? supplied(v0) : canonical(0.0),
+     v1 isa Vec ? supplied(v1) : canonical(1.0))
+  end
+
+# Per-point derivatives (w.r.t. the normalized chord parameter) of the clamped
+# C2 cubic through ps: tridiagonal slope system, Thomas solve with Vec-valued
+# right-hand sides.
+function open_spline_derivatives(ps, v0=false, v1=false)
+  wpts = [in_world(p) for p in ps]
+  n = length(wpts)
+  m1, mn = open_spline_tangents(ps, v0, v1)
+  n == 2 && return [m1, mn]
+  h, _ = open_spline_chord_grid(wpts)
+  δ = [(wpts[i+1] - wpts[i]) / h[i] for i in 1:n-1]
+  m = n - 2
+  a = [h[i] for i in 2:n-1]
+  b = [2 * (h[i-1] + h[i]) for i in 2:n-1]
+  c = [h[i-1] for i in 2:n-1]
+  r = Vec[3 * (h[i] * δ[i-1] + h[i-1] * δ[i]) for i in 2:n-1]
+  r[1] -= a[1] * m1
+  r[m] -= c[m] * mn
+  cp = zeros(m)
+  dp = Vector{Vec}(undef, m)
+  cp[1] = c[1] / b[1]
+  dp[1] = r[1] / b[1]
+  for k in 2:m
+    let denom = b[k] - a[k] * cp[k-1]
+      cp[k] = c[k] / denom
+      dp[k] = (r[k] - a[k] * dp[k-1]) / denom
+    end
+  end
+  ms = Vector{Vec}(undef, m)
+  ms[m] = dp[m]
+  for k in m-1:-1:1
+    ms[k] = dp[k] - cp[k] * ms[k+1]
+  end
+  [m1, ms..., mn]
+end
+
+open_spline_bezier_path(ps, v0=false, v1=false) =
+  let wpts = [in_world(p) for p in ps],
+      ms = open_spline_derivatives(ps, v0, v1),
+      (h, _) = open_spline_chord_grid(wpts)
+    open_bezier_path(
+      [BezierSpan([wpts[i],
+                   wpts[i] + ms[i] * (h[i] / 3),
+                   wpts[i+1] - ms[i+1] * (h[i] / 3),
+                   wpts[i+1]])
+       for i in 1:length(wpts)-1])
+  end
 
 convert(::Type{ClosedPolygonalPath}, path::CompositePath{true}) =
   let paths = path.pieces,
