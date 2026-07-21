@@ -1944,23 +1944,29 @@ function extract_coordinate_dimensions(e::Expr)
   Expr(:block, assigns..., stmts_of(_replace_coord_dims(e, table))...)
 end
 
-# 3.12 Derive parameter relations — exemplar parameter blocks define derived values
-# (outer_radius = inner_radius + building_width, isenberg_BIM.jl; wall tops at -slab_thickness).
-# For each prologue Float parameter, try to express it via EARLIER parameters as -p, p+q, p-q,
-# k*p or p/k (k ∈ 2:4) within combined meta_program rounding (1e-6 relative), and rewrite the
-# RHS symbolically, so editing the independent knob propagates. Guarded against numerology:
-# only _distinctive (non-round) values participate — 6.0 = 2 * 3.0 would be a coincidence
-# coupling, exactly the false-relation class unify_constants avoids; identity relations are
-# skipped for the same reason (two same-valued dims stay independent knobs).
+# 3.12 Derive parameter relations — exemplar parameter blocks define derived values (wall tops
+# at -slab_thickness; Astana's column_d = 2*column_r). For each prologue Float parameter, try to
+# express it via an EARLIER parameter as -p, k*p or p/k (k ∈ 2:4) within combined meta_program
+# rounding (1e-6 relative), and rewrite the RHS symbolically, so editing the independent knob
+# propagates. Guarded against numerology, with live-corpus evidence shaping the limits:
+# - only _distinctive (non-round) values participate (6.0 = 2 * 3.0 is a coincidence);
+# - identity relations are skipped (two same-valued dims stay independent knobs);
+# - SUM/DIFFERENCE forms are deliberately absent: on real models they misfire (live moradia T4
+#   derived floor_height = wall_base_offset - (wall_top_offset + wall_top_offset_2) — the
+#   storey height coupled to wall offsets). The exemplar outer = inner + width relation is
+#   semantically identifiable only by a human;
+# - STRUCTURAL params (floor_height, base_level_height, *_spacing — owned by
+#   parametrize_levels/symbolize_ranges) are never TARGETS, though they remain sources
+#   (parapet datums already derive from floor_height upstream);
+# - mined plan_* params are POSITIONS (aligned-wall offsets), not lengths — excluded as
+#   targets AND sources (live moradia3 derived a depth from two widths).
 function derive_parameter_relations(e::Expr)
   stmts = collect(stmts_of(e))
-  # Mined plan_* params are POSITIONS (aligned-wall offsets), not lengths: any arithmetic
-  # relation among them is a coincidence of the floor plan (live-corpus moradia3 derived a
-  # depth from two widths). They stay independent, as targets AND as sources.
-  mined = s -> s isa Expr && s.head == :(=) && s.args[1] isa Symbol &&
-               startswith(String(s.args[1]), "plan_")
+  mined = sym -> startswith(String(sym), "plan_")
+  structural = sym -> sym in (:floor_height, :base_level_height) ||
+                      endswith(String(sym), "_spacing")
   isparam = s -> s isa Expr && s.head == :(=) && s.args[1] isa Symbol &&
-                 s.args[2] isa AbstractFloat && !mined(s)
+                 s.args[2] isa AbstractFloat && !mined(s.args[1])
   rel_tol(v) = max(1e-9, 1e-6 * abs(v))
   out = collect(stmts)
   earlier = Tuple{Symbol, Float64}[]
@@ -1972,7 +1978,7 @@ function derive_parameter_relations(e::Expr)
     (s isa Expr && s.head == :(=) && s.args[1] isa Symbol && s.args[2] isa Real) || break
     isparam(s) || continue
     let v = Float64(s.args[2])
-      if _distinctive(v)
+      if _distinctive(v) && !structural(s.args[1])
         found = nothing
         for (p, pv) in earlier
           _distinctive(pv) || continue
@@ -1987,18 +1993,6 @@ function derive_parameter_relations(e::Expr)
             end
           end
           found === nothing || break
-        end
-        if found === nothing
-          for (p, pv) in earlier, (q, qv) in earlier
-            p === q && continue
-            (_distinctive(pv) || _distinctive(qv)) || continue
-            if abs(v - (pv + qv)) <= rel_tol(v)
-              found = Expr(:call, :+, p, q)
-            elseif abs(v - (pv - qv)) <= rel_tol(v)
-              found = Expr(:call, :-, p, q)
-            end
-            found === nothing || break
-          end
         end
         if found !== nothing
           out[i] = Expr(:(=), s.args[1], found)

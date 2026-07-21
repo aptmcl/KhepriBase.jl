@@ -180,27 +180,33 @@ end
   @test occursin("add_xy(p0, 3.3, 0.0)", srcs)          # beyond the cap: literal
 end
 
-@testset "derive_parameter_relations: distinctive relations only" begin
+@testset "derive_parameter_relations: strong forms only, structural targets excluded" begin
   prog = Expr(:block,
     Expr(:(=), :slab_thickness, 0.163),
     Expr(:(=), :wall_top_offset, -0.163),          # = -slab_thickness
     Expr(:(=), :parapet_rise, 0.326),              # = 2 * slab_thickness
-    Expr(:(=), :plan_width, 6.0),                  # round: never a relation target
+    Expr(:(=), :plan_width, 6.0),                  # mined position: never a target
     Expr(:(=), :floor_height, 3.0))                # 6.0 = 2*3.0 must NOT couple
   src = expr_to_string(derive_parameter_relations(prog))
-  @test occursin("wall_top_offset = -(slab_thickness)", src) || occursin("wall_top_offset = -slab_thickness", src)
+  @test occursin("wall_top_offset = -slab_thickness", src)
   @test occursin("parapet_rise = 2 * slab_thickness", src)
   @test occursin("plan_width = 6.0", src)
   # Identity values stay independent knobs.
   prog2 = Expr(:block, Expr(:(=), :a_dim, 0.163), Expr(:(=), :b_dim, 0.163))
   @test derive_parameter_relations(prog2) === prog2
-  # Sum relation with at least one distinctive operand.
+  # SUM relations are deliberately not derived (live moradia T4: floor_height was expressed
+  # from wall offsets via a coincidence sum). Values that only combine additively stay literal.
   prog3 = Expr(:block,
     Expr(:(=), :inner_radius, 10.163),
-    Expr(:(=), :building_width, 5.0),
-    Expr(:(=), :outer_radius, 15.163))
-  @test occursin("outer_radius = inner_radius + building_width",
-                 expr_to_string(derive_parameter_relations(prog3)))
+    Expr(:(=), :building_width, 5.163),
+    Expr(:(=), :outer_radius, 15.326))
+  @test derive_parameter_relations(prog3) === prog3
+  # Structural params are never relation targets, even when a strong form matches.
+  prog4 = Expr(:block,
+    Expr(:(=), :wall_base_offset, 1.63),
+    Expr(:(=), :floor_height, 3.26),               # exactly 2 * wall_base_offset — stays literal
+    Expr(:(=), :columns_x_spacing, 3.26))          # *_spacing likewise
+  @test derive_parameter_relations(prog4) === prog4
 end
 
 @testset "extract_shared_dimensions: reroll weighting, bucketing, :parameters kwargs" begin
