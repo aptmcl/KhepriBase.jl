@@ -216,8 +216,10 @@ function measured_statements(stmts; b::MeasureBackend=measure_backend(),
   rows = NamedTuple[]
   try
     for (i, e) in enumerate(_stmt_list(stmts))
-      # :toplevel_comment is a printer-only pseudo-node from the header pass.
+      # :toplevel_comment is a printer-only pseudo-node from the header pass;
+      # :inline_comment (round_parameters) wraps a real statement — evaluate that.
       e isa Expr && e.head in (:using, :toplevel_comment) && continue
+      e isa Expr && e.head == :inline_comment && (e = e.args[1])
       let w = measure_watermark(b),
           err = nothing
         try

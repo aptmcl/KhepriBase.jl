@@ -122,8 +122,10 @@ end
 function reference_model_v2()
   fm = IdDict{Any, FamilyMeta}()
   with_introspection(revit) do
-    l0, l1, l2 = level(0.0), level(3.26), level(6.52)
-    lu = unconnected_level(7.02)                       # parapet datum: 2 storeys + 0.5 rise
+    # Introspection-realistic float noise: real Revit models yield 3.2599999-class values;
+    # round_parameters must emit the architectural 3.26 with the original in a comment.
+    l0, l1, l2 = level(0.0), level(3.2599999), level(6.5199998)
+    lu = unconnected_level(7.0199998)                  # parapet datum: 2 storeys + 0.5 rise
 
     wfam = wall_family()
     fm[wfam] = FamilyMeta(category = :wall, family_name = "Basic Wall",
@@ -134,11 +136,11 @@ function reference_model_v2()
       push!(walls, wall(open_polygonal_path([corners[i], corners[mod1(i + 1, 4)]]),
                         bottom_level = l0, top_level = l1, family = wfam))
     end
-    # Upper storey: same rectangle, all four sharing a distinctive top offset.
+    # Upper storey: same rectangle, all four sharing a distinctive (and noisy) top offset.
     for i in 1:4
       push!(walls, wall(open_polygonal_path([corners[i], corners[mod1(i + 1, 4)]]),
                         bottom_level = l1, top_level = l2, family = wfam,
-                        top_offset = -0.163))
+                        top_offset = -0.19999999))
     end
     # Parapet band to the unconnected datum.
     push!(walls, wall(open_polygonal_path([xyz(0, 4, 0), xyz(6, 4, 0)]),
@@ -204,9 +206,10 @@ end
     src = run_pipeline(reference_model_v2())
     check_golden("reference_model_v2", src)
     # The parametrization passes must all have fired:
-    @test occursin("wall_top_offset = -0.163", src)               # shared dimension lifted
+    @test occursin("wall_top_offset = -0.2  # rounded from the introspected -0.19999999", src)
+    @test occursin("floor_height = 3.26  # rounded from the introspected 3.2599999", src)
     @test occursin("top_offset=wall_top_offset", src)
-    @test occursin("unconnected_level(2 * floor_height + 0.5)", src)  # datum tracks the stack
+    @test occursin("unconnected_level(2 * floor_height + 0.5", src)   # datum tracks the stack
     @test occursin("pi / 2", src)                                 # rotations symbolized
     @test !occursin("1.5707963", src)
     @test occursin("building_origin = ", src)                     # one anchor knob

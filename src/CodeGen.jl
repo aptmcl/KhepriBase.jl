@@ -1580,13 +1580,19 @@ end
 # parameters become re-invocable keyword arguments. Off by default (generate_khepri_code kwarg).
 function wrap_program_in_function(e::Expr; name=:building)
   stmts = collect(stmts_of(e))
-  isparam = s -> s isa Expr && s.head == :(=) && s.args[1] isa Symbol && s.args[2] isa Real
+  # Rounded params carry their provenance comment on an :inline_comment wrapper — the kwarg
+  # form has nowhere for a comment, so unwrap (the rounded value survives, the comment doesn't).
+  unwrap = s -> s isa Expr && s.head == :inline_comment ? s.args[1] : s
+  isparam = s -> let u = unwrap(s)
+    u isa Expr && u.head == :(=) && u.args[1] isa Symbol && u.args[2] isa Real
+  end
   k = something(findfirst(s -> !isparam(s), stmts), length(stmts) + 1) - 1
   k == 0 && return e
   Expr(:block,
        Expr(:function,
             Expr(:call, name,
-                 Expr(:parameters, [Expr(:kw, s.args[1], s.args[2]) for s in stmts[1:k]]...)),
+                 Expr(:parameters,
+                      [Expr(:kw, unwrap(s).args[1], unwrap(s).args[2]) for s in stmts[1:k]]...)),
             Expr(:block, stmts[k+1:end]...)),
        Expr(:call, name))
 end
@@ -2005,6 +2011,50 @@ function derive_parameter_relations(e::Expr)
   changed ? Expr(:block, out...) : e
 end
 
+# 3.13 Round parameters to architectural values — introspection yields float noise no human
+# would write (floor_height = 3.2599999, wall_top_offset = -0.19999999; a designer writes 3.26
+# and -0.2). Snap each top-level Float parameter to the ROUNDEST decimal within
+# _param_round_tolerance (0.1 mm — noise-sized, far inside the passes' 1e-3 snap class and the
+# oracle's 2e-3 tolerance) and keep the introspected value in a trailing comment:
+#   floor_height = 3.26  # rounded from the introspected 3.2599999
+# Every use bound to the parameter shifts coherently with it; values with no round neighbor
+# (a mined 0.241434 position) stay verbatim, and already-round values get no comment. The
+# comment rides on an :inline_comment pseudo-node (printer + wrap + the oracle's evaluator
+# understand it; parsing the printed source strips it naturally).
+const _param_round_tolerance = 1e-4
+
+_architectural_round(v::Float64) =
+  let hit = nothing
+    for d in 0:3
+      let r = round(v, digits = d)
+        if abs(r - v) <= _param_round_tolerance
+          hit = r
+          break
+        end
+      end
+    end
+    hit
+  end
+
+function round_parameters(e::Expr)
+  changed = false
+  out = map(collect(stmts_of(e))) do s
+    (s isa Expr && s.head == :(=) && s.args[1] isa Symbol && s.args[2] isa AbstractFloat) ||
+      return s
+    let v = Float64(s.args[2]), r = _architectural_round(v)
+      if r === nothing || r == v
+        s
+      else
+        changed = true
+        Expr(:inline_comment,
+             Expr(:(=), s.args[1], r),
+             "rounded from the introspected $(s.args[2])")
+      end
+    end
+  end
+  changed ? Expr(:block, out...) : e
+end
+
 # ─── The standard pass list ──────────────────────────────────────────────────
 # One authoritative order shared by the BIM (Revit) and geometric (AutoCAD) pipelines so they
 # cannot drift. `header` is the backend-appropriate header pass; `wrap` inserts the optional
@@ -2027,7 +2077,8 @@ codegen_passes(b, fmap; header=add_header(b), wrap=false,
                    sectionalize_by_storey(level_names),
                    parametrize_level_series,
                    extract_coordinate_dimensions,
-                   derive_parameter_relations]
+                   derive_parameter_relations,
+                   round_parameters]
     wrap && push!(passes, wrap_program_in_function)
     push!(passes, header)
     passes
@@ -2143,7 +2194,9 @@ end
 
 _stmt_section(s) =
   if s isa Expr
-    if s.head == :toplevel_comment
+    if s.head == :inline_comment
+      _stmt_section(s.args[1])
+    elseif s.head == :toplevel_comment
       :header
     elseif s.head == :using
       :header
@@ -2245,6 +2298,10 @@ function _print_stmt(io, s::Expr, indent)
   let ind = "  " ^ indent
     if s.head == :toplevel_comment
       print(io, "$(ind)# $(s.args[1])")
+    elseif s.head == :inline_comment
+      # A statement with a trailing provenance comment (round_parameters).
+      _print_stmt(io, s.args[1], indent)
+      print(io, "  # $(s.args[2])")
     elseif s.head == :using
       print(io, "$(ind)using $(join(map(_expr_str, s.args), ", "))")
     elseif s.head == :(=)
@@ -2449,7 +2506,8 @@ codegen_pass_names(; wrap=false) =
                "loop_rerolling", "parametrize_levels", "symbolize_ranges",
                "symbolize_angles", "extract_shared_dimensions", "unify_constants",
                "sectionalize_by_storey", "parametrize_level_series",
-               "extract_coordinate_dimensions", "derive_parameter_relations"]
+               "extract_coordinate_dimensions", "derive_parameter_relations",
+               "round_parameters"]
     wrap && push!(names, "wrap_program_in_function")
     push!(names, "header")
     names

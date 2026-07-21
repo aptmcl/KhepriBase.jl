@@ -6,12 +6,12 @@ using KhepriRevit
 plan_width = 6.0
 plan_depth = 4.0
 plan_depth_2 = 3.0
-wall_top_offset = -0.163
+wall_top_offset = -0.2  # rounded from the introspected -0.19999999
 columns_x_spacing = 4.0
 n_columns_x = 2
 columns_y_spacing = 2.0
 n_columns_y = 2
-floor_height = 3.26
+floor_height = 3.26  # rounded from the introspected 3.2599999
 n_levels = 3
 
 levels = [level(i * floor_height) for i = 0:n_levels - 1]

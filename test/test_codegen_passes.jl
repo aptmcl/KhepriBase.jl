@@ -5,7 +5,7 @@ using Test
 using KhepriBase
 using KhepriBase: sort_statements, extract_functions, detect_level_repetition,
   parametrize_levels, parametrize_level_series, extract_coordinate_dimensions,
-  derive_parameter_relations, symbolize_ranges, symbolize_angles, extract_shared_dimensions,
+  derive_parameter_relations, round_parameters, symbolize_ranges, symbolize_angles, extract_shared_dimensions,
   unify_constants, wrap_program_in_function,
   loop_rerolling, extract_levels, extract_families, hoist_opening_frames,
   sectionalize_by_storey, expr_to_string,
@@ -233,6 +233,33 @@ end
   src3 = expr_to_string(extract_shared_dimensions(prog3))
   @test occursin("pbr_material_roughness = 0.30000001", src3)
   @test occursin("roughness=pbr_material_roughness", src3)
+end
+
+@testset "round_parameters: architectural values with provenance comments" begin
+  # Introspection noise (-0.19999999, 3.2599999) becomes what a designer would write, with
+  # the original preserved in a trailing comment; already-round and non-round-neighbor values
+  # stay verbatim and uncommented.
+  prog = Expr(:block,
+    Expr(:(=), :wall_top_offset, -0.19999999),
+    Expr(:(=), :floor_height, 3.2599999),
+    Expr(:(=), :plan_depth, 7.574999),
+    Expr(:(=), :odd_dim, 0.241434),
+    Expr(:(=), :n_levels, 3),
+    :(level_0 = level(0.0)))
+  src = expr_to_string(round_parameters(prog))
+  @test occursin("wall_top_offset = -0.2  # rounded from the introspected -0.19999999", src)
+  @test occursin("floor_height = 3.26  # rounded from the introspected 3.2599999", src)
+  @test occursin("plan_depth = 7.575  # rounded from the introspected 7.574999", src)
+  @test occursin("odd_dim = 0.241434\n", src)
+  @test Meta.parseall(src) isa Expr
+  # 3.048 (10 ft) IS the architectural number — untouched, no comment.
+  clean = Expr(:block, Expr(:(=), :floor_height, 3.048))
+  @test round_parameters(clean) === clean
+  # wrap still collects rounded params as kwargs (comment dropped in kwarg form).
+  wrapped = expr_to_string(wrap_program_in_function(round_parameters(Expr(:block,
+    Expr(:(=), :floor_height, 3.2599999),
+    :(wall(open_polygonal_path([xy(0.0, 0.0), xy(6.0, 0.0)]), level_0, level_0, fam_w))))))
+  @test occursin("function building(; floor_height=3.26)", wrapped)
 end
 
 @testset "symbolize_angles: tolerance and extended coverage" begin
