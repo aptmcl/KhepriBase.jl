@@ -189,6 +189,14 @@ function model_to_expr(model)
   for f in model.floors
     push!(stmts, meta_program(f))
   end
+  # Railings BEFORE the failure-prone categories (columns/roofs/fixtures/stairs): a generated
+  # storey body replays as ONE statement, so an abort mid-body drops everything after it —
+  # live Snowdon lost 113/118 railings purely because they trailed the stairs. Railings depend
+  # only on levels + their explicit paths (never on a host), so early emission is safe:
+  # stair auto-railing deletion is host-scoped and path-created railings are unhosted.
+  for rl in model.railings
+    push!(stmts, meta_program(rl))
+  end
   for c in model.columns
     push!(stmts, meta_program(c))
   end
@@ -206,9 +214,6 @@ function model_to_expr(model)
   end
   for st in model.stairs
     push!(stmts, meta_program(st))
-  end
-  for rl in model.railings
-    push!(stmts, meta_program(rl))
   end
   # Groups: emit group definitions and group_instance placements
   for g in model.groups

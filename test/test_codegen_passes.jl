@@ -235,6 +235,49 @@ end
   @test occursin("roughness=pbr_material_roughness", src3)
 end
 
+@testset "resilient realization contains member failures" begin
+  # A generated factory/storey body replays as ONE statement: without containment, one
+  # throwing member silently drops every later member (live goldennugget lost ~half the
+  # model this way). Under resilient_realization, the bad member records an error + a void
+  # ref and the rest realize.
+  b = KhepriBase.measure_backend()
+  prev = KhepriBase.current_backends()
+  KhepriBase.current_backend(b)
+  try
+    # Coincident spline points make the default b_spline throw deterministically.
+    @test_throws Exception spline([xy(0, 0), xy(0, 0)])
+    with(KhepriBase.resilient_realization, true) do
+      with(KhepriBase.realization_errors, Any[]) do
+        box(xyz(0, 0, 0), 1, 1, 1)
+        bad = spline([xy(5, 5), xy(5, 5)])          # contained, not fatal
+        box(xyz(10, 0, 0), 1, 1, 1)
+        @test length(KhepriBase.realization_errors()) == 1
+        @test KhepriBase.realization_errors()[1][1] === bad
+        ms = [m.measurement for m in KhepriBase.measured_shapes(b) if m.measurement.n_trigs > 0]
+        @test length(ms) == 2                       # both boxes realized after the failure
+      end
+    end
+  finally
+    KhepriBase.current_backends(prev)
+  end
+end
+
+@testset "model_to_expr: railings precede failure-prone categories" begin
+  # Order pin for the storey-abort shield: railings must be emitted before columns, roofs,
+  # fixtures and stairs, so an abort in those classes cannot take the railings down with it.
+  fake(catsym, n) = [Expr(:call, catsym, i) for i in 1:n]
+  # Use meta_program-free stand-ins through a NamedTuple model with empty complex slots and
+  # verify via the emission loops' relative order on a real introspection-shaped model instead:
+  # simplest faithful check — emit a model with one element of each ordered category through
+  # with_introspection-style proxies is Revit-dependent, so pin the SOURCE order directly.
+  src = read(joinpath(dirname(pathof(KhepriBase)), "CodeGen.jl"), String)
+  railings_at = findfirst("for rl in model.railings", src)
+  columns_at = findfirst("for c in model.columns", src)
+  stairs_at = findfirst("for st in model.stairs", src)
+  @test railings_at !== nothing && columns_at !== nothing && stairs_at !== nothing
+  @test railings_at[1] < columns_at[1] < stairs_at[1]
+end
+
 @testset "round_parameters: architectural values with provenance comments" begin
   # Introspection noise (-0.19999999, 3.2599999) becomes what a designer would write, with
   # the original preserved in a trailing comment; already-round and non-round-neighbor values

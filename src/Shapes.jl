@@ -229,12 +229,32 @@ with_transaction(fn, bs::Backends) =
     fn() :
     with_transaction(() -> with_transaction(fn, Base.tail(bs)), first(bs))
 
+#=
+Resilient realization: replaying a GENERATED program (run_generated_program, the stress
+rebuild) must not let one failing member abort a whole factory/storey body — on a 148 MB
+corpus model a single throwing stair silently dropped entire group cohorts (~half the model)
+because the replay's try/catch is per top-level statement. Opt-in (Parameter, default off):
+interactive sessions keep loud, immediate failures. Under resilience, a failed shape records
+(shape, backend, error) in realization_errors, warns, and stores void_ref so later ref forcing
+doesn't re-realize/re-throw. BackendDisconnected is NEVER contained — transport death must
+still retire the backend (see Backends.jl).
+=#
+export resilient_realization, realization_errors
+const resilient_realization = Parameter(false)
+const realization_errors = Parameter{Vector{Any}}(Any[])
+
 maybe_realize(s) =
   for b in current_backends()
     try
       maybe_realize(b, s)
     catch e
-      handle_backend_error(e, b)
+      if resilient_realization() && !(e isa BackendDisconnected)
+        push!(realization_errors(), (s, b, e))
+        @warn "realization failed; continuing (resilient_realization)" shape=typeof(s) exception=e maxlog=20
+        ref!(b, s, void_ref(b))
+      else
+        handle_backend_error(e, b)
+      end
     end
   end
 
