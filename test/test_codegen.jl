@@ -112,6 +112,74 @@ function reference_model()
   end
 end
 
+# ── The enriched reference model (v2) ────────────────────────────────────────
+# Adds what v1 never exercised, so the golden AND the pass-equivalence oracle measure the
+# parametrization passes end-to-end: four walls sharing a distinctive top_offset (fires
+# extract_shared_dimensions), family_elements at π-fraction rotations (fires
+# symbolize_angles), an unconnected wall-top datum with a remainder (fires the
+# parametrize_levels extension), and a two-instance group (fires group sectioning, the
+# factory skip, and the finalize_groups tail under the building_origin rebase).
+function reference_model_v2()
+  fm = IdDict{Any, FamilyMeta}()
+  with_introspection(revit) do
+    l0, l1, l2 = level(0.0), level(3.26), level(6.52)
+    lu = unconnected_level(7.02)                       # parapet datum: 2 storeys + 0.5 rise
+
+    wfam = wall_family()
+    fm[wfam] = FamilyMeta(category = :wall, family_name = "Basic Wall",
+                          type_name = "Generic 200mm", is_system = true)
+    corners = [xyz(0, 0, 0), xyz(6, 0, 0), xyz(6, 4, 0), xyz(0, 4, 0)]
+    walls = []
+    for i in 1:4
+      push!(walls, wall(open_polygonal_path([corners[i], corners[mod1(i + 1, 4)]]),
+                        bottom_level = l0, top_level = l1, family = wfam))
+    end
+    # Upper storey: same rectangle, all four sharing a distinctive top offset.
+    for i in 1:4
+      push!(walls, wall(open_polygonal_path([corners[i], corners[mod1(i + 1, 4)]]),
+                        bottom_level = l1, top_level = l2, family = wfam,
+                        top_offset = -0.163))
+    end
+    # Parapet band to the unconnected datum.
+    push!(walls, wall(open_polygonal_path([xyz(0, 4, 0), xyz(6, 4, 0)]),
+                      bottom_level = l2, top_level = lu, family = wfam))
+
+    cfam = column_family()
+    fm[cfam] = FamilyMeta(category = :column, family_name = "M_Concrete-Rectangular",
+                          type_name = "300 x 450mm", is_system = false,
+                          path = raw"C:\Families\Columns\Concrete-Rectangular.rfa")
+    columns = []
+    for i in 0:1, j in 0:1
+      push!(columns, column(xyz(1.0 + i * 4.0, 1.0 + j * 2.0, 0.0),
+                            bottom_level = l0, top_level = l1, family = cfam))
+    end
+
+    ffam = family_element_family()
+    fm[ffam] = FamilyMeta(category = :family_element, family_name = "Desk Lamp",
+                          type_name = "Std", is_system = false,
+                          path = raw"C:\Families\Fixtures\Lamp.rfa")
+    fixtures = [family_element(xyz(1.5, 3.0, 0.0), pi/2, l0, ffam),
+                family_element(xyz(3.0, 3.0, 0.0), pi, l0, ffam),
+                family_element(xyz(4.5, 3.0, 0.0), -pi/2, l0, ffam)]
+
+    sfam = slab_family()
+    fm[sfam] = FamilyMeta(category = :slab, family_name = "Floor",
+                          type_name = "Generic 300mm", is_system = true)
+    slabs = [slab(closed_polygonal_path(corners), level = l0, family = sfam)]
+
+    # A two-instance group: members in world coords at the FIRST instance's location
+    # (model_to_expr translates them factory-relative).
+    members = [column(xyz(2.2, 1.2, 0.0), bottom_level = l0, top_level = l1, family = cfam),
+               slab(closed_polygonal_path([xyz(2, 1, 0), xyz(3, 1, 0), xyz(3, 1.5, 0), xyz(2, 1.5, 0)]),
+                    level = l0, family = sfam)]
+    groups = [(type_name = "Desk", members = members,
+               instances = [xyz(2.0, 1.0, 0.0), xyz(8.0, 1.0, 0.0)])]
+
+    bim_model(levels = [l0, l1, l2, lu], walls = walls, columns = columns, floors = slabs,
+              fixtures = fixtures, groups = groups, family_meta = fm)
+  end
+end
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 @testset "codegen" begin
@@ -129,6 +197,29 @@ end
     @test occursin("revit_system_family(", src)       # system-family branch (wall/slab)
     # Door family reconstructed named by family_key (collapse fix) and carrying real dims (Phase 3a):
     @test occursin("door_family(\"Single-Flush:0915 x 2134mm\", 0.915, 2.134", src)
+  end
+
+  @testset "reference model v2 (angles, dims, unconnected level, groups)" begin
+    src = run_pipeline(reference_model_v2())
+    check_golden("reference_model_v2", src)
+    # The parametrization passes must all have fired:
+    @test occursin("wall_top_offset = -0.163", src)               # shared dimension lifted
+    @test occursin("top_offset=wall_top_offset", src)
+    @test occursin("unconnected_level(2 * floor_height + 0.5)", src)  # datum tracks the stack
+    @test occursin("pi / 2", src)                                 # rotations symbolized
+    @test !occursin("1.5707963", src)
+    @test occursin("building_origin = ", src)                     # one anchor knob
+    @test occursin("group_instance(", src)
+    @test occursin("add_xyz(p0", src)                             # instance placements rebased
+    @test occursin("finalize_groups()", src)
+    @test !occursin("+ -", src)                                   # no '+ -x' rendering anywhere
+  end
+
+  @testset "pass-equivalence oracle on v2" begin
+    let rep = pass_equivalence_report(revit, reference_model_v2())
+      @test rep.ok
+      rep.ok || @info "v2 pass-equivalence failure" rep
+    end
   end
 
   @testset "family-type collapse fixed (collision case)" begin
