@@ -249,9 +249,9 @@ Compare the summary of a source model against the summary of its round-trip rebu
 Each verdict line is prefixed `"PASS "`, `"FAIL "`, or `"WARN "`; `ok` is true iff no line
 FAILed. `allow` grants Revit-template deviations:
 
-- `:template_levels` — the rebuilt model may contain up to 2 extra levels whose elevations
-  are not in src (the blank Revit template ships Level 1/Level 2); excess beyond 2, or
-  missing src levels, still FAIL.
+- `:template_levels` — the rebuilt model may contain up to 3 extra levels whose elevations
+  are not in src (the Khepri blank template ships levels at 0.0/3.0/3.048, and name-keyed
+  level replay never reuses them); excess beyond 3, or missing src levels, still FAIL.
 - `:stair_railings` — rebuilt railing count may exceed src by up to 2 per src stair (Revit
   auto-generates stair railings).
 
@@ -276,9 +276,9 @@ function compare_summaries(src::Dict, rebuilt::Dict;
         sv == rv ? pass("$k: $sv == $rv") :
           warn("$k: src=$sv rebuilt=$rv (informational: fallback meshes depend on OBJ export)")
       elseif cat == :levels && :template_levels in allow && rv > sv
-        rv - sv <= 2 ?
+        rv - sv <= 3 ?
           warn("$k: src=$sv rebuilt=$rv (+$(rv - sv) template level(s) allowed)") :
-          fail("$k: src=$sv rebuilt=$rv (exceeds +2 template-level allowance)")
+          fail("$k: src=$sv rebuilt=$rv (exceeds +3 template-level allowance)")
       elseif cat == :stairs_in_groups
         # Informational: group membership is compared only loosely (member sets live inside
         # group factories, not as top-level counts).
@@ -309,7 +309,7 @@ function compare_summaries(src::Dict, rebuilt::Dict;
     isempty(missing_elevs) ||
       fail("level_elevations: missing in rebuilt: $(join(missing_elevs, ","))")
     if !isempty(unmatched)
-      (:template_levels in allow && length(unmatched) <= 2) ?
+      (:template_levels in allow && length(unmatched) <= 3) ?
         warn("level_elevations: extra in rebuilt: $(join(unmatched, ",")) (template levels allowed)") :
         fail("level_elevations: extra in rebuilt: $(join(unmatched, ","))")
     end

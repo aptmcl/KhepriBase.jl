@@ -156,18 +156,18 @@ warn_lines(r) = filter(startswith("WARN "), r.lines)
         end
       end
 
-      @testset "compare_summaries: 2 extra template levels" begin
+      @testset "compare_summaries: 3 extra template levels" begin
         let s = model_summary(sample_model()),
             rb = copy(s)
-          rb["count.levels"] = s["count.levels"] + 2
-          rb["level_elevations"] = sort(vcat(s["level_elevations"], [2.7, 4.2]))
+          rb["count.levels"] = s["count.levels"] + 3
+          rb["level_elevations"] = sort(vcat(s["level_elevations"], [0.05, 2.7, 4.2]))
           let r = compare_summaries(s, rb, allow = [:template_levels])
             @test r.ok
             @test !isempty(warn_lines(r))
           end
           # without the allowance the extra levels FAIL
           @test !compare_summaries(s, rb).ok
-          # a 3rd extra level exceeds the allowance
+          # a 4th extra level exceeds the allowance
           rb["count.levels"] += 1
           rb["level_elevations"] = sort(vcat(rb["level_elevations"], [7.9]))
           @test !compare_summaries(s, rb, allow = [:template_levels]).ok
