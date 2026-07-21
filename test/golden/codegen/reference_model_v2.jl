@@ -1,16 +1,17 @@
 # Auto-generated Khepri code from Revit model
 # Generated on: <timestamp>
 using KhepriRevit
+# Parameters
 
 plan_width = 6.0
 plan_depth = 4.0
 plan_depth_2 = 3.0
 plan_depth_3 = 1.0
 wall_top_offset = -0.163
-columns_y_spacing = 2.0
-n_columns_y = 2
 columns_x_spacing = 4.0
 n_columns_x = 2
+columns_y_spacing = 2.0
+n_columns_y = 2
 floor_height = 3.26
 n_levels = 3
 
@@ -71,7 +72,7 @@ function storey_0(p0=building_origin)
     level_0,
     family_element_desk_lamp_std)
   family_element(add_xy(p0, 4.5, plan_depth_2),
-    -(pi / 2),
+    -pi / 2,
     level_0,
     family_element_desk_lamp_std)
 

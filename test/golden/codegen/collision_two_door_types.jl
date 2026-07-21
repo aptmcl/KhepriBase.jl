@@ -5,7 +5,9 @@ using KhepriRevit
 level_0 = level(0.0)
 level_1 = level(3.0)
 
-opening_frame = frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16))
+frame_width = 0.16
+
+opening_frame = frame_family("frame_family", rectangular_path(xy(-frame_width / 2, -frame_width / 2), frame_width, frame_width))
 
 wall_w_t = wall_family("wall_family", 0.2, 0.0, 0.0)
 @isdefined(revit) && set_backend_family(wall_w_t, revit, revit_system_family(type_name="W:T"))
@@ -22,7 +24,6 @@ function storey_0(p0=building_origin)
   let __wall = wall(open_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, 6.0, 0.0)]), bottom_level=level_0, top_level=level_1, family=wall_w_t)
     add_door(__wall, xy(1.0, 0.0), door_single_flush_0915)
     add_door(__wall, xy(4.0, 0.0), door_double_flush_1830)
-
     __wall
   end
 end

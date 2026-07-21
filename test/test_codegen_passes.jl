@@ -502,14 +502,36 @@ end
     Expr(:(=), :window_c, Expr(:call, :window_family, "C", 1.0, 1.0, 0.05, frame)),
     :(add_door(w, xy(1.0, 0.0), door_a)))
   src = expr_to_string(hoist_opening_frames(prog))
-  @test occursin("opening_frame = frame_family(\"frame_family\", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16))", src)
+  # The symmetric standard casing additionally gets its width lifted (Isenberg frame_width idiom).
+  @test occursin("frame_width = 0.16", src)
+  @test occursin("opening_frame = frame_family(\"frame_family\", rectangular_path(xy(-frame_width / 2, -frame_width / 2), frame_width, frame_width))", src)
   @test occursin("door_a = door_family(\"A\", 1.4, 2.0, 0.05, opening_frame)", src)
   @test occursin("window_c = window_family(\"C\", 1.0, 1.0, 0.05, opening_frame)", src)
   @test !occursin("0.05, frame_family(", src)             # no inline frame left behind
   @test Meta.parseall(src) isa Expr
+  # An ASYMMETRIC casing keeps its literal profile (no width knob to name).
+  aframe = :(frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.2)))
+  prog2 = Expr(:block,
+    Expr(:(=), :door_a, Expr(:call, :door_family, "A", 1.4, 2.0, 0.05, aframe)),
+    Expr(:(=), :door_b, Expr(:call, :door_family, "B", 0.7, 2.0, 0.05, aframe)))
+  @test occursin("rectangular_path(xy(-0.08, -0.08), 0.16, 0.2)",
+                 expr_to_string(hoist_opening_frames(prog2)))
   # A frame used only once stays inline (no-op, same object).
   single = Expr(:block, Expr(:(=), :door_x, Expr(:call, :door_family, "X", 1.0, 2.0, 0.05, frame)))
   @test hoist_opening_frames(single) === single
+end
+
+@testset "printing polish: negated fractions, loop-order params" begin
+  @test _expr_str(Expr(:call, :-, Expr(:call, :/, :pi, 2))) == "-pi / 2"
+  @test _expr_str(Expr(:call, :-, Expr(:call, :*, 2, :pi))) == "-2 * pi"
+  @test _expr_str(Expr(:call, :-, Expr(:call, :+, :a, :b))) == "-(a + b)"
+  # Nested reroll: outer-axis knobs emitted before inner-axis knobs, the way an author writes them.
+  grid = Expr(:for, Expr(:(=), :x, Expr(:call, :range, 0.0, Expr(:kw, :step, 5.0), Expr(:kw, :length, 4))),
+           Expr(:block,
+             Expr(:for, Expr(:(=), :y, Expr(:call, :range, 0.0, Expr(:kw, :step, 4.0), Expr(:kw, :length, 3))),
+               Expr(:block, :(column(xy(x, y), 0, level_0, level_1, fam))))))
+  src = expr_to_string(symbolize_ranges(Expr(:block, grid)))
+  @test findfirst("n_columns_x", src)[1] < findfirst("n_columns_y", src)[1]
 end
 
 @testset "protected constructs are never aliased or mined" begin
@@ -517,14 +539,14 @@ end
   # frame_family loses the transitive protection it had INSIDE door_family, so it must be
   # protected by name — a wall dimension equal to the casing width must not be aliased into
   # the casing profile.
-  frame = :(frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)))
+  frame = :(frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.2)))
   prog = Expr(:block,
     Expr(:(=), :door_a, Expr(:call, :door_family, "A", 1.4, 2.0, 0.05, frame)),
     Expr(:(=), :door_b, Expr(:call, :door_family, "B", 0.7, 2.0, 0.05, frame)),
     [Expr(:call, :wall, :p, Expr(:kw, :top_offset, 0.16)) for _ in 1:5]...)
   src = expr_to_string(unify_constants(extract_shared_dimensions(hoist_opening_frames(prog))))
   @test occursin("wall_top_offset = 0.16", src)
-  @test occursin("rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)", src)   # casing NOT aliased
+  @test occursin("rectangular_path(xy(-0.08, -0.08), 0.16, 0.2)", src)   # casing NOT aliased
   # Dim params must not leak into unconnected_level heights or group_instance placements.
   prog2 = Expr(:block,
     [Expr(:call, :wall, :p, Expr(:kw, :top_offset, -0.163)) for _ in 1:4]...,
@@ -582,7 +604,7 @@ end
   src = expr_to_string(symbolize_angles(prog))
   @test occursin("family_element(xy(1.0, 2.0), pi / 2, level_0, fam_a)", src)
   @test occursin("family_element(xy(3.0, 4.0), pi, level_0, fam_b)", src)
-  @test occursin("family_element(xy(5.0, 6.0), -(pi / 2), level_0, fam_c)", src)
+  @test occursin("family_element(xy(5.0, 6.0), -pi / 2, level_0, fam_c)", src)
   @test occursin("family_element(xy(7.0, 8.0), 0.0, level_0, fam_d)", src)   # 0 left as-is
   @test occursin("box(xyz(0.0, 0.0, 0.0), 3.1415927", src)                   # box size untouched
   @test Meta.parseall(src) isa Expr

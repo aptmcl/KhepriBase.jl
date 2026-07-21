@@ -1,13 +1,14 @@
 # Auto-generated Khepri code from Revit model
 # Generated on: <timestamp>
 using KhepriRevit
+# Parameters
 
 plan_width = 6.0
 plan_depth = 4.0
-columns_y_spacing = 4.0
-n_columns_y = 3
 columns_x_spacing = 5.0
 n_columns_x = 4
+columns_y_spacing = 4.0
+n_columns_y = 3
 floor_height = 3.0
 n_levels = 3
 
@@ -16,7 +17,9 @@ level_0 = levels[1]
 level_1 = levels[2]
 level_2 = levels[3]
 
-opening_frame = frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16))
+frame_width = 0.16
+
+opening_frame = frame_family("frame_family", rectangular_path(xy(-frame_width / 2, -frame_width / 2), frame_width, frame_width))
 
 wall_basic_wall_generic_200mm = wall_family("wall_family", 0.2, 0.0, 0.0)
 @isdefined(revit) && set_backend_family(wall_basic_wall_generic_200mm, revit, revit_system_family(type_name="Basic Wall:Generic 200mm"))
@@ -37,7 +40,6 @@ function storey_0(p0=building_origin)
   let __wall = wall(open_polygonal_path([add_xy(p0, 0.0, 0.0), add_xy(p0, plan_width, 0.0)]), bottom_level=level_0, top_level=level_1, family=wall_basic_wall_generic_200mm)
     add_door(__wall, xy(1.0, 0.0), door_single_flush_0915_x_2134mm)
     add_window(__wall, xy(3.0, 0.9), window_fixed_0915_x_1220mm)
-
     __wall
   end
 

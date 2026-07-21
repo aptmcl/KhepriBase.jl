@@ -472,6 +472,25 @@ end
 # ≥2 families into a named `opening_frame` variable and share it, so the profile is defined once.
 # frame_family is not in _family_function_names, so extract_families leaves it inline; this runs right
 # after it. Geometry-neutral: only replaces identical sub-expressions with an equal-valued binding.
+# The standard symmetric casing profile rectangular_path(xy(-w/2, -w/2), w, w) additionally gets its
+# width lifted to a frame_width parameter (the Isenberg frame_width idiom — widening the casing is
+# one edit, not three coordinated ones inside a single expression).
+_frame_width_of(f::Expr) =
+  let prof = length(f.args) >= 3 ? f.args[3] : nothing
+    prof isa Expr && prof.head == :call && prof.args[1] == :rectangular_path &&
+    length(prof.args) == 4 && prof.args[3] isa AbstractFloat && prof.args[3] == prof.args[4] &&
+    prof.args[2] isa Expr && prof.args[2].head == :call && prof.args[2].args[1] == :xy &&
+    all(a -> a isa Real && abs(a + prof.args[3] / 2) < 1e-9, prof.args[2].args[2:3]) ?
+      Float64(prof.args[3]) : nothing
+  end
+
+_frame_with_width(f::Expr, wsym) =
+  let half = Expr(:call, :-, Expr(:call, :/, wsym, 2))
+    Expr(:call, f.args[1], f.args[2],
+         Expr(:call, :rectangular_path, Expr(:call, :xy, half, half), wsym, wsym),
+         f.args[4:end]...)
+  end
+
 function hoist_opening_frames(e::Expr)
   frames = collect_exprs(x -> x isa Expr && x.head == :call && x.args[1] == :frame_family, e)
   isempty(frames) && return e
@@ -486,8 +505,16 @@ function hoist_opening_frames(e::Expr)
   table = Dict{Expr, Symbol}()
   assigns = Expr[]
   for (i, f) in enumerate(repeated)
-    let name = _fresh_param(i == 1 ? "opening_frame" : "opening_frame_$(i)", used)
-      push!(assigns, Expr(:(=), name, f))
+    let name = _fresh_param(i == 1 ? "opening_frame" : "opening_frame_$(i)", used),
+        w = _frame_width_of(f)
+      if w === nothing
+        push!(assigns, Expr(:(=), name, f))
+      else
+        let wsym = _fresh_param(i == 1 ? "frame_width" : "frame_width_$(i)", used)
+          push!(assigns, Expr(:(=), wsym, w))
+          push!(assigns, Expr(:(=), name, _frame_with_width(f, wsym)))
+        end
+      end
       table[f] = name
     end
   end
@@ -1259,35 +1286,38 @@ _symbolize_for(s::Expr, params, used) =
     let binding = s.args[1],
         var = binding.args[1],
         rng = binding.args[2],
-        body = Expr(:block, [_symbolize_for(b, params, used) for b in stmts_of(s.args[2])]...)
-      if rng isa Expr && rng.head == :call && rng.args[1] == :range
-        let step_kw = findfirst(a -> a isa Expr && a.head == :kw && a.args[1] == :step, rng.args),
-            len_kw = findfirst(a -> a isa Expr && a.head == :kw && a.args[1] == :length, rng.args)
-          if step_kw !== nothing && len_kw !== nothing
-            let callee = _loop_body_callee(body),
-                axis = _loop_var_axis(body, var),
-                base = callee === nothing ? "items" :
-                       let cs = string(callee)
-                         endswith(cs, "s") ? cs : cs * "s"
-                       end,
-                suffix = axis === nothing ? "" : "_$(axis)",
-                nsym = _fresh_param("n_$(base)$(suffix)", used),
-                ssym = _fresh_param("$(base)$(suffix)_spacing", used)
-              push!(params, Expr(:(=), ssym, rng.args[step_kw].args[2]))
-              push!(params, Expr(:(=), nsym, rng.args[len_kw].args[2]))
-              Expr(:for,
-                   Expr(:(=), var,
-                        Expr(:call, :range, rng.args[2],
-                             Expr(:kw, :step, ssym), Expr(:kw, :length, nsym))),
-                   body)
+        # Symbolize THIS loop's range before recursing so the emitted parameter
+        # order follows the loop nesting (n_columns_x before n_columns_y), the
+        # way an author writes the knobs.
+        newbinding =
+          if rng isa Expr && rng.head == :call && rng.args[1] == :range
+            let step_kw = findfirst(a -> a isa Expr && a.head == :kw && a.args[1] == :step, rng.args),
+                len_kw = findfirst(a -> a isa Expr && a.head == :kw && a.args[1] == :length, rng.args)
+              if step_kw !== nothing && len_kw !== nothing
+                let callee = _loop_body_callee(s.args[2]),
+                    axis = _loop_var_axis(s.args[2], var),
+                    base = callee === nothing ? "items" :
+                           let cs = string(callee)
+                             endswith(cs, "s") ? cs : cs * "s"
+                           end,
+                    suffix = axis === nothing ? "" : "_$(axis)",
+                    nsym = _fresh_param("n_$(base)$(suffix)", used),
+                    ssym = _fresh_param("$(base)$(suffix)_spacing", used)
+                  push!(params, Expr(:(=), ssym, rng.args[step_kw].args[2]))
+                  push!(params, Expr(:(=), nsym, rng.args[len_kw].args[2]))
+                  Expr(:(=), var,
+                       Expr(:call, :range, rng.args[2],
+                            Expr(:kw, :step, ssym), Expr(:kw, :length, nsym)))
+                end
+              else
+                binding
+              end
             end
           else
-            Expr(:for, binding, body)
-          end
-        end
-      else
-        Expr(:for, binding, body)
-      end
+            binding
+          end,
+        body = Expr(:block, [_symbolize_for(b, params, used) for b in stmts_of(s.args[2])]...)
+      Expr(:for, newbinding, body)
     end :
   s
 
@@ -1923,6 +1953,10 @@ function derive_parameter_relations(e::Expr)
   earlier = Tuple{Symbol, Float64}[]
   changed = false
   for (i, s) in enumerate(stmts)
+    # Only the LEADING parameter block participates: params defined mid-program
+    # next to protected constructs (frame_width beside its frame_family) must
+    # not get numerological couplings to unrelated knobs.
+    (s isa Expr && s.head == :(=) && s.args[1] isa Symbol && s.args[2] isa Real) || break
     isparam(s) || continue
     let v = Float64(s.args[2])
       if _distinctive(v)
@@ -2012,17 +2046,24 @@ _header_stmts(title, b; obj_resources=false) =
     stmts
   end
 
+# The exemplar ADs open with a labeled parameter section (Isenberg/Astana's
+# "# PARAMETERS" headers); when the program leads with knobs, name the block.
+_with_parameter_comment(stmts) =
+  !isempty(stmts) && stmts[1] isa Expr && stmts[1].head == :(=) &&
+  stmts[1].args[1] isa Symbol && stmts[1].args[2] isa Real ?
+    Any[Expr(:toplevel_comment, "Parameters"), stmts...] : stmts
+
 add_header(b; obj_resources=false) = (e::Expr) ->
   Expr(:block,
        _header_stmts("Auto-generated Khepri code from Revit model", b; obj_resources=obj_resources)...,
-       stmts_of(e)...)
+       _with_parameter_comment(stmts_of(e))...)
 
 # Header for the geometric round-trip (own provenance line so the BIM add_header — and its goldens —
 # stay untouched).
 add_geometric_header(b) = (e::Expr) ->
   Expr(:block,
        _header_stmts("Auto-generated Khepri code (geometric round-trip via $(b_codegen_module(b)))", b)...,
-       stmts_of(e)...)
+       _with_parameter_comment(stmts_of(e))...)
 
 stmts_of(e::Expr) = e.head == :block ? e.args : [e]
 
@@ -2146,6 +2187,10 @@ _stmt_section(s) =
     else
       :other
     end
+  elseif s isa Symbol
+    # A bare trailing symbol (the `__wall` a let-block returns) belongs with the
+    # elements around it — no blank separator line before it.
+    :elements
   else
     :other
   end
@@ -2302,8 +2347,13 @@ function _expr_str(e::Expr)
     join(map(_expr_str, e.args[2:end]), ":")
   elseif e.head == :call && e.args[1] in (:+, :-, :*, :/) && length(e.args) >= 2
     length(e.args) == 2 ?
-      (e.args[1] == :- ? "-$(_arith_arg_str(:-, e.args[2], false))" :
-                         "$(e.args[1])($(_expr_str(e.args[2])))") :
+      (e.args[1] == :- ?
+         # -(a/b) == (-a)/b and -(a*b) == (-a)*b exactly, so a negated product or
+         # quotient prints without the parens: "-pi / 2", not "-(pi / 2)".
+         (e.args[2] isa Expr && e.args[2].head == :call && e.args[2].args[1] in (:*, :/) ?
+            "-$(_expr_str(e.args[2]))" :
+            "-$(_arith_arg_str(:-, e.args[2], false))") :
+         "$(e.args[1])($(_expr_str(e.args[2])))") :
       join([_arith_arg_str(e.args[1], a, i == 1) for (i, a) in enumerate(e.args[2:end])],
            " $(e.args[1]) ")
   elseif e.head == :call
