@@ -486,11 +486,7 @@ function hoist_opening_frames(e::Expr)
   table = Dict{Expr, Symbol}()
   assigns = Expr[]
   for (i, f) in enumerate(repeated)
-    let name = i == 1 ? :opening_frame : Symbol("opening_frame_$(i)")
-      while name in used
-        name = Symbol("$(name)_x")
-      end
-      push!(used, name)
+    let name = _fresh_param(i == 1 ? "opening_frame" : "opening_frame_$(i)", used)
       push!(assigns, Expr(:(=), name, f))
       table[f] = name
     end
@@ -1204,14 +1200,21 @@ function parametrize_levels(e::Expr)
       # as a raw literal, inconsistent with level_1/level_2. Value-preserving within meta_program's
       # 8-sigdigit rounding (~1e-8; floor_height and the remainder are each rounded when printed),
       # the same tolerance class as the regular level parametrization above.
+      # Decompose only datums that plausibly TRACK the storey stack: k within the stack (plus
+      # one storey above the top) and a small rise/drop (|r| <= d/4). A mid-storey datum
+      # (h=4.9 in a 3.26 grid) or a far-off site datum (h=100) would otherwise get a
+      # floor_height coefficient that misstates design intent — those stay literal. Negative
+      # remainders emit as a subtraction, not "+ -0.52".
       for (i, s) in enumerate(stmts)
         (_is_any_level_assign(s) && !_is_level_assign(s) && s.args[2].args[2] isa Real) || continue
         let h = Float64(s.args[2].args[2]), k = round(Int, (h - base) / d)
-          if k >= 1
+          if 1 <= k <= length(hs) && abs(h - base - k * d) <= d / 4
             let r = meta_program(h - base - k * d),
                 mult = k == 1 ? :floor_height : Expr(:call, :*, k, :floor_height),
                 withbase = has_base ? Expr(:call, :+, :base_level_height, mult) : mult,
-                rhs = r == 0 ? withbase : Expr(:call, :+, withbase, r)
+                rhs = r == 0 ? withbase :
+                      r > 0 ? Expr(:call, :+, withbase, r) :
+                              Expr(:call, :-, withbase, meta_program(-r))
               out[i] = Expr(:(=), s.args[1], Expr(:call, :unconnected_level, rhs))
             end
           end
@@ -1331,12 +1334,15 @@ function unify_constants(e::Expr)
         for s in stmts]...)
 end
 
-# 3.7d Symbolic angles — the family_element rotation argument (the one angle-bearing positional,
-# `family_element(loc, θ, level, family)`) is emitted as a raw radian float (1.5707963, 3.1415927, …).
-# Rewrite those that are simple π-fractions into readable `pi` / `pi / 2` / `-(pi / 2)` / … . The
-# symbolic value differs from the 8-sigdigit literal by ~1e-8 rad — far inside the oracle's 2e-3
-# tolerance — so geometry is preserved while the intent (quarter/half/full turn) becomes explicit.
-const _angle_arg_positions = Dict{Symbol, Int}(:family_element => 3)
+# 3.7d Symbolic angles — element rotation arguments are emitted as raw radian floats
+# (1.5707963, 3.1415927, …). Rewrite those that are simple π-fractions into readable `pi` /
+# `pi / 2` / `-(pi / 2)` / … . Coverage: the angle-bearing POSITIONAL of family_element and
+# column (both at e.args[3], i.e. the 2nd positional), and the `angle=` KEYWORD of beam and
+# free_column (their meta_program emission form). The symbolic value differs from the
+# 8-sigdigit literal by ~1e-8 rad — far inside the oracle's 2e-3 tolerance — so geometry is
+# preserved while the intent (quarter/half/full turn) becomes explicit.
+const _angle_arg_positions = Dict{Symbol, Int}(:family_element => 3, :column => 3)
+const _angle_kw_callees = Set([:beam, :free_column])
 
 _pi_frac_expr(n::Int, d::Int) =
   let g = gcd(abs(n), d), n2 = n ÷ g, d2 = d ÷ g,
@@ -1347,13 +1353,20 @@ _pi_frac_expr(n::Int, d::Int) =
     n2 < 0 ? Expr(:call, :-, mag) : mag
   end
 
-# Recognize v ≈ (n/d)·π for a small denominator; return the symbolic Expr or nothing (incl. v ≈ 0).
+#=
+Recognize v ≈ (n/d)·π for a small denominator; return the symbolic Expr or nothing (incl.
+v ≈ 0). The tolerance is just enough to absorb meta_program's sigdigit rounding of an exact
+π-fraction (~5e-8 at the default 8 sigdigits for |v| ≤ 2π) — NOT loose enough to swallow
+genuinely non-π survey angles: the old 1e-5 window rewrote a 59.99944° fixture rotation
+(1.0471879, off π/3 by 9.7e-6) to `pi / 3`, silently erasing surveyed orientation intent.
+=#
 _angle_symbol(v::Real) =
   abs(v) < 1e-5 ? nothing :
-  let hit = nothing
+  let tol = 10.0^(1 - meta_program_sigdigits()) * 2π,
+      hit = nothing
     for d in (1, 2, 3, 4, 6)
       let n = round(Int, v * d / pi)
-        if n != 0 && abs(v - n * pi / d) < 1e-5
+        if n != 0 && abs(v - n * pi / d) < tol
           hit = (n, d)
           break
         end
@@ -1362,16 +1375,28 @@ _angle_symbol(v::Real) =
     hit === nothing ? nothing : _pi_frac_expr(hit[1], hit[2])
   end
 
-symbolize_angles(e::Expr) =
-  map_expr(e) do x
-    (x isa Expr && x.head == :call && haskey(_angle_arg_positions, x.args[1]) &&
-     length(x.args) >= _angle_arg_positions[x.args[1]] &&
-     _num(x.args[_angle_arg_positions[x.args[1]]])) ?
-      let i = _angle_arg_positions[x.args[1]], s = _angle_symbol(x.args[i])
-        s === nothing ? x : Expr(x.head, x.args[1:i-1]..., s, x.args[i+1:end]...)
-      end :
-      x
+_symbolize_angle_call(x) =
+  let x2 = if haskey(_angle_arg_positions, x.args[1]) &&
+              length(x.args) >= _angle_arg_positions[x.args[1]] &&
+              _num(x.args[_angle_arg_positions[x.args[1]]])
+        let i = _angle_arg_positions[x.args[1]], s = _angle_symbol(x.args[i])
+          s === nothing ? x : Expr(x.head, x.args[1:i-1]..., s, x.args[i+1:end]...)
+        end
+      else
+        x
+      end
+    x2.args[1] in _angle_kw_callees ?
+      Expr(:call,
+           [a isa Expr && a.head == :kw && a.args[1] == :angle && _num(a.args[2]) &&
+              _angle_symbol(a.args[2]) !== nothing ?
+              Expr(:kw, :angle, _angle_symbol(a.args[2])) : a
+            for a in x2.args]...) :
+      x2
   end
+
+symbolize_angles(e::Expr) =
+  map_expr(x -> x isa Expr && x.head == :call && x.args[1] isa Symbol ?
+                  _symbolize_angle_call(x) : x, e)
 
 # 3.7e Extract shared dimensions — recurring numeric KEYWORD-argument values (a wall's top/base
 # offset, …) are one physical dimension repeated across many elements. Lift each value that recurs
@@ -1389,7 +1414,10 @@ function _collect_kw_dims(e::Expr, counts)
   (e.head == :call && e.args[1] isa Symbol && _protected_callee(e.args[1])) && return nothing
   if e.head == :call && e.args[1] isa Symbol
     for a in e.args[2:end]
-      if a isa Expr && a.head == :kw && a.args[2] isa AbstractFloat
+      # :angle kwargs are rotations, not dimensions — symbolize_angles (which runs first)
+      # owns them; mining a recurring angle as "<callee>_angle = 1.5707963" would freeze a
+      # rotation into a pseudo-length knob.
+      if a isa Expr && a.head == :kw && a.args[1] != :angle && a.args[2] isa AbstractFloat
         let k = (e.args[1], a.args[1], Float64(a.args[2]))
           counts[k] = get(counts, k, 0) + 1
         end
@@ -1430,12 +1458,7 @@ function extract_shared_dimensions(e::Expr)
   assigns = Expr[]
   for (callee, key) in sort(collect(keys(bykey)))                 # deterministic order
     for (i, (v, _)) in enumerate(sort(bykey[(callee, key)], by = x -> (-x[2], x[1])))
-      let base = Symbol("$(callee)_$(key)"),
-          name = i == 1 ? base : Symbol("$(base)_$(i)")
-        while name in used
-          name = Symbol("$(name)_x")
-        end
-        push!(used, name)
+      let name = _fresh_param(i == 1 ? "$(callee)_$(key)" : "$(callee)_$(key)_$(i)", used)
         push!(assigns, Expr(:(=), name, v))
         table[(callee, key, v)] = name
       end

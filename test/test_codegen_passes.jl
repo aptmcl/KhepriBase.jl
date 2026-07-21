@@ -119,6 +119,65 @@ end
   @test occursin("level_3 = unconnected_level(3 * floor_height)", expr_to_string(parametrize_levels(prog2)))
 end
 
+@testset "parametrize_levels: unconnected datum bounds and minus form" begin
+  lvl(i, h) = Expr(:(=), Symbol("level_$i"), :(level($h)))
+  # Negative remainder emits as a subtraction, never "+ -0.1".
+  prog = Expr(:block, lvl(0, 0.0), lvl(1, 3.0), lvl(2, 6.0),
+              Expr(:(=), :level_3, :(unconnected_level(8.9))))
+  src = expr_to_string(parametrize_levels(prog))
+  @test occursin("level_3 = unconnected_level(3 * floor_height - 0.1)", src)
+  @test !occursin("+ -", src)
+  # Mid-storey datum (|r| > d/4): decomposing would misstate intent — stays literal.
+  prog2 = Expr(:block, lvl(0, 0.0), lvl(1, 3.26), lvl(2, 6.52),
+               Expr(:(=), :level_3, :(unconnected_level(4.9))))
+  @test occursin("unconnected_level(4.9)", expr_to_string(parametrize_levels(prog2)))
+  # Far-off site datum (k beyond the stack): stays literal.
+  prog3 = Expr(:block, lvl(0, 0.0), lvl(1, 3.0), lvl(2, 6.0),
+               Expr(:(=), :level_3, :(unconnected_level(100.0))))
+  @test occursin("unconnected_level(100.0)", expr_to_string(parametrize_levels(prog3)))
+  # Below-base datum: stays literal.
+  prog4 = Expr(:block, lvl(0, 0.0), lvl(1, 3.0), lvl(2, 6.0),
+               Expr(:(=), :level_3, :(unconnected_level(-2.0))))
+  @test occursin("unconnected_level(-2.0)", expr_to_string(parametrize_levels(prog4)))
+end
+
+@testset "symbolize_angles: tolerance and extended coverage" begin
+  prog = Expr(:block,
+    :(family_element(xy(0.0, 0.0), 1.0471879, level_0, f)),     # 9.7e-6 off pi/3: survey angle
+    :(column(xy(1.0, 2.0), 1.5707963, level_0, level_1, cf)),   # positional column angle
+    Expr(:call, :beam, :p, :q, Expr(:kw, :angle, 3.1415927), Expr(:kw, :family, :bf)),
+    Expr(:call, :free_column, :p, :q, Expr(:kw, :angle, 0.7853982), Expr(:kw, :family, :ff)))
+  src = expr_to_string(symbolize_angles(prog))
+  @test occursin("1.0471879", src)                              # near-miss NOT symbolized
+  @test occursin("column(xy(1.0, 2.0), pi / 2, level_0, level_1, cf)", src)
+  @test occursin("angle=pi,", src)                              # beam kw symbolized
+  @test occursin("angle=pi / 4", src)                           # free_column kw symbolized
+  @test Meta.parseall(src) isa Expr
+end
+
+@testset "extract_shared_dimensions: angle kwargs are never mined" begin
+  prog = Expr(:block, [Expr(:call, :beam, :p, Expr(:kw, :angle, 0.7853982)) for _ in 1:5]...)
+  @test extract_shared_dimensions(prog) === prog
+end
+
+@testset "naming: collision suffixes are numeric everywhere" begin
+  frame = :(frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)))
+  prog = Expr(:block,
+    Expr(:(=), :opening_frame, :(something_else())),
+    Expr(:(=), :door_a, Expr(:call, :door_family, "A", 1.4, 2.0, 0.05, frame)),
+    Expr(:(=), :door_b, Expr(:call, :door_family, "B", 0.7, 2.0, 0.05, frame)))
+  src = expr_to_string(hoist_opening_frames(prog))
+  @test occursin("opening_frame_2 = frame_family(", src)
+  @test !occursin("opening_frame_x", src)
+  prog2 = Expr(:block,
+    Expr(:(=), :wall_top_offset, 9.9),
+    [Expr(:call, :wall, :p, Expr(:kw, :top_offset, -0.163)) for _ in 1:4]...)
+  src2 = expr_to_string(extract_shared_dimensions(prog2))
+  @test occursin("wall_top_offset_2 = -0.163", src2)
+  @test occursin("top_offset=wall_top_offset_2", src2)
+  @test !occursin("wall_top_offset_x", src2)
+end
+
 @testset "wrap_program_in_function" begin
   prog = Expr(:block,
               Expr(:(=), :floor_height, 3.048), Expr(:(=), :n_levels, 4),
