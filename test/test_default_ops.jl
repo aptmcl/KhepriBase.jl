@@ -195,3 +195,57 @@ end
     end
   end
 end
+
+#=
+Family profiles are section data: a profile path constructed under a non-world
+current_cs (a group factory body, a with(current_cs, ...) block) used to drag
+the ambient transform into every member placement — path_on/path_vertices_on
+replant a profile by its WORLD coordinates, so the captured cs was applied ON
+TOP of the member frame (a group's member column landed at instance offset
+DOUBLED). family_profile now normalizes through section_in_world.
+=#
+@testset "family profiles are cs-free section data" begin
+  measured_centroids(f) =
+    let mb = KhepriBase.measure_backend(),
+        prev = KhepriBase.current_backends()
+      KhepriBase.current_backend(mb)
+      try
+        f()
+      finally
+        KhepriBase.current_backends(prev)
+      end
+      [m.measurement.centroid for m in KhepriBase.measured_shapes(mb)
+       if m.measurement.n_trigs > 0]
+    end
+  # Direct: family (with profile) created inside a translated cs.
+  let cs = KhepriBase.translated_cs(KhepriBase.world_cs, 2.0, 1.0, 0.0),
+      centroids = measured_centroids() do
+        with(KhepriBase.current_cs, cs) do
+          column(xy(0.2, 0.2), 0, level(0.0), level(3.0),
+                 column_family("cf", rectangular_path(xy(-0.1, -0.1), 0.2, 0.2)))
+        end
+      end
+    @test length(centroids) == 1
+    @test KhepriBase.distance(centroids[1], xyz(2.2, 1.2, 1.5)) < 1e-9
+  end
+  # Through the group machinery (the emitted-program shape: inline family in the factory).
+  let prog = Meta.parseall("""
+        function fac()
+          column(xy(0.2, 0.2), 0, level(0.0), level(3.0),
+                 column_family("cf", rectangular_path(xy(-0.1, -0.1), 0.2, 0.2)))
+        end
+        g = group("desk", factory=fac)
+        group_instance(g, xyz(2.0, 1.0, 0.0))
+        group_instance(g, xyz(8.0, 1.0, 0.0))
+        finalize_groups()
+        """),
+      mb = KhepriBase.measure_backend(),
+      rows = KhepriBase.measured_statements(prog; b=mb),
+      centroids = sort([m.measurement.centroid for m in KhepriBase.measured_shapes(mb)
+                        if m.measurement.n_trigs > 0], by=p -> KhepriBase.cx(p))
+    @test all(r -> r.error === nothing, rows)
+    @test length(centroids) == 2
+    @test KhepriBase.distance(centroids[1], xyz(2.2, 1.2, 1.5)) < 1e-9
+    @test KhepriBase.distance(centroids[2], xyz(8.2, 1.2, 1.5)) < 1e-9
+  end
+end

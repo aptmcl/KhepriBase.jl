@@ -1849,5 +1849,9 @@ end
 
 
 public family_profile
+# The accessor every default realization funnels through normalizes the profile
+# to section semantics (see section_in_world): a family created under a
+# non-world current_cs (a group factory body, a `with(current_cs, ...)` block)
+# must not drag the ambient transform into its members' sections.
 family_profile(b::Backend, family) =
-  family.profile
+  section_in_world(family.profile)

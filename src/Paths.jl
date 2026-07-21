@@ -2504,6 +2504,41 @@ export path_vertices_on
 path_vertices_on(path::Path, p) =
   on_cs(path_vertices(path), p)
 
+#=
+Section normalization. Family profiles are SECTION DATA authored around the
+origin (rectangular_profile(w, h) centers it there) and replanted on each
+member's frame by path_on/path_vertices_on — which read the path's WORLD
+coordinates (on_cs goes through raw_point = world_raw). A profile constructed
+under a non-world current_cs — e.g. inside a group factory, whose body runs in
+the instance-translated frame — therefore drags the ambient transform into
+every member placement (the member lands at frame ∘ ambient ∘ section instead
+of frame ∘ section). section_in_world reinterprets the profile's DEFINING
+coordinates in the world frame (keep the raw fields, drop the captured cs), so
+the section means what its author drew regardless of where it was constructed.
+Identity for locs already in world_cs and for path types without stored locs;
+exotic path types fall back to identity (their capture would surface loudly in
+the pass-equivalence oracle rather than silently here).
+=#
+export section_in_world
+section_in_world(x) = x
+section_in_world(p::Loc) =
+  p.cs === world_cs ? p : xyz(p.x, p.y, p.z, world_cs)
+section_in_world(path::RectangularPath) =
+  path.corner.cs === world_cs ? path :
+    rectangular_path(section_in_world(path.corner), path.dx, path.dy)
+section_in_world(path::CircularPath) =
+  path.center.cs === world_cs ? path :
+    circular_path(section_in_world(path.center), path.radius)
+section_in_world(path::ArcPath) =
+  path.center.cs === world_cs ? path :
+    arc_path(section_in_world(path.center), path.radius, path.start_angle, path.amplitude)
+section_in_world(path::OpenPolygonalPath) =
+  all(v -> v.cs === world_cs, path.vertices) ? path :
+    open_polygonal_path(map(section_in_world, path.vertices))
+section_in_world(path::ClosedPolygonalPath) =
+  all(v -> v.cs === world_cs, path.vertices) ? path :
+    closed_polygonal_path(map(section_in_world, path.vertices))
+
 export path_on
 path_on(path::PointPath, p) =
   point_path(on_cs(path.location, p))
