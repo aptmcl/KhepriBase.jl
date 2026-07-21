@@ -305,26 +305,68 @@ translate_xyz_expr(e::Expr, dx, dy, dz) =
     Expr(e.head, [translate_xyz_expr(a, dx, dy, dz) for a in e.args]...)
   end
 
-# Anchor-relative rewrite: rewrite every WORLD position xy(a,b)/xyz(a,b,c) to `p0 + vxy(a-px, b-py)`
-# / `p0 + vxyz(a-px, b-py, c)` (z is a level-relative height, never rebased). Same LOCAL-coordinate
-# skip list as translate_xyz_expr (opening positions + family-local frames stay put) and direction
-# vectors (vxy/vxyz) are left untouched. `anchor` is the symbol of the placement parameter.
+#=
+Anchor-relative rewrite — TOTAL: every WORLD position construction becomes an
+anchor-relative one, whatever its coordinate arguments are.
+  xy(A, B)     → add_xy(anchor, A⊖px, B⊖py)
+  xyz(A, B, C) → add_xyz(anchor, A⊖px, B⊖py, C)
+where ⊖ folds to a rounded literal when the coordinate is a literal and stays a
+runtime subtraction (`A - px`) when it bears a loop variable, a parameter symbol
+introduced by unify_constants, or a cluster parameter — so rerolled series and
+symbol-bearing coordinates re-site exactly like literal ones. add_xy/add_xyz
+offset in the ANCHOR's coordinate system: with the default (world) anchor the
+geometry is unchanged, and an oriented anchor rotates every placement. z is a
+level-relative height: add_xyz adds it to the anchor's z, so a z-bearing anchor
+uniformly lifts loose (Loc-placed) geometry while level-bound heights stay with
+the levels — the anchor is a PLAN anchor. Element self-rotation arguments
+(column/family_element angles) do NOT follow an oriented anchor; documented
+limitation until the rotation-compensation follow-up.
+The _local_coord_context skip (opening positions + family-local frames) is
+shared with translate_xyz_expr/_collect_world_xy; group factory bodies are
+skipped by the caller (already instance-relative — rebasing would double-shift
+against the rebased group_instance placement).
+=#
+_anchor_delta(a, off) =
+  a isa Real ? meta_program(a - off) :
+  off == 0 ? a :
+  off < 0 ? Expr(:call, :+, a, meta_program(-off)) : Expr(:call, :-, a, off)
+
 _anchor_relative_expr(x, px, py, anchor) = x
 _anchor_relative_expr(e::Expr, px, py, anchor) =
   if _local_coord_context(e)
     e
-  elseif e.head == :call && e.args[1] == :xyz && length(e.args) == 4 && all(a -> a isa Real, e.args[2:4])
-    Expr(:call, :+, anchor,
-         Expr(:call, :vxyz, meta_program(e.args[2] - px), meta_program(e.args[3] - py),
-              meta_program(e.args[4])))
-  elseif e.head == :call && e.args[1] == :xy && length(e.args) == 3 && all(a -> a isa Real, e.args[2:3])
-    Expr(:call, :+, anchor,
-         Expr(:call, :vxy, meta_program(e.args[2] - px), meta_program(e.args[3] - py)))
+  elseif e.head == :call && e.args[1] == :xyz && length(e.args) == 4
+    Expr(:call, :add_xyz, anchor,
+         _anchor_delta(e.args[2], px), _anchor_delta(e.args[3], py), e.args[4])
+  elseif e.head == :call && e.args[1] == :xy && length(e.args) == 3
+    Expr(:call, :add_xy, anchor,
+         _anchor_delta(e.args[2], px), _anchor_delta(e.args[3], py))
   else
     Expr(e.head, [_anchor_relative_expr(a, px, py, anchor) for a in e.args]...)
   end
 
-# Collect (x, y) of every WORLD position (same skip list) — used to pick a storey's anchor corner.
+# Defensive invariant for the total rewrite: after rebasing, NO world position
+# construction may survive outside the local-coordinate contexts. New
+# meta_program coordinate forms must be routed through the rewriter (and the
+# oracle fixtures) — failing loud here beats a storey that silently tears when
+# re-sited.
+function _assert_no_world_xy(e, ctx)
+  bad = Ref{Any}(nothing)
+  walk(x) = nothing
+  walk(ex::Expr) =
+    _local_coord_context(ex) ? nothing :
+    ex.head == :call && (ex.args[1] == :xy || ex.args[1] == :xyz) ?
+      (bad[] = ex; nothing) :
+      (foreach(walk, ex.args); nothing)
+  walk(e)
+  bad[] === nothing ||
+    error("sectionalize_by_storey: absolute world coordinate survived the anchor rebase in $(ctx): $(bad[])")
+end
+
+# Collect (x, y) of every LITERAL world position (same skip list) — used to pick the building
+# origin corner. Symbol-bearing coordinates (loop variables, parameter symbols) cannot contribute
+# to a static minimum; they still rebase (the rewrite is total), so the origin is the SW corner of
+# the literal-coordinate geometry, not necessarily of everything.
 _collect_world_xy(x, acc) = nothing
 function _collect_world_xy(e::Expr, acc)
   _local_coord_context(e) && return nothing
@@ -1555,28 +1597,75 @@ function _sectionalize_by_storey(e::Expr, level_names)
       push!(taken, fnames[v])
     end
   end
-  # Each storey function takes its placement anchor `p0` as an optional parameter whose default is the
-  # storey's own SW plan corner (min x, min y over its world positions), and its body is rewritten
-  # relative to p0. Calling piso_k() reproduces the original location; piso_k(x(50)) re-sites the whole
-  # storey. World positions carry Revit's survey offset, which cancels in (coord - anchor), so the
-  # local deltas are clean dimensions. Coordinates bearing a loop variable (rerolled series) and local
-  # opening/family frames are left absolute (see _anchor_relative_expr's skip list).
-  defs = Any[]
-  for v in ordered
-    push!(defs, Expr(:toplevel_comment,
-                     "Storey $(fnames[v]) ($(v) = $(round(level_heights[v], digits=3)))"))
-    let coords = Tuple{Float64, Float64}[]
-      for s in sections[v]
-        _collect_world_xy(s, coords)
+  #=
+  ONE building origin, the exemplar AD idiom (Isenberg's b_center, Astana's
+  astana_center_p): the SW corner of the literal-coordinate geometry across ALL
+  storeys and pass-emitted global function bodies becomes a single
+  `building_origin = xy(gx, gy)` parameter. Every storey function takes its
+  placement anchor as `p0=building_origin` and its body is rewritten relative
+  to p0 by the TOTAL rewriter (loop-variable and parameter-symbol coordinates
+  rebase symbolically — see _anchor_relative_expr). Pass-emitted global
+  functions that construct world geometry (typical_floor, clusters) gain a
+  trailing `p0=building_origin` parameter, their bodies are rebased the same
+  way, and storey-body call sites forward the storey's p0 — so storey_k()
+  reproduces the original, storey_k(x(50)) coherently re-sites one storey, and
+  editing building_origin moves the whole building. Group FACTORY bodies are
+  excluded (already instance-relative; their group_instance placements rebase
+  instead). World positions carry Revit's survey offset, which cancels in
+  (coord - origin), so the emitted deltas are clean plan dimensions.
+  =#
+  factory_names = Set{Symbol}(values(group_factory))
+  all_coords = Tuple{Float64, Float64}[]
+  for v in ordered, s in sections[v]
+    _collect_world_xy(s, all_coords)
+  end
+  rebased_def_names = Set{Symbol}()
+  for (name, def) in factories
+    name in factory_names && continue
+    let acc = Tuple{Float64, Float64}[]
+      _collect_world_xy(def.args[2], acc)
+      if !isempty(acc)
+        push!(rebased_def_names, name)
+        append!(all_coords, acc)
       end
-      if isempty(coords)
-        push!(defs, Expr(:function, Expr(:call, fnames[v]), Expr(:block, sections[v]...)))
-      else
-        let px = meta_program(minimum(first.(coords))),
-            py = meta_program(minimum(last.(coords))),
-            body = [_anchor_relative_expr(s, px, py, :p0) for s in sections[v]]
+    end
+  end
+  defs = Any[]
+  origin_stmts = Any[]
+  if isempty(all_coords)
+    # Nothing anchors: keep plain zero-argument storey functions.
+    for v in ordered
+      push!(defs, Expr(:toplevel_comment,
+                       "Storey $(fnames[v]) ($(v) = $(round(level_heights[v], digits=3)))"))
+      push!(defs, Expr(:function, Expr(:call, fnames[v]), Expr(:block, sections[v]...)))
+    end
+  else
+    let gx = meta_program(minimum(first.(all_coords))),
+        gy = meta_program(minimum(last.(all_coords))),
+        origin = _fresh_param("building_origin", taken),
+        forward = ex -> map_expr(x -> x isa Expr && x.head == :call && x.args[1] isa Symbol &&
+                                      x.args[1] in rebased_def_names ?
+                                   Expr(:call, x.args..., :p0) : x, ex),
+        rebase = s -> forward(_anchor_relative_expr(s, gx, gy, :p0))
+      push!(origin_stmts, Expr(:(=), origin, Expr(:call, :xy, gx, gy)))
+      # Rebase the eligible global defs in place (they live in `out`).
+      for (i, s) in enumerate(out)
+        (s isa Expr && s.head == :function && s.args[1] isa Expr && s.args[1].head == :call &&
+         s.args[1].args[1] in rebased_def_names) || continue
+        let body = rebase(s.args[2])
+          _assert_no_world_xy(body, s.args[1].args[1])
+          out[i] = Expr(:function,
+                        Expr(:call, s.args[1].args..., Expr(:kw, :p0, origin)),
+                        body)
+        end
+      end
+      for v in ordered
+        push!(defs, Expr(:toplevel_comment,
+                         "Storey $(fnames[v]) ($(v) = $(round(level_heights[v], digits=3)))"))
+        let body = [rebase(s) for s in sections[v]]
+          foreach(b -> _assert_no_world_xy(b, fnames[v]), body)
           push!(defs, Expr(:function,
-                           Expr(:call, fnames[v], Expr(:kw, :p0, Expr(:call, :xy, px, py))),
+                           Expr(:call, fnames[v], Expr(:kw, :p0, origin)),
                            Expr(:block, body...)))
         end
       end
@@ -1586,12 +1675,13 @@ function _sectionalize_by_storey(e::Expr, level_names)
   for v in ordered
     push!(calls, Expr(:call, fnames[v]))
   end
-  # Defs go where the first sectioned statement stood; the CALLS go after every
-  # remaining global statement (sectioned group_instances reference group vars
-  # defined in the global tail) but before a trailing finalize_groups().
+  # The origin parameter and the defs go where the first sectioned statement
+  # stood; the CALLS go after every remaining global statement (sectioned
+  # group_instances reference group vars defined in the global tail) but before
+  # a trailing finalize_groups().
   tail_split = (!isempty(out) && out[end] isa Expr && out[end].head == :call &&
                 out[end].args[1] == :finalize_groups) ? length(out) - 1 : length(out)
-  Expr(:block, out[1:min(first_section_at - 1, tail_split)]..., defs...,
+  Expr(:block, out[1:min(first_section_at - 1, tail_split)]..., origin_stmts..., defs...,
        out[min(first_section_at, tail_split + 1):tail_split]...,
        calls...,
        out[tail_split+1:end]...)
@@ -1742,6 +1832,9 @@ _stmt_section(s) =
           :levels
         elseif rhs.head == :call && rhs.args[1] in _family_function_names
           :families
+        elseif rhs.head == :call && rhs.args[1] in (:xy, :xyz)
+          # A coordinate-valued parameter (building_origin) belongs with the knobs.
+          :params
         else
           :elements
         end
@@ -1835,6 +1928,17 @@ function _print_stmt(io, s::Expr, indent)
       let binding = s.args[1],
           body = s.args[2]
         print(io, "$(ind)for $(_expr_str(binding))")
+        println(io)
+        _print_block(io, body, indent + 1)
+        print(io, "$(ind)end")
+      end
+    elseif s.head == :let
+      # Without this arm, let-blocks fall through to Base's string(e): 4-space
+      # body and a column-0 `end` that visually terminates the enclosing storey
+      # function early.
+      let binding = s.args[1],
+          body = s.args[2]
+        print(io, "$(ind)let $(_expr_str(binding))")
         println(io)
         _print_block(io, body, indent + 1)
         print(io, "$(ind)end")

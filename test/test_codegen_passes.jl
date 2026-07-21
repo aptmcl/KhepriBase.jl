@@ -148,7 +148,7 @@ end
   end
 end
 
-@testset "sectionalize_by_storey: per-storey anchor" begin
+@testset "sectionalize_by_storey: one building origin, total rebase" begin
   lvl(i, h) = Expr(:(=), Symbol("level_$i"), :(level($h)))
   wall(x1, y1, x2, y2, lo, hi) =
     Expr(:call, :wall, :(open_polygonal_path([xy($x1, $y1), xy($x2, $y2)])),
@@ -160,13 +160,137 @@ end
               wA, wall(-23.0, -75.0, -20.0, -75.0, 0, 1),
               wall(-22.0, -80.0, -19.0, -80.0, 1, 2), wall(-22.0, -78.0, -19.0, -78.0, 1, 2))
   src = expr_to_string(sectionalize_by_storey()(prog))
-  @test occursin("function storey_0(p0=xy(-23.0, -81.0))", src)   # SW plan corner of storey 0
-  @test occursin("p0 + vxy(0.0, 0.0)", src)                       # SW vertex → zero offset
-  @test occursin("p0 + vxy(3.0, 6.0)", src)                       # far vertex → clean local delta
-  @test occursin("add_door(__wall, xy(1.5, 0.0), door_fam)", src) # local door coord NOT rebased
-  @test occursin("function storey_1(p0=xy(-22.0, -80.0))", src)
-  @test occursin("storey_0()", src)                               # called with default anchor
+  @test occursin("building_origin = xy(-23.0, -81.0)", src)        # global SW corner
+  @test occursin("function storey_0(p0=building_origin)", src)
+  @test occursin("function storey_1(p0=building_origin)", src)     # ONE knob for every storey
+  @test occursin("add_xy(p0, 0.0, 0.0)", src)                      # SW vertex → zero offset
+  @test occursin("add_xy(p0, 3.0, 6.0)", src)                      # far vertex → clean delta
+  @test occursin("add_xy(p0, 1.0, 1.0)", src)                      # storey_1 shares the origin
+  @test occursin("add_door(__wall, xy(1.5, 0.0), door_fam)", src)  # local door coord NOT rebased
+  @test occursin("storey_0()", src)                                # called with default anchor
+  @test occursin("  let __wall = wall(", src)                      # :let prints via the printer arm
+  @test !occursin("p0 + vxy", src)
   @test Meta.parseall(src) isa Expr
+end
+
+@testset "sectionalize_by_storey: loop and symbol coordinates rebase too" begin
+  lvl(i, h) = Expr(:(=), Symbol("level_$i"), :(level($h)))
+  prog = Expr(:block, Expr(:(=), :floor_height, 3.0), lvl(0, 0.0), lvl(1, 3.0), lvl(2, 6.0),
+    :(wall(open_polygonal_path([xy(0.0, 0.0), xy(floor_height, 0.0)]),
+           bottom_level=level_0, top_level=level_1, family=wall_fam)),
+    Expr(:for, Expr(:(=), :x, Expr(:call, :range, 2.0, Expr(:kw, :step, 5.0), Expr(:kw, :length, 4))),
+         Expr(:block, :(column(xy(x, 12.0), 0, level_0, level_1, col_fam)))),
+    :(family_element(xyz(-5.0, -3.0, floor_height), pi / 2, level_1, fix_fam)))
+  src = expr_to_string(sectionalize_by_storey()(prog))
+  @test occursin("building_origin = xy(-5.0, -3.0)", src)
+  @test occursin("add_xy(p0, x + 5.0, 15.0)", src)                 # loop var: symbolic delta
+  @test occursin("add_xy(p0, floor_height + 5.0, 3.0)", src)       # param symbol: symbolic delta
+  @test occursin("add_xyz(p0, 0.0, 0.0, floor_height)", src)       # z stays level-relative
+  @test !occursin("xy(x, 12.0)", src)                              # nothing absolute survives
+  @test Meta.parseall(src) isa Expr
+end
+
+@testset "sectionalize_by_storey: typical_floor rebased and anchor forwarded" begin
+  lvl(i, h) = Expr(:(=), Symbol("level_$i"), :(level($h)))
+  tf = Expr(:function, Expr(:call, :typical_floor, :lvl_0, :lvl_1),
+            Expr(:block,
+              :(wall(open_polygonal_path([xy(10.0, 20.0), xy(16.0, 20.0)]),
+                     bottom_level=lvl_0, top_level=lvl_1, family=wall_fam))))
+  prog = Expr(:block, lvl(0, 0.0), lvl(1, 3.0), lvl(2, 6.0),
+              tf,
+              :(typical_floor(level_0, level_1)),
+              :(typical_floor(level_1, level_2)))
+  src = expr_to_string(sectionalize_by_storey()(prog))
+  @test occursin("building_origin = xy(10.0, 20.0)", src)
+  @test occursin("function typical_floor(lvl_0, lvl_1, p0=building_origin)", src)
+  @test occursin("add_xy(p0, 0.0, 0.0)", src)                      # def body rebased
+  @test occursin("typical_floor(level_0, level_1, p0)", src)       # storey forwards its anchor
+  @test occursin("function storey_0(p0=building_origin)", src)     # coord-less storey still anchored
+  @test Meta.parseall(src) isa Expr
+end
+
+@testset "sectionalize_by_storey: factories untouched, instances rebased, finalize last" begin
+  lvl(i, h) = Expr(:(=), Symbol("level_$i"), :(level($h)))
+  factory = Expr(:function, Expr(:call, :group_desk_factory),
+                 Expr(:block, :(slab(rectangular_path(xy(0.0, 0.0), 1.0, 0.5), level_0, slab_fam))))
+  prog = Expr(:block, lvl(0, 0.0), lvl(1, 3.0), lvl(2, 6.0),
+              :(wall(open_polygonal_path([xy(5.0, 5.0), xy(11.0, 5.0)]),
+                     bottom_level=level_0, top_level=level_1, family=wall_fam)),
+              factory,
+              Expr(:(=), :group_desk,
+                   Expr(:call, :group, Expr(:parameters, Expr(:kw, :factory, :group_desk_factory)), "desk")),
+              :(group_instance(group_desk, xyz(7.0, 6.0, 0.0))),
+              :(wall(open_polygonal_path([xy(5.0, 9.0), xy(11.0, 9.0)]),
+                     bottom_level=level_1, top_level=level_2, family=wall_fam)),
+              :(finalize_groups()))
+  src = expr_to_string(sectionalize_by_storey()(prog))
+  @test occursin("building_origin = xy(5.0, 5.0)", src)
+  @test occursin("rectangular_path(xy(0.0, 0.0), 1.0, 0.5)", src)  # factory body stays relative
+  @test occursin("group_instance(group_desk, add_xyz(p0, 2.0, 1.0, 0.0))", src)
+  @test endswith(rstrip(src), "finalize_groups()")
+  @test Meta.parseall(src) isa Expr
+end
+
+@testset "sectionalize_by_storey: single-storey program is untouched" begin
+  prog = Expr(:block, Expr(:(=), :level_0, :(level(0.0))),
+              :(wall(open_polygonal_path([xy(0.0, 0.0), xy(6.0, 0.0)]),
+                     bottom_level=level_0, top_level=level_0, family=wall_fam)))
+  @test sectionalize_by_storey()(prog) === prog
+end
+
+@testset "building_origin rigid translation (measure oracle)" begin
+  # The keystone test for the anchor contract: shifting building_origin must move EVERY shape
+  # of the design — literal walls, a symbol-bearing endpoint, a rerolled column grid, and
+  # typical-floor content — by exactly the same vector, with sizes unchanged. This fails on the
+  # partial (literal-only) rewrite the first attempt shipped.
+  lvl(i, h) = Expr(:(=), Symbol("level_$i"), :(level($h)))
+  tf = Expr(:function, Expr(:call, :typical_floor, :lvl_0, :lvl_1),
+            Expr(:block,
+              :(wall(open_polygonal_path([xy(3.0, 7.0), xy(9.0, 7.0)]),
+                     bottom_level=lvl_0, top_level=lvl_1, family=wall_fam)),
+              :(slab(region(closed_polygonal_path([xy(3.0, 7.0), xy(9.0, 7.0), xy(9.0, 9.0), xy(3.0, 9.0)])),
+                     lvl_0, slab_fam))))
+  prog = Expr(:block,
+    Expr(:(=), :floor_height, 3.0),
+    lvl(0, 0.0), lvl(1, 3.0), lvl(2, 6.0),
+    :(wall_fam = wall_family("wall_family", 0.2, 0.0, 0.0)),
+    :(slab_fam = slab_family("slab_family", 0.2, 0.0)),
+    :(col_fam = column_family("column_family", rectangular_path(xy(-0.1, -0.1), 0.2, 0.2))),
+    tf,
+    :(wall(open_polygonal_path([xy(0.0, 0.0), xy(6.0, 0.0)]),
+           bottom_level=level_0, top_level=level_1, family=wall_fam)),
+    :(slab(region(closed_polygonal_path([xy(0.0, 0.0), xy(6.0, 0.0), xy(6.0, 4.0), xy(0.0, 4.0)])),
+           level_0, slab_fam)),
+    :(wall(open_polygonal_path([xy(0.0, floor_height), xy(6.0, floor_height)]),
+           bottom_level=level_0, top_level=level_1, family=wall_fam)),
+    Expr(:for, Expr(:(=), :x, Expr(:call, :range, 1.0, Expr(:kw, :step, 2.0), Expr(:kw, :length, 3))),
+         Expr(:block, :(column(xy(x, 2.0), 0, level_0, level_1, col_fam)))),
+    :(typical_floor(level_0, level_1)),
+    :(typical_floor(level_1, level_2)))
+  sec = sectionalize_by_storey()(prog)
+  shift_origin(e, dx, dy) =
+    Expr(:block, [s isa Expr && s.head == :(=) && s.args[1] == :building_origin ?
+                    Expr(:(=), :building_origin,
+                         Expr(:call, :xy, s.args[2].args[2] + dx, s.args[2].args[3] + dy)) : s
+                  for s in KhepriBase.stmts_of(sec)]...)
+  measure(e) =
+    let mb = KhepriBase.measure_backend(),
+        rows = KhepriBase.measured_statements(e; b=mb)
+      @test all(r -> r.error === nothing, rows)
+      [r.measurement for r in KhepriBase.measured_shapes(mb) if r.measurement.n_trigs > 0]
+    end
+  ms1 = measure(sec)
+  ms2 = measure(shift_origin(sec, 50.0, -30.0))
+  @test length(ms1) > 0
+  @test length(ms1) == length(ms2)
+  let v = vxyz(50.0, -30.0, 0.0, world_cs),
+      back = [KhepriBase.Measurement(m.n_trigs, m.aabb_min - v, m.aabb_max - v,
+                                     m.centroid - v, m.area, m.signed_volume)
+              for m in ms2],
+      res = KhepriBase.match_measurements(ms1, back; tol_pos=1e-6, tol_size=1e-6)
+    @test isempty(res.unmatched_a)
+    @test isempty(res.unmatched_b)
+  end
 end
 
 @testset "hoist_opening_frames" begin
