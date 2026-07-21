@@ -23,8 +23,11 @@ windows and doors.
 =#
 
 # Level
+# `name` participates in level IDENTITY: real models carry name-distinct levels at equal (or
+# near-equal) elevations — height-only equality silently merged 9 of a 97-level corpus model's
+# levels at introspection. Unnamed levels ("") keep the historical height-keyed dedupe.
 @defproxy(level, UniqueProxy, height::Real=0, elements::BIMElements=BIMElement[],
-  is_unconnected::Bool=false)
+  is_unconnected::Bool=false, name::String="")
 
 convert(::Type{Level}, h::Real) = level(h)
 
@@ -60,10 +63,10 @@ See also: `add_window`, `add_door` (which uses `sill = 0`).
 "Default sill height (metres) for windows created without an explicit `sill=`."
 default_window_sill_height = Parameter{Real}(0.9)
 upper_level(lvl=default_level(), height=default_level_to_level_height()) = level(lvl.height + height)
-Base.:(==)(l1::Level, l2::Level) = l1.height == l2.height
+Base.:(==)(l1::Level, l2::Level) = l1.height == l2.height && l1.name == l2.name
 
-#default implementation
-b_level(b::Backend, h, elements, is_unconnected=false) = h
+#default implementation (name participates in identity only; geometry backends key on height)
+b_level(b::Backend, h, elements, is_unconnected=false, name="") = h
 
 export all_levels, default_level, default_level_to_level_height, upper_level,
        default_window_sill_height
@@ -1028,9 +1031,14 @@ meta_program(w::Wall) =
     end
   end
 
-# Override auto-generated meta_program for Level to omit elements
+# Override auto-generated meta_program for Level to omit elements; the name rides as a
+# trailing kwarg when present (identity for same-elevation twins; replay finds-or-creates
+# by name via the named plugin RPC).
 meta_program(l::Level) =
-  Expr(:call, l.is_unconnected ? :unconnected_level : :level, meta_program(l.height))
+  let call = Expr(:call, l.is_unconnected ? :unconnected_level : :level, meta_program(l.height))
+    isempty(l.name) || push!(call.args, Expr(:kw, :name, l.name))
+    call
+  end
 
 # Railing
 

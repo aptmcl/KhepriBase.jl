@@ -235,6 +235,39 @@ end
   @test occursin("roughness=pbr_material_roughness", src3)
 end
 
+@testset "named levels: identity, emission, extraction, parametrization" begin
+  # Same-elevation twins with distinct names are DISTINCT (real models carry them; height-only
+  # identity silently merged 9 of a 97-level corpus model); unnamed keeps the height dedupe.
+  @test level(1.0) == level(1.0)
+  @test level(1.0, name="A") != level(1.0, name="B")
+  @test level(1.0, name="A") == level(1.0, name="A")
+  @test occursin("name=\"A\"", _expr_str(KhepriBase.meta_program(level(2.0, name="A"))))
+  @test !occursin("name", _expr_str(KhepriBase.meta_program(level(2.0))))
+  # extract_levels handles named calls; same-height twins get deterministic numbering by name.
+  prog = Expr(:block,
+    :(wall(p, level(3.33, name="B"), fam)),
+    :(wall(q, level(3.33, name="A"), fam)))
+  src = expr_to_string(extract_levels(prog))
+  @test occursin("level_0 = level(3.33, name=\"A\")", src)
+  @test occursin("level_1 = level(3.33, name=\"B\")", src)
+  # parametrize_levels preserves the name kwarg when rebuilding the uniform ladder…
+  lvlN(i, h, n) = Expr(:(=), Symbol("level_$i"), Expr(:call, :level, h, Expr(:kw, :name, n)))
+  prog2 = Expr(:block, lvlN(0, 0.0, "P0"), lvlN(1, 3.0, "P1"), lvlN(2, 6.0, "P2"))
+  src2 = expr_to_string(parametrize_levels(prog2))
+  @test occursin("level(floor_height, name=\"P1\")", src2)
+  # …and the series rewrite drops names deliberately (uniform ladder ⇒ unique elevations ⇒
+  # elevation-keyed replay is exact; names only matter for same-elevation twins).
+  prog3 = Expr(:block,
+    Expr(:(=), :floor_height, 3.0), Expr(:(=), :n_levels, 3),
+    lvlN(0, 0.0, "P0"),
+    Expr(:(=), :level_1, Expr(:call, :level, :floor_height, Expr(:kw, :name, "P1"))),
+    Expr(:(=), :level_2, Expr(:call, :level, Expr(:call, :*, 2, :floor_height),
+                              Expr(:kw, :name, "P2"))))
+  src3 = expr_to_string(parametrize_level_series(prog3))
+  @test occursin("levels = [", src3)
+  @test !occursin("name=", src3)
+end
+
 @testset "resilient realization contains member failures" begin
   # A generated factory/storey body replays as ONE statement: without containment, one
   # throwing member silently drops every later member (live goldennugget lost ~half the

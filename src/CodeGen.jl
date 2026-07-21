@@ -389,16 +389,24 @@ end
 
 # 3.1 Extract levels: deduplicate level(h) calls into named variables
 function extract_levels(e::Expr)
-  level_calls = collect_exprs(
-    x -> x isa Expr && x.head == :call && x.args[1] in (:level, :unconnected_level) &&
-         length(x.args) == 2,
-    e)
+  # A level call is `level(h)` or `level(h, name="…")` — the trailing name kwarg carries
+  # identity for same-elevation twins and must not exclude the call from extraction.
+  is_level_call = x ->
+    x isa Expr && x.head == :call && x.args[1] in (:level, :unconnected_level) &&
+    (length(x.args) == 2 ||
+     (length(x.args) == 3 && x.args[3] isa Expr && x.args[3].head == :kw &&
+      x.args[3].args[1] == :name))
+  level_calls = collect_exprs(is_level_call, e)
   unique_levels = unique(level_calls)
   isempty(unique_levels) && return e
-  # Sort by height value; non-literal heights (e.g. already-parametrized expressions) sort after
+  # Sort by height value (name string as tiebreak so same-height named twins get deterministic
+  # level_N numbering); non-literal heights (e.g. already-parametrized expressions) sort after
   # literals by their printed form, so numbering stays deterministic instead of tying at 0.0.
   sorted = sort(unique_levels,
-                by=x -> x.args[2] isa Real ? (0, Float64(x.args[2]), "") : (1, 0.0, string(x.args[2])))
+                by=x -> x.args[2] isa Real ?
+                          (0, Float64(x.args[2]),
+                           length(x.args) == 3 ? string(x.args[3].args[2]) : "") :
+                          (1, 0.0, string(x.args[2])))
   assignments = Expr[]
   replacements = Dict{Expr, Symbol}()
   for (i, lc) in enumerate(sorted)
@@ -1225,7 +1233,10 @@ function parametrize_levels(e::Expr)
       push!(params, Expr(:(=), :floor_height, meta_program(d)))
       push!(params, Expr(:(=), :n_levels, length(hs)))
       for (k, i) in enumerate(li)
-        out[i] = Expr(:(=), stmts[i].args[1], Expr(:call, :level, hexpr(k - 1)))
+        # Preserve any trailing kwargs (the level's name) — rebuilding the call from scratch
+        # silently dropped them, and the name IS the replay identity for same-elevation twins.
+        out[i] = Expr(:(=), stmts[i].args[1],
+                      Expr(:call, :level, hexpr(k - 1), stmts[i].args[2].args[3:end]...))
       end
       # Also express unconnected TOP levels (wall-top markers, e.g. a roof datum) as a multiple of
       # floor_height plus a remainder, matching the regular levels' form — they were previously left
@@ -1842,6 +1853,10 @@ end
 # `1:n_levels - 1` — so editing n_levels adds real levels AND replicates the typical storeys.
 # Runs AFTER sectionalize_by_storey, whose _static_eval needs the scalar level(...) forms.
 # Unconnected markers are untouched (already floor_height-relative or deliberately literal).
+# Level NAMES are dropped by the comprehension deliberately: the series only fires on a
+# uniform ladder, whose elevations are pairwise distinct, so elevation-keyed replay is exact
+# and names are cosmetic there (they matter only for same-elevation twins, which never form
+# a uniform ladder in the first place).
 function parametrize_level_series(e::Expr)
   stmts = collect(stmts_of(e))
   nidx = findfirst(s -> s isa Expr && s.head == :(=) && s.args[1] == :n_levels &&
