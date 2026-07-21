@@ -275,6 +275,42 @@ translate_xyz_expr(e::Expr, dx, dy, dz) =
     Expr(e.head, [translate_xyz_expr(a, dx, dy, dz) for a in e.args]...)
   end
 
+# Anchor-relative rewrite: rewrite every WORLD position xy(a,b)/xyz(a,b,c) to `p0 + vxy(a-px, b-py)`
+# / `p0 + vxyz(a-px, b-py, c)` (z is a level-relative height, never rebased). Same LOCAL-coordinate
+# skip list as translate_xyz_expr (opening positions + family-local frames stay put) and direction
+# vectors (vxy/vxyz) are left untouched. `anchor` is the symbol of the placement parameter.
+_anchor_relative_expr(x, px, py, anchor) = x
+_anchor_relative_expr(e::Expr, px, py, anchor) =
+  if (e.head == :kw && e.args[1] in (:doors, :windows, :family)) ||
+     (e.head == :call && (e.args[1] in (:add_door, :add_window) || e.args[1] in _family_function_names))
+    e
+  elseif e.head == :call && e.args[1] == :xyz && length(e.args) == 4 && all(a -> a isa Real, e.args[2:4])
+    Expr(:call, :+, anchor,
+         Expr(:call, :vxyz, meta_program(e.args[2] - px), meta_program(e.args[3] - py),
+              meta_program(e.args[4])))
+  elseif e.head == :call && e.args[1] == :xy && length(e.args) == 3 && all(a -> a isa Real, e.args[2:3])
+    Expr(:call, :+, anchor,
+         Expr(:call, :vxy, meta_program(e.args[2] - px), meta_program(e.args[3] - py)))
+  else
+    Expr(e.head, [_anchor_relative_expr(a, px, py, anchor) for a in e.args]...)
+  end
+
+# Collect (x, y) of every WORLD position (same skip list) — used to pick a storey's anchor corner.
+_collect_world_xy(x, acc) = nothing
+function _collect_world_xy(e::Expr, acc)
+  ((e.head == :kw && e.args[1] in (:doors, :windows, :family)) ||
+   (e.head == :call && (e.args[1] in (:add_door, :add_window) || e.args[1] in _family_function_names))) &&
+    return nothing
+  if e.head == :call && e.args[1] in (:xy, :xyz) && length(e.args) >= 3 &&
+     e.args[2] isa Real && e.args[3] isa Real
+    push!(acc, (Float64(e.args[2]), Float64(e.args[3])))
+  end
+  for a in e.args
+    _collect_world_xy(a, acc)
+  end
+  nothing
+end
+
 # ─── Phase 3: Transform Passes ────────────────────────────────────────────────
 
 # 3.1 Extract levels: deduplicate level(h) calls into named variables
@@ -360,6 +396,41 @@ extract_families(fmap) = function (e::Expr)
   insert_pos = first_non_assign === nothing ? length(stmts) + 1 : first_non_assign
   body = map_expr(x -> get(replacements, x, x), Expr(:block, stmts...))
   Expr(:block, body.args[1:insert_pos-1]..., assignments..., body.args[insert_pos:end]...)
+end
+
+# 3.2b Hoist the shared opening frame — every door/window family embeds an identical frame_family(...)
+# sub-expression (the casing profile of the opening). Lift each frame_family value recurring across
+# ≥2 families into a named `opening_frame` variable and share it, so the profile is defined once.
+# frame_family is not in _family_function_names, so extract_families leaves it inline; this runs right
+# after it. Geometry-neutral: only replaces identical sub-expressions with an equal-valued binding.
+function hoist_opening_frames(e::Expr)
+  frames = collect_exprs(x -> x isa Expr && x.head == :call && x.args[1] == :frame_family, e)
+  isempty(frames) && return e
+  counts = Dict{Expr, Int}()
+  for f in frames
+    counts[f] = get(counts, f, 0) + 1
+  end
+  repeated = sort([f for (f, c) in counts if c >= 2], by = string)
+  isempty(repeated) && return e
+  used = Set{Symbol}(s.args[1] for s in stmts_of(e)
+                     if s isa Expr && s.head == :(=) && s.args[1] isa Symbol)
+  table = Dict{Expr, Symbol}()
+  assigns = Expr[]
+  for (i, f) in enumerate(repeated)
+    let name = i == 1 ? :opening_frame : Symbol("opening_frame_$(i)")
+      while name in used
+        name = Symbol("$(name)_x")
+      end
+      push!(used, name)
+      push!(assigns, Expr(:(=), name, f))
+      table[f] = name
+    end
+  end
+  stmts = collect(stmts_of(map_expr(x -> get(table, x, x), e)))
+  famassign = s -> s isa Expr && s.head == :(=) && s.args[2] isa Expr &&
+                   s.args[2].head == :call && s.args[2].args[1] in _family_function_names
+  pos = something(findfirst(famassign, stmts), 1)
+  Expr(:block, stmts[1:pos-1]..., assigns..., stmts[pos:end]...)
 end
 
 # Build `@isdefined(backend) && set_backend_family(var, backend, native)`: a cross-backend family
@@ -1059,6 +1130,22 @@ function parametrize_levels(e::Expr)
       for (k, i) in enumerate(li)
         out[i] = Expr(:(=), stmts[i].args[1], Expr(:call, :level, hexpr(k - 1)))
       end
+      # Also express unconnected TOP levels (wall-top markers, e.g. a roof datum) as a multiple of
+      # floor_height plus a remainder, matching the regular levels' form — they were previously left
+      # as a raw literal, inconsistent with level_1/level_2. Value-preserving (exact float equality).
+      for (i, s) in enumerate(stmts)
+        (_is_any_level_assign(s) && !_is_level_assign(s) && s.args[2].args[2] isa Real) || continue
+        let h = Float64(s.args[2].args[2]), k = round(Int, (h - base) / d)
+          if k >= 1
+            let r = meta_program(h - base - k * d),
+                mult = k == 1 ? :floor_height : Expr(:call, :*, k, :floor_height),
+                withbase = has_base ? Expr(:call, :+, :base_level_height, mult) : mult,
+                rhs = r == 0 ? withbase : Expr(:call, :+, withbase, r)
+              out[i] = Expr(:(=), s.args[1], Expr(:call, :unconnected_level, rhs))
+            end
+          end
+        end
+      end
       Expr(:block, params..., out...)
     end
   end
@@ -1173,6 +1260,123 @@ function unify_constants(e::Expr)
   Expr(:block,
        [s isa Expr && s.head == :(=) && s.args[2] isa AbstractFloat ? s : _unify_expr(s, table)
         for s in stmts]...)
+end
+
+# 3.7d Symbolic angles — the family_element rotation argument (the one angle-bearing positional,
+# `family_element(loc, θ, level, family)`) is emitted as a raw radian float (1.5707963, 3.1415927, …).
+# Rewrite those that are simple π-fractions into readable `pi` / `pi / 2` / `-(pi / 2)` / … . The
+# symbolic value differs from the 8-sigdigit literal by ~1e-8 rad — far inside the oracle's 2e-3
+# tolerance — so geometry is preserved while the intent (quarter/half/full turn) becomes explicit.
+const _angle_arg_positions = Dict{Symbol, Int}(:family_element => 3)
+
+_pi_frac_expr(n::Int, d::Int) =
+  let g = gcd(abs(n), d), n2 = n ÷ g, d2 = d ÷ g,
+      mag = d2 == 1 ?
+              (abs(n2) == 1 ? :pi : Expr(:call, :*, abs(n2), :pi)) :
+              (abs(n2) == 1 ? Expr(:call, :/, :pi, d2) :
+                              Expr(:call, :/, Expr(:call, :*, abs(n2), :pi), d2))
+    n2 < 0 ? Expr(:call, :-, mag) : mag
+  end
+
+# Recognize v ≈ (n/d)·π for a small denominator; return the symbolic Expr or nothing (incl. v ≈ 0).
+_angle_symbol(v::Real) =
+  abs(v) < 1e-5 ? nothing :
+  let hit = nothing
+    for d in (1, 2, 3, 4, 6)
+      let n = round(Int, v * d / pi)
+        if n != 0 && abs(v - n * pi / d) < 1e-5
+          hit = (n, d)
+          break
+        end
+      end
+    end
+    hit === nothing ? nothing : _pi_frac_expr(hit[1], hit[2])
+  end
+
+symbolize_angles(e::Expr) =
+  map_expr(e) do x
+    (x isa Expr && x.head == :call && haskey(_angle_arg_positions, x.args[1]) &&
+     length(x.args) >= _angle_arg_positions[x.args[1]] &&
+     _num(x.args[_angle_arg_positions[x.args[1]]])) ?
+      let i = _angle_arg_positions[x.args[1]], s = _angle_symbol(x.args[i])
+        s === nothing ? x : Expr(x.head, x.args[1:i-1]..., s, x.args[i+1:end]...)
+      end :
+      x
+  end
+
+# 3.7e Extract shared dimensions — recurring numeric KEYWORD-argument values (a wall's top/base
+# offset, …) are one physical dimension repeated across many elements. Lift each value that recurs
+# at least `_dim_min_occurrences` times under a single (callee, keyword) context into a named
+# parameter `<callee>_<keyword>` and replace its occurrences, so the shared dimension becomes one
+# editable knob. Values are lifted verbatim (exact float equality), so geometry is untouched.
+const _dim_min_occurrences = 4
+
+# Constructs whose interior numeric leaves must not be parametrized (families, levels, openings,
+# groups, backend mappings, obj fallbacks) — mirrors unify_constants' / clone passes' skip set.
+_dim_protected_callee(c) =
+  c in _family_function_names ||
+  c in (:level, :unconnected_level, :add_door, :add_window, :set_backend_family, :obj_model,
+        :group, :group_instance, :add_resource_folder!)
+
+# Count (callee, kw-key, value) over element calls, never descending into protected constructs.
+_collect_kw_dims(x, counts) = nothing
+function _collect_kw_dims(e::Expr, counts)
+  (e.head == :call && e.args[1] isa Symbol && _dim_protected_callee(e.args[1])) && return nothing
+  if e.head == :call && e.args[1] isa Symbol
+    for a in e.args[2:end]
+      if a isa Expr && a.head == :kw && _num(a.args[2])
+        let k = (e.args[1], a.args[1], Float64(a.args[2]))
+          counts[k] = get(counts, k, 0) + 1
+        end
+      end
+    end
+  end
+  for a in e.args
+    _collect_kw_dims(a, counts)
+  end
+  nothing
+end
+
+# Replace matching kw values with their param symbol; symmetric skip so protected subtrees untouched.
+_replace_kw_dims(x, table) = x
+_replace_kw_dims(e::Expr, table) =
+  (e.head == :call && e.args[1] isa Symbol && _dim_protected_callee(e.args[1])) ? e :
+  e.head == :call && e.args[1] isa Symbol ?
+    Expr(:call, e.args[1],
+         [a isa Expr && a.head == :kw && _num(a.args[2]) &&
+            haskey(table, (e.args[1], a.args[1], Float64(a.args[2]))) ?
+            Expr(:kw, a.args[1], table[(e.args[1], a.args[1], Float64(a.args[2]))]) :
+            _replace_kw_dims(a, table)
+          for a in e.args[2:end]]...) :
+    Expr(e.head, [_replace_kw_dims(a, table) for a in e.args]...)
+
+function extract_shared_dimensions(e::Expr)
+  counts = Dict{Tuple{Symbol, Symbol, Float64}, Int}()
+  _collect_kw_dims(e, counts)
+  keep = [(k, c) for (k, c) in counts if c >= _dim_min_occurrences && k[3] != 0.0]
+  isempty(keep) && return e
+  bykey = Dict{Tuple{Symbol, Symbol}, Vector{Tuple{Float64, Int}}}()
+  for ((callee, key, v), c) in keep
+    push!(get!(bykey, (callee, key), Tuple{Float64, Int}[]), (v, c))
+  end
+  used = Set{Symbol}(s.args[1] for s in stmts_of(e)
+                     if s isa Expr && s.head == :(=) && s.args[1] isa Symbol)
+  table = Dict{Tuple{Symbol, Symbol, Float64}, Symbol}()
+  assigns = Expr[]
+  for (callee, key) in sort(collect(keys(bykey)))                 # deterministic order
+    for (i, (v, _)) in enumerate(sort(bykey[(callee, key)], by = x -> (-x[2], x[1])))
+      let base = Symbol("$(callee)_$(key)"),
+          name = i == 1 ? base : Symbol("$(base)_$(i)")
+        while name in used
+          name = Symbol("$(name)_x")
+        end
+        push!(used, name)
+        push!(assigns, Expr(:(=), name, v))
+        table[(callee, key, v)] = name
+      end
+    end
+  end
+  Expr(:block, assigns..., stmts_of(_replace_kw_dims(e, table))...)
 end
 
 # 3.8 Optional: wrap the whole program in `function building(; params...) … end; building()` so the
@@ -1328,11 +1532,32 @@ function _sectionalize_by_storey(e::Expr, level_names)
       push!(taken, fnames[v])
     end
   end
+  # Each storey function takes its placement anchor `p0` as an optional parameter whose default is the
+  # storey's own SW plan corner (min x, min y over its world positions), and its body is rewritten
+  # relative to p0. Calling piso_k() reproduces the original location; piso_k(x(50)) re-sites the whole
+  # storey. World positions carry Revit's survey offset, which cancels in (coord - anchor), so the
+  # local deltas are clean dimensions. Coordinates bearing a loop variable (rerolled series) and local
+  # opening/family frames are left absolute (see _anchor_relative_expr's skip list).
   defs = Any[]
   for v in ordered
     push!(defs, Expr(:toplevel_comment,
                      "Storey $(fnames[v]) ($(v) = $(round(level_heights[v], digits=3)))"))
-    push!(defs, Expr(:function, Expr(:call, fnames[v]), Expr(:block, sections[v]...)))
+    let coords = Tuple{Float64, Float64}[]
+      for s in sections[v]
+        _collect_world_xy(s, coords)
+      end
+      if isempty(coords)
+        push!(defs, Expr(:function, Expr(:call, fnames[v]), Expr(:block, sections[v]...)))
+      else
+        let px = meta_program(minimum(first.(coords))),
+            py = meta_program(minimum(last.(coords))),
+            body = [_anchor_relative_expr(s, px, py, :p0) for s in sections[v]]
+          push!(defs, Expr(:function,
+                           Expr(:call, fnames[v], Expr(:kw, :p0, Expr(:call, :xy, px, py))),
+                           Expr(:block, body...)))
+        end
+      end
+    end
   end
   calls = Any[Expr(:toplevel_comment, "Build the storeys, bottom-up")]
   for v in ordered
@@ -1358,12 +1583,15 @@ codegen_passes(b, fmap; header=add_header(b), wrap=false,
   let passes = Any[extract_levels,
                    extract_families(fmap),
                    add_backend_families(b, fmap),
+                   hoist_opening_frames,
                    detect_level_repetition,
                    extract_functions,
                    sort_statements,
                    loop_rerolling,
                    parametrize_levels,
                    symbolize_ranges,
+                   symbolize_angles,
+                   extract_shared_dimensions,
                    unify_constants,
                    sectionalize_by_storey(level_names)]
     wrap && push!(passes, wrap_program_in_function)
@@ -1744,10 +1972,11 @@ is the semantic reference and must realize cleanly.
 export pass_equivalence_report, codegen_pass_names
 
 codegen_pass_names(; wrap=false) =
-  let names = ["extract_levels", "extract_families", "add_backend_families",
+  let names = ["extract_levels", "extract_families", "add_backend_families", "hoist_opening_frames",
                "detect_level_repetition", "extract_functions", "sort_statements",
                "loop_rerolling", "parametrize_levels", "symbolize_ranges",
-               "unify_constants", "sectionalize_by_storey"]
+               "symbolize_angles", "extract_shared_dimensions", "unify_constants",
+               "sectionalize_by_storey"]
     wrap && push!(names, "wrap_program_in_function")
     push!(names, "header")
     names

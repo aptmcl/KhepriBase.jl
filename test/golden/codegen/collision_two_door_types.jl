@@ -5,17 +5,19 @@ using KhepriRevit
 level_0 = level(0.0)
 level_1 = level(3.0)
 
+opening_frame = frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16))
+
 wall_w_t = wall_family("wall_family", 0.2, 0.0, 0.0)
 @isdefined(revit) && set_backend_family(wall_w_t, revit, revit_system_family(type_name="W:T"))
-door_single_flush_0915 = door_family("Single-Flush:0915", 1.0, 2.0, 0.05, frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)))
+door_single_flush_0915 = door_family("Single-Flush:0915", 1.0, 2.0, 0.05, opening_frame)
 @isdefined(revit) && set_backend_family(door_single_flush_0915, revit, revit_opening_file_family(raw"C:\A.rfa"))
-door_double_flush_1830 = door_family("Double-Flush:1830", 1.0, 2.0, 0.05, frame_family("frame_family", rectangular_path(xy(-0.08, -0.08), 0.16, 0.16)))
+door_double_flush_1830 = door_family("Double-Flush:1830", 1.0, 2.0, 0.05, opening_frame)
 @isdefined(revit) && set_backend_family(door_double_flush_1830, revit, revit_opening_file_family(raw"C:\B.rfa"))
 
 # Storey storey_0 (level_0 = 0.0)
 
-function storey_0()
-  let __wall = wall(open_polygonal_path([xy(0, 0), xy(6, 0)]), bottom_level = level_0, top_level = level_1, family = wall_w_t)
+function storey_0(p0=xy(0.0, 0.0))
+  let __wall = wall(open_polygonal_path([p0 + vxy(0.0, 0.0), p0 + vxy(6.0, 0.0)]), bottom_level = level_0, top_level = level_1, family = wall_w_t)
     add_door(__wall, xy(1.0, 0.0), door_single_flush_0915)
     add_door(__wall, xy(4.0, 0.0), door_double_flush_1830)
     __wall
