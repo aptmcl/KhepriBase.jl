@@ -2164,6 +2164,13 @@ function run_generated_program(path::AbstractString; b=top_backend(), skip_using
       # khepri_obj_models references) resolves to pwd — anchor pwd at the program's home.
       prev_dir = pwd()
     cd(dirname(abspath(path)))
+    # Pause per-frame view updates for the bulk build. On backends with a live render loop
+    # (Threejs, Unreal) the loop otherwise re-renders the whole growing scene every frame,
+    # starving the incremental build — for a large program (a full building with hundreds of
+    # OBJ fixtures) this livelocks the browser and the run appears to stall. Batching lets the
+    # build complete, then redraws the finished scene once. A no-op on backends without batch
+    # support (b_start/stop_batch_processing default to `nothing`).
+    b_start_batch_processing(b)
     try
       for e in Meta.parseall(read(basename(path), String)).args
         e isa LineNumberNode && continue
@@ -2179,6 +2186,7 @@ function run_generated_program(path::AbstractString; b=top_backend(), skip_using
         end
       end
     finally
+      b_stop_batch_processing(b)
       cd(prev_dir)
     end
     (ok=ok, failed=failed, errors=sort!(collect(errors), by=last, rev=true))
