@@ -234,12 +234,16 @@ function model_to_expr(model)
       translated_body = translate_xyz_expr(body_expr, cx(origin), cy(origin), 0.0)
       # Emit: factory function
       push!(stmts, Expr(:function, Expr(:call, factory_var), translated_body))
-      # Emit: grp_var = group("name", factory=factory_var)
+      # Emit: grp_var = group("Original Type Name", factory=factory_var)
+      # Use the ORIGINAL Revit type name (not the sanitized identifier) as the group's name so a
+      # backend that names its groups (Revit sets the GroupType name in b_finalize_groups) restores
+      # the source name instead of Revit's generic "Group N", and the round-trip is stable (the
+      # re-introspected name sanitizes back to the same grp_var). The identifier stays sanitized.
       push!(stmts, Expr(:(=), grp_var,
         Expr(:call, :group,
           Expr(:parameters,
             Expr(:kw, :factory, factory_var)),
-          grp_name)))
+          g.type_name)))
       # Emit: group_instance(grp_var, xyz(x, y, 0)) — xy placement only; see the z note above.
       for loc in g.instances
         push!(stmts, Expr(:call, :group_instance, grp_var,
