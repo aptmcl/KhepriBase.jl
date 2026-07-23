@@ -2113,7 +2113,32 @@ codegen_passes(b, fmap; header=add_header(b), wrap=false,
 # golden-based comparison (the stress harness and tests run with it off).
 const codegen_emit_timestamp = Parameter(true)
 
-_header_stmts(title, b; obj_resources=false) =
+# Emits, once, the `set_mesh_backend_family` helper: the mesh-capable backends all reproduce a
+# fixture from the SAME extracted OBJ, so instead of one guarded set_backend_family line per backend
+# per family, each family emits a single call and the helper maps the OBJ onto whichever mesh
+# backends are loaded. Only the native (Revit) mapping stays per-family, since it differs each time.
+#
+#   function set_mesh_backend_family(family, obj)
+#     for name in (:threejs, :autocad, :rhino, :blender)
+#       isdefined(@__MODULE__, name) && set_backend_family(family, getfield(@__MODULE__, name), obj_family(obj))
+#     end
+#   end
+_mesh_backend_family_helper(mesh_backends) =
+  let modu = Expr(:macrocall, Symbol("@__MODULE__"), nothing)
+    Expr(:function,
+         Expr(:call, :set_mesh_backend_family, :family, :obj),
+         Expr(:block,
+              Expr(:for,
+                   Expr(:(=), :name, Expr(:tuple, map(QuoteNode, mesh_backends)...)),
+                   Expr(:block,
+                        Expr(:&&,
+                             Expr(:call, :isdefined, modu, :name),
+                             Expr(:call, :set_backend_family, :family,
+                                  Expr(:call, :getfield, modu, :name),
+                                  Expr(:call, :obj_family, :obj)))))))
+  end
+
+_header_stmts(title, b; obj_resources=false, mesh_backends=()) =
   let stmts = Any[Expr(:toplevel_comment, title)]
     codegen_emit_timestamp() &&
       push!(stmts, Expr(:toplevel_comment, "Generated on: $(Dates.now())"))
@@ -2125,6 +2150,8 @@ _header_stmts(title, b; obj_resources=false) =
                         Expr(:call, :joinpath,
                              Expr(:macrocall, Symbol("@__DIR__"), nothing),
                              "khepri_obj_models")))
+    obj_resources && !isempty(mesh_backends) &&
+      push!(stmts, _mesh_backend_family_helper(mesh_backends))
     stmts
   end
 
@@ -2135,9 +2162,10 @@ _with_parameter_comment(stmts) =
   stmts[1].args[1] isa Symbol && stmts[1].args[2] isa Real ?
     Any[Expr(:toplevel_comment, "Parameters"), stmts...] : stmts
 
-add_header(b; obj_resources=false) = (e::Expr) ->
+add_header(b; obj_resources=false, mesh_backends=()) = (e::Expr) ->
   Expr(:block,
-       _header_stmts("Auto-generated Khepri code from Revit model", b; obj_resources=obj_resources)...,
+       _header_stmts("Auto-generated Khepri code from Revit model", b;
+                     obj_resources=obj_resources, mesh_backends=mesh_backends)...,
        _with_parameter_comment(stmts_of(e))...)
 
 # Header for the geometric round-trip (own provenance line so the BIM add_header — and its goldens —
@@ -2260,11 +2288,15 @@ _stmt_section(s) =
           :elements
         end
       end
-    elseif s.head == :call && s.args[1] == :set_backend_family
+    elseif s.head == :call && s.args[1] in (:set_backend_family, :set_mesh_backend_family)
       :families
     elseif s.head == :&& && s.args[2] isa Expr && s.args[2].head == :call &&
            s.args[2].args[1] == :set_backend_family
       :families
+    elseif s.head == :function && s.args[1] isa Expr && s.args[1].head == :call &&
+           s.args[1].args[1] == :set_mesh_backend_family
+      # The mesh-family helper is program setup — keep it grouped with the header.
+      :header
     elseif s.head == :function
       :groups
     elseif s.head == :(=) && s.args[2] isa Expr && s.args[2].head == :call &&
@@ -2469,9 +2501,11 @@ function _expr_str(e::Expr)
   elseif e.head == :kw
     "$(e.args[1])=$(_expr_str(e.args[2]))"
   elseif e.head == :vect
-    "[$(join(map(_expr_str, e.args), ", "))]"
+    # A QuoteNode element is a symbol LITERAL (`:sym`) — the default _expr_str(::QuoteNode) drops
+    # the colon (it is tuned for `.` field access), so colon-ise it here in value position.
+    "[$(join(map(a -> a isa QuoteNode ? ":$(a.value)" : _expr_str(a), e.args), ", "))]"
   elseif e.head == :tuple
-    "($(join(map(_expr_str, e.args), ", ")))"
+    "($(join(map(a -> a isa QuoteNode ? ":$(a.value)" : _expr_str(a), e.args), ", ")))"
   elseif e.head == :ref
     "$(_expr_str(e.args[1]))[$(join(map(_expr_str, e.args[2:end]), ", "))]"
   elseif e.head == :.
@@ -2485,6 +2519,8 @@ function _expr_str(e::Expr)
         "@isdefined($(_expr_str(e.args[end])))"
       elseif macro_name == "@__DIR__"
         "@__DIR__"
+      elseif macro_name == "@__MODULE__"
+        "@__MODULE__"
       else
         string(e)
       end
