@@ -3047,8 +3047,18 @@ renders_obj_meshes(::Backend) = true
 # per-connection backend instance (leaving it collectable after the client disconnects).
 export set_mesh_backend_family
 set_mesh_backend_family(family::Family, obj_name::AbstractString) =
-  for b in current_backends()
-    renders_obj_meshes(b) && set_backend_family(family, b, obj_family(obj_name))
+  let bs = current_backends()
+    # No backend selected → nothing to attach to, and the fixtures would later render as nothing.
+    # Warn once rather than fail silently (a common cause: declaring families before connecting a
+    # backend). A backend that is present but has renders_obj_meshes=false, e.g. Revit, is a
+    # deliberate skip — not warned.
+    isempty(bs) ?
+      @warn("set_mesh_backend_family: no current backend — mesh families are not being attached, so \
+             fixtures will render as nothing. Connect/select a backend before declaring families.",
+            maxlog=1) :
+      for b in bs
+        renders_obj_meshes(b) && set_backend_family(family, b, obj_family(obj_name))
+      end
   end
 
 # Lights
