@@ -3022,6 +3022,14 @@ b_family_element(b::Backend, loc, angle, level, family) =
       # WORLD frame: b_box extrudes along the corner loc's cs axes, and a mirrored placement
       # cs carries a cross-derived downward z-axis that sank the box below its level.
       let w = in_world(lifted)
+        # Signal the missing mapping: this family has no backend implementation (native family
+        # nor OBJ) for `b`, so a generic 1×1×1 box stands in — a fixed placeholder that ignores
+        # the real element's size/orientation and typically protrudes through walls. Warn on
+        # every substitution (all family_element instances share one struct type, so deduping by
+        # typeof would hide distinct missing families); the location makes each event actionable.
+        @warn "No implementation of family $(typeof(family)) for $(backend_name(b)); \
+               substituting a 1×1×1 placeholder box at $(round.((cx(w), cy(w), cz(w)), digits=3)). \
+               Install a native or OBJ family via set_backend_family to fix."
         b_box(b, xyz(cx(w) - 0.5, cy(w) - 0.5, cz(w), world_cs), 1.0, 1.0, 1.0,
               material_ref(b, material_basic))
       end
