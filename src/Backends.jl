@@ -493,9 +493,22 @@ run_khepri_websocket_server(host=default_khepri_websocket_server_host(), port=de
                           invokelatest(before_connecting, backend)
     	                    invokelatest(after_connecting, backend)
                           add_global_backend(backend)
-                          invokelatest(main, backend)
+                          try
+                            invokelatest(main, backend)
+                            # Park until teardown. Do NOT read the websocket here — call_remote is the socket's
+                            # single reader, and a second reader steals reply frames and hangs any RPC driven
+                            # after main() returns (an interactive, storey-by-storey eval). Because noticing a
+                            # close requires reading, wait() does NOT wake on a plain client disconnect, so the
+                            # finally is best-effort: it reclaims the backend on handler teardown (server
+                            # shutdown/cancellation). A backend left in current_backends() by an idle
+                            # disconnect is otherwise retired by retire_dead_backend on the next RPC that
+                            # targets it; fully reclaiming it while idle needs a single reader that dispatches
+                            # replies AND watches for close (a larger refactor of the RPC transport).
+                            wait()
+                          finally
+                            delete_global_backend(backend)
+                          end
                         end
-                        wait()
                       end
                     end
                  else
