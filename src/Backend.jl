@@ -3031,6 +3031,26 @@ b_family_element(b::Backend, loc, angle, level, family) =
     end
   end
 
+# Whether backend `b` reproduces a family from an extracted OBJ mesh. True by default (the mesh is a
+# universal representation any mesh-capable backend renders via b_mesh_obj_fmt). Revit and any other
+# backend that places NATIVE families — and has no mesh primitive — override this to false, so a
+# generated program's obj mapping is skipped there and the native mapping (revit_file_family/…) wins.
+public renders_obj_meshes
+renders_obj_meshes(::Backend) = true
+
+# Attach an extracted OBJ mesh family to every currently-selected backend that renders meshes.
+# Generated programs call this once per fixture, so the SAME program reproduces the fixture on
+# whichever mesh backend it runs on. Keying is on the backend TYPE (set_backend_family stores under
+# typeof(b) and holds no reference to the instance), and it reads the live current_backends() rather
+# than a backend-named global — so it needs no per-package `threejs`/`autocad`/… binding, works the
+# same whether launched via run_generated_program or a direct `using`+include, and never pins a
+# per-connection backend instance (leaving it collectable after the client disconnects).
+export set_mesh_backend_family
+set_mesh_backend_family(family::Family, obj_name::AbstractString) =
+  for b in current_backends()
+    renders_obj_meshes(b) && set_backend_family(family, b, obj_family(obj_name))
+  end
+
 # Lights
 
 # Default: a backend without native light support gracefully ignores lights (warns once,

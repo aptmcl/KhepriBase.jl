@@ -2113,32 +2113,7 @@ codegen_passes(b, fmap; header=add_header(b), wrap=false,
 # golden-based comparison (the stress harness and tests run with it off).
 const codegen_emit_timestamp = Parameter(true)
 
-# Emits, once, the `set_mesh_backend_family` helper: the mesh-capable backends all reproduce a
-# fixture from the SAME extracted OBJ, so instead of one guarded set_backend_family line per backend
-# per family, each family emits a single call and the helper maps the OBJ onto whichever mesh
-# backends are loaded. Only the native (Revit) mapping stays per-family, since it differs each time.
-#
-#   function set_mesh_backend_family(family, obj)
-#     for name in (:threejs, :autocad, :rhino, :blender)
-#       isdefined(@__MODULE__, name) && set_backend_family(family, getfield(@__MODULE__, name), obj_family(obj))
-#     end
-#   end
-_mesh_backend_family_helper(mesh_backends) =
-  let modu = Expr(:macrocall, Symbol("@__MODULE__"), nothing)
-    Expr(:function,
-         Expr(:call, :set_mesh_backend_family, :family, :obj),
-         Expr(:block,
-              Expr(:for,
-                   Expr(:(=), :name, Expr(:tuple, map(QuoteNode, mesh_backends)...)),
-                   Expr(:block,
-                        Expr(:&&,
-                             Expr(:call, :isdefined, modu, :name),
-                             Expr(:call, :set_backend_family, :family,
-                                  Expr(:call, :getfield, modu, :name),
-                                  Expr(:call, :obj_family, :obj)))))))
-  end
-
-_header_stmts(title, b; obj_resources=false, mesh_backends=()) =
+_header_stmts(title, b; obj_resources=false) =
   let stmts = Any[Expr(:toplevel_comment, title)]
     codegen_emit_timestamp() &&
       push!(stmts, Expr(:toplevel_comment, "Generated on: $(Dates.now())"))
@@ -2150,8 +2125,6 @@ _header_stmts(title, b; obj_resources=false, mesh_backends=()) =
                         Expr(:call, :joinpath,
                              Expr(:macrocall, Symbol("@__DIR__"), nothing),
                              "khepri_obj_models")))
-    obj_resources && !isempty(mesh_backends) &&
-      push!(stmts, _mesh_backend_family_helper(mesh_backends))
     stmts
   end
 
@@ -2162,10 +2135,9 @@ _with_parameter_comment(stmts) =
   stmts[1].args[1] isa Symbol && stmts[1].args[2] isa Real ?
     Any[Expr(:toplevel_comment, "Parameters"), stmts...] : stmts
 
-add_header(b; obj_resources=false, mesh_backends=()) = (e::Expr) ->
+add_header(b; obj_resources=false) = (e::Expr) ->
   Expr(:block,
-       _header_stmts("Auto-generated Khepri code from Revit model", b;
-                     obj_resources=obj_resources, mesh_backends=mesh_backends)...,
+       _header_stmts("Auto-generated Khepri code from Revit model", b; obj_resources=obj_resources)...,
        _with_parameter_comment(stmts_of(e))...)
 
 # Header for the geometric round-trip (own provenance line so the BIM add_header — and its goldens —
@@ -2293,10 +2265,6 @@ _stmt_section(s) =
     elseif s.head == :&& && s.args[2] isa Expr && s.args[2].head == :call &&
            s.args[2].args[1] == :set_backend_family
       :families
-    elseif s.head == :function && s.args[1] isa Expr && s.args[1].head == :call &&
-           s.args[1].args[1] == :set_mesh_backend_family
-      # The mesh-family helper is program setup — keep it grouped with the header.
-      :header
     elseif s.head == :function
       :groups
     elseif s.head == :(=) && s.args[2] isa Expr && s.args[2].head == :call &&
