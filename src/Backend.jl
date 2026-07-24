@@ -2368,7 +2368,10 @@ _b_wall_with_openings_impl(b::Backend, w_path, w_height, l_thickness, r_thicknes
           openings_in_segment = NamedTuple{(:t_start, :t_end, :base_h, :op_h), Tuple{Float64,Float64,Float64,Float64}}[]
           openings = filter(openings) do op
             if op.path_position < currlength && op.path_position + op.width > prevlength
-              let op_height = op.height,
+              # Cap the opening to the FACE height (w_height already scaled by wall_z_fighting_factor):
+              # an opening reaching the true top would escape the shrunk face polygon and triangulate
+              # into slivers. Keep a sub-cm gap so the hole stays strictly interior at the top.
+              let op_height = min(op.height, max(0.0, w_height - op.base_height - 0.002)),
                   op_at_start = op.path_position <= prevlength,
                   op_at_end = op.path_position + op.width >= currlength,
                   t_op_start = op_at_start ? 0.0 :
