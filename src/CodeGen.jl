@@ -109,6 +109,7 @@ lifted into functions, not what must stay literal) — do not merge them.
 const _protected_callee_set =
   Set([_family_function_names...,
        :frame_family, :level, :unconnected_level, :add_door, :add_window,
+       :add_wall_opening, :WallOpening,
        :set_backend_family, :obj_model, :group, :group_instance,
        :add_resource_folder!])
 _protected_callee(c) = c in _protected_callee_set

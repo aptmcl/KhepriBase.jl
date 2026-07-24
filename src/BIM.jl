@@ -618,7 +618,11 @@ dispatcher that chooses faces-vs-offsets at render time).
           # Vertical offsets from the levels (Revit base/top offsets): a parapet band
           # spans bottom+base_offset .. top+top_offset, not the full storey.
           base_offset::Real=0,
-          top_offset::Real=0)
+          top_offset::Real=0,
+          # Rectangular voids in the wall that are NOT doors/windows — e.g. reproduced from a Revit
+          # edited wall profile (a concrete frame around a large opening). Cut like door/window
+          # openings; see add_wall_opening.
+          openings::Vector{WallOpening}=WallOpening[])
 
 # To deal with incremental creation, it is necessary to use transactions.
 export with_wall
@@ -643,9 +647,17 @@ realize(b::B, w::Wall) where B<:Backend =
   realize(has_boolean_ops(B), b, w)
 
 realize(::HasBooleanOps{true}, b::Backend, w::Wall) =
-  let w_ref = ensure_ref(b, realize_wall_no_openings(b, w))
+  let w_ref = ensure_ref(b, realize_wall_no_openings(b, w)),
+      w_path = translate(w.path, vz(w.bottom_level.height + w.base_offset))
     ref!(b, w, w_ref)  # Cache wall ref before processing openings so that opening realization can access it
-    realize_wall_openings(b, w, w_ref, [w.doors..., w.windows...])
+    w_ref = realize_wall_openings(b, w, w_ref, [w.doors..., w.windows...])
+    # Direct rectangular voids (from an edited profile): subtract each like a door/window opening,
+    # but there is no door/window shape to also render, so loop them here rather than via
+    # realize_wall_openings (which caches each opening shape's ref).
+    for op in w.openings
+      w_ref = realize_wall_opening(b, w_ref, w_path, l_thickness(w), r_thickness(w), op, w.family)
+    end
+    w_ref
   end
 
 realize_wall_no_openings(b::Backend, w::Wall) =
@@ -676,6 +688,14 @@ realize_wall_opening(b::Backend, w_ref, w_path, l_thickness, r_thickness, op, fa
     ensure_ref(b, b_subtract_ref(b, w_ref, op_ref))
   end
 
+# A WallOpening carries its rectangle inline (path_position/base_height/width/height) instead of via
+# a door/window family — otherwise the subtraction is identical.
+realize_wall_opening(b::Backend, w_ref, w_path, l_thickness, r_thickness, op::WallOpening, family) =
+  let op_path = translate(subpath(w_path, op.path_position, op.path_position + op.width), vz(op.base_height)),
+      op_ref = ensure_ref(b, b_wall_no_openings(b, op_path, op.height, l_thickness+0.1, r_thickness+0.1, family))
+    ensure_ref(b, b_subtract_ref(b, w_ref, op_ref))
+  end
+
 # For backends that do not support boolean operations, we use a different approach
 
 realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
@@ -685,8 +705,9 @@ realize(::HasBooleanOps{false}, b::Backend, w::Wall) =
       w_path = translate(w.path, lift),
       l_face = isnothing(w.left_face_path)  ? nothing : translate(w.left_face_path,  lift),
       r_face = isnothing(w.right_face_path) ? nothing : translate(w.right_face_path, lift),
-      openings = [WallOpening(op.loc.x, op.loc.y, op.family.width, op.family.height)
-                  for op in [w.doors..., w.windows...]]
+      openings = vcat([WallOpening(op.loc.x, op.loc.y, op.family.width, op.family.height)
+                       for op in [w.doors..., w.windows...]],
+                      w.openings)
     b_wall(b, w_path, w_height, w.family, w.offset, openings;
            l_face_path=l_face, r_face_path=r_face)
   end
@@ -934,6 +955,17 @@ add!(d::Door) =
     w
   end
 
+export add_wall_opening, WallOpening
+# Add a rectangular void to a wall — like add_door/add_window but a plain WallOpening rectangle
+# (path_position along the wall, base_height above the wall base, width, height), used to reproduce
+# an edited wall profile. Re-realizes the wall so the opening is cut.
+add_wall_opening(w::Wall=required(), opening::WallOpening=WallOpening(0, 0, 1, 1)) =
+  let _ = push!(w.openings, opening)
+    delete_shape(w)
+    maybe_realize(w)
+    w
+  end
+
 export add_window
 add_window(w::Wall=required(), loc::Loc=u0(), family::WindowFamily=default_window_family();
            flip_x::Bool=false, flip_y::Bool=false) =
@@ -991,6 +1023,19 @@ curtain_wall(p0::Loc, p1::Loc;
 realize(b::Backend, s::CurtainWall) =
   b_curtain_wall(b, s.path, s.bottom_level, s.top_level, s.family, s.offset)
 
+# True when a profile-derived opening `op` is (mostly) covered by a door or window on the same wall
+# — the door/window already cuts that rectangle, so re-emitting it as a wall opening is redundant.
+# By area, so a large frame void that merely contains a small door is NOT considered covered.
+_wall_opening_covered_by_door_window(op::WallOpening, w::Wall) =
+  any(vcat(w.doors, w.windows)) do d
+    let ou = max(0.0, min(op.path_position + op.width, d.loc.x + d.family.width) -
+                      max(op.path_position, d.loc.x)),
+        ov = max(0.0, min(op.base_height + op.height, d.loc.y + d.family.height) -
+                      max(op.base_height, d.loc.y))
+      ou * ov > 0.5 * op.width * op.height
+    end
+  end
+
 # Override auto-generated meta_program for Wall to handle doors/windows
 # and emit keyword arguments instead of positional
 meta_program(w::Wall) =
@@ -1003,9 +1048,11 @@ meta_program(w::Wall) =
              push!(kwargs, Expr(:kw, :base_offset, meta_program(w.base_offset)));
            w.top_offset == 0 ||
              push!(kwargs, Expr(:kw, :top_offset, meta_program(w.top_offset)))),
+      openings = filter(op -> !_wall_opening_covered_by_door_window(op, w), w.openings),
       has_doors = !isempty(w.doors),
-      has_windows = !isempty(w.windows)
-    if has_doors || has_windows
+      has_windows = !isempty(w.windows),
+      has_openings = !isempty(openings)
+    if has_doors || has_windows || has_openings
       # Portable reconstruction: build the wall, then add each opening. Emitting
       # `wall_with_openings` (defined only in some backends, with differing
       # signatures, and absent from KhepriBase) is non-portable and crashes with
@@ -1025,6 +1072,10 @@ meta_program(w::Wall) =
                    Expr(:call, args...)
                  end
                  for wn in w.windows)...,
+                (Expr(:call, :add_wall_opening, :__wall,
+                      Expr(:call, :WallOpening, meta_program(op.path_position),
+                           meta_program(op.base_height), meta_program(op.width), meta_program(op.height)))
+                 for op in openings)...,
                 :__wall))
     else
       Expr(:call, :wall, path, kwargs...)
