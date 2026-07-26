@@ -485,4 +485,62 @@ end
     end
   end
 
+  #=
+  The `all_<category>` family is declared here (BIM.jl) as @defcbs with derived
+  defaults, so any backend that can enumerate its shapes answers them without
+  writing a line. Guards the three tiers described at the declaration site, and
+  in particular that the frontends still route to a `b_all_*` hook — a backend
+  defining the bare exported name would shadow rather than extend it, silently
+  reverting these to the default.
+  =#
+  @testset "all_<category> introspection" begin
+    let b = mock_backend()
+      KhepriBase.add_current_backend(b)
+      delete_all_shapes()
+      wall([xy(0, 0), xy(5, 0)])
+      wall([xy(5, 0), xy(5, 4)])
+      slab(rectangular_path(xy(0, 0), 5, 4))
+      column(xy(1, 1))
+      beam(xy(0, 3))
+
+      @testset "derived from the enumerable shapes (tier 1)" begin
+        @test length(all_walls(b)) == 2
+        @test length(all_slabs(b)) == 1
+        @test length(all_columns(b)) == 1
+        @test length(all_beams(b)) == 1
+        @test all(s -> s isa KhepriBase.AbstractWall, all_walls(b))
+        # An empty category answers [], not an error.
+        @test isempty(all_doors(b))
+        @test isempty(all_railings(b))
+      end
+
+      @testset "all_elements spans every category" begin
+        @test length(all_elements(b)) == 5
+        @test all(s -> s isa KhepriBase.BIMShape, all_elements(b))
+      end
+
+      @testset "all_walls_at_level derives from all_walls" begin
+        @test length(all_walls_at_level(default_level(), b)) == 2
+        @test isempty(all_walls_at_level(level(100.0), b))
+      end
+
+      @testset "levels have no derived default (tier 3)" begin
+        # Not a shape category, so there is nothing to filter — a backend that
+        # does not implement the hook must say so rather than invent levels.
+        @test_throws KhepriBase.UndefinedBackendException all_levels(b)
+      end
+
+      @testset "frontends dispatch through the b_all_* hooks" begin
+        # Each frontend must reach a hook; that is what backend overrides attach to.
+        for f in (:all_walls, :all_slabs, :all_roofs, :all_ceilings, :all_panels,
+                  :all_columns, :all_beams, :all_doors, :all_windows, :all_stairs,
+                  :all_railings, :all_fixtures, :all_elements, :all_levels,
+                  :all_walls_at_level)
+          @test Base.isexported(KhepriBase, f)
+          @test Base.ispublic(KhepriBase, Symbol("b_", f))
+        end
+      end
+    end
+  end
+
 end

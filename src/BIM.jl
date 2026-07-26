@@ -1881,10 +1881,78 @@ b_obj_model(b::Backend, path, location, scale, material) =
 @defcb lighting_analysis()
 
 ###################################
-# BIM
+# BIM model introspection
+#=
+`all_<category>()` enumerates the BIM elements a backend knows about. Each is a
+`@defcb`, so it gets an exported frontend `all_x(backend=top_backend())` plus a
+public `b_all_x(backend)` hook backends may specialize. `all_x(b)` therefore
+works positionally, which is how these were called when they lived in a backend.
+
+Three implementation tiers, in order of preference:
+
+  1. Nothing to write. The default `b_all_x(b::Backend)` below filters
+     `b_all_shapes(b)` by the category's shape type, so any backend that can
+     enumerate its shapes gets the whole family for free. This covers both
+     storage strategies, since `b_all_shapes` already dispatches on
+     `shape_storage_type` (local dict vs. remote query).
+  2. Override the hook when the host application models the category natively.
+     That also finds elements Khepri did not create — the point of BIM
+     introspection (cf. KhepriRevit's `b_all_walls`, which reads `DocWalls()`).
+  3. Nothing to write, again: a backend that cannot enumerate shapes inherits
+     `b_all_shapes`'s `UndefinedBackendException`. File-output backends (TikZ,
+     POVRay) have no model to introspect, and that is the honest answer.
+
+Filtering uses the `Abstract*` supertypes `@defproxy` generates rather than the
+concrete structs, so a backend that specializes a shape type still matches.
+
+`all_levels` deliberately has NO derived default: levels are not shapes, so
+there is nothing to filter, and inventing them from the shapes that reference
+one would report a different model than the backend actually holds. Backends
+that know their levels implement the hook; the rest raise (tier 3).
+=#
 @defcb all_levels()
 @defcb all_walls()
 @defcb all_walls_at_level(level)
+@defcb all_slabs()
+@defcb all_roofs()
+@defcb all_ceilings()
+@defcb all_panels()
+@defcb all_columns()
+@defcb all_beams()
+@defcb all_doors()
+@defcb all_windows()
+@defcb all_stairs()
+@defcb all_railings()
+@defcb all_fixtures()
+@defcb all_elements()
+
+# Tier-1 defaults. More specific than the `b_all_x(::Any)` throw @defcb emits, so
+# these win for every Backend while a non-backend argument still raises.
+_all_shapes_of_type(b::Backend, T::Type) =
+  filter(s -> s isa T, b_all_shapes(b))
+
+b_all_walls(b::Backend)    = _all_shapes_of_type(b, AbstractWall)
+b_all_slabs(b::Backend)    = _all_shapes_of_type(b, AbstractSlab)
+b_all_roofs(b::Backend)    = _all_shapes_of_type(b, AbstractRoof)
+b_all_ceilings(b::Backend) = _all_shapes_of_type(b, AbstractCeiling)
+b_all_panels(b::Backend)   = _all_shapes_of_type(b, AbstractPanel)
+b_all_beams(b::Backend)    = _all_shapes_of_type(b, AbstractBeam)
+b_all_doors(b::Backend)    = _all_shapes_of_type(b, AbstractDoor)
+b_all_windows(b::Backend)  = _all_shapes_of_type(b, AbstractWindow)
+b_all_railings(b::Backend) = _all_shapes_of_type(b, AbstractRailing)
+b_all_fixtures(b::Backend) = _all_shapes_of_type(b, AbstractFamilyElement)
+# A free column is a column that spans an explicit height instead of a level pair;
+# both are columns to anyone asking "what columns are in this model?".
+b_all_columns(b::Backend)  = _all_shapes_of_type(b, Union{AbstractColumn,AbstractFreeColumn})
+# Landings are parts of a stair, not stairs, so they are not counted here.
+b_all_stairs(b::Backend)   = _all_shapes_of_type(b, Union{AbstractStair,AbstractSpiralStair})
+# Every BIM element, whatever the category — including ones with no all_x of their own.
+b_all_elements(b::Backend) = _all_shapes_of_type(b, BIMShape)
+
+# Derived from b_all_walls, so a backend that overrides only that one still gets a
+# correct (if unindexed) answer here; backends with a level-indexed query override.
+b_all_walls_at_level(b::Backend, level) =
+  filter(w -> w.bottom_level == level, b_all_walls(b))
 @defcbs realize_beam_profile(s::BIMShape, profile::Path, cb::Loc, length::Real)
 #@defcbs slab(profile, holes, thickness, family)
 #@defcbs wall(path, height, l_thickness, r_thickness, family)
