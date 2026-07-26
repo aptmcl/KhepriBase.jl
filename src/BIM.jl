@@ -1931,7 +1931,11 @@ that know their levels implement the hook; the rest raise (tier 3).
 _all_shapes_of_type(b::Backend, T::Type) =
   filter(s -> s isa T, b_all_shapes(b))
 
-b_all_walls(b::Backend)    = _all_shapes_of_type(b, AbstractWall)
+# A curtain wall is a wall to anyone asking "what walls are in this model?", but Khepri
+# gives it its own shape type, which is NOT a subtype of AbstractWall. Include it, so the
+# default agrees with backends whose host app files curtain walls under walls (Revit's
+# DocWalls returns them, verified live). `all_panels` still reports the panels themselves.
+b_all_walls(b::Backend)    = _all_shapes_of_type(b, Union{AbstractWall,AbstractCurtainWall})
 b_all_slabs(b::Backend)    = _all_shapes_of_type(b, AbstractSlab)
 b_all_roofs(b::Backend)    = _all_shapes_of_type(b, AbstractRoof)
 b_all_ceilings(b::Backend) = _all_shapes_of_type(b, AbstractCeiling)
