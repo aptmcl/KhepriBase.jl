@@ -123,7 +123,7 @@ function group_desk_factory()
     slab_floor_generic_300mm)
 end
 
-group_desk = group("group_desk", factory=group_desk_factory)
+group_desk = group("Desk", factory=group_desk_factory)
 
 # Build the storeys, bottom-up
 
