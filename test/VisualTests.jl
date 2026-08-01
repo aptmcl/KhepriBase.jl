@@ -1364,13 +1364,33 @@ split_numeric_text(s::AbstractString) =
     (String(take!(skeleton)), numbers)
   end
 
-numerically_equal_text(a, b; atol, rtol) =
-  let (skeleton_a, numbers_a) = split_numeric_text(a),
-      (skeleton_b, numbers_b) = split_numeric_text(b)
-    skeleton_a == skeleton_b &&
-      length(numbers_a) == length(numbers_b) &&
-      all(isapprox(x, y; atol=atol, rtol=rtol) for (x, y) in zip(numbers_a, numbers_b))
+"""
+Compare two texts numerically, reporting *why* they differ. A bare false is close
+to useless on a golden holding tens of thousands of numbers: whether the mismatch
+is one rounding-boundary flip or a wholesale geometry change decides whether the
+tolerance needs adjusting or the output is genuinely wrong, and that is invisible
+without the worst offending pair.
+"""
+function numerically_equal_text(a, b; atol, rtol)
+  (skeleton_a, numbers_a) = split_numeric_text(a)
+  (skeleton_b, numbers_b) = split_numeric_text(b)
+  if skeleton_a != skeleton_b
+    i = findfirst(i -> skeleton_a[i] != skeleton_b[i],
+                  1:min(ncodeunits(skeleton_a), ncodeunits(skeleton_b)))
+    @warn "golden differs in structure, not only in numbers" first_difference_at=i
+    false
+  elseif length(numbers_a) != length(numbers_b)
+    @warn "golden has a different count of numeric literals" test=length(numbers_a) golden=length(numbers_b)
+    false
+  else
+    off = [i for i in eachindex(numbers_a)
+           if !isapprox(numbers_a[i], numbers_b[i]; atol=atol, rtol=rtol)]
+    isempty(off) && return true
+    worst = off[argmax([abs(numbers_a[i] - numbers_b[i]) for i in off])]
+    @warn "golden numbers differ beyond tolerance" beyond_tolerance=length(off) of=length(numbers_a) atol=atol worst_index=worst test=numbers_a[worst] golden=numbers_b[worst] delta=abs(numbers_a[worst] - numbers_b[worst])
+    false
   end
+end
 
 """
     text_compare(test_path, golden_path; atol=1.5e-3, rtol=1e-9)
