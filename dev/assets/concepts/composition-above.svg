@@ -10,6 +10,6 @@
 <polyline points="4,0 4,-1.6" style="fill:none;stroke:rgb(245,245,247)"/>
 <polyline points="4.6,-0.8 4.6,-2.4" style="fill:none;stroke:rgb(245,245,247)"/>
 <polyline points="0.6,-0.8 0.6,-2.4" style="fill:none;stroke:rgb(245,245,247)"/>
-<text x="0" y="0.8" style="font-family:sans-serif;font-size:0.5;fill:rgb(245,245,247)">b ^ a  -  above</text>
+<text x="0" y="0.8" style="font-family:sans-serif;font-size:0.5;fill:rgb(245,245,247)">a ^ b  -  above</text>
 </g>
 </svg>
