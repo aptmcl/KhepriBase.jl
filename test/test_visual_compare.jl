@@ -94,3 +94,57 @@ using .VisualTests
     end
   end
 end
+
+# Regression: text_compare was a raw read(a) == read(b), which made the text
+# goldens architecture-sensitive. The same scene on aarch64 differs by an ulp in
+# a sin result, and TikZ's three-decimal printing turns that into 8.506 vs 8.507
+# -- reported as a visual regression when nothing had changed. The numeric
+# fallback must absorb that while still failing on anything real.
+@testset "text_compare" begin
+  mktempdir() do dir
+    let w = (name, s) -> (q = joinpath(dir, name); write(q, s); q),
+        base = "\\fill[s57] (8.506,4.123)--(9.012,4.556)--(8.998,3.221)--cycle;\n",
+        a = w("a.tex", base)
+
+      @testset "byte-identical passes" begin
+        @test text_compare(a, w("same.tex", base))
+      end
+
+      @testset "last-printed-digit drift passes" begin
+        @test text_compare(a, w("drift.tex",
+          "\\fill[s57] (8.507,4.123)--(9.012,4.557)--(8.997,3.221)--cycle;\n"))
+      end
+
+      @testset "full-precision representation drift passes" begin
+        @test text_compare(w("p1.pov", "sphere { <0.3, 1.0, 2.5>, 0.5 }\n"),
+                           w("p2.pov", "sphere { <0.30000000000000004, 1.0, 2.5>, 0.5 }\n"))
+      end
+
+      @testset "a real coordinate change fails" begin
+        @test !text_compare(a, w("moved.tex",
+          "\\fill[s57] (9.506,4.123)--(9.012,4.556)--(8.998,3.221)--cycle;\n"))
+        # just past atol, so the bound is doing work rather than swallowing everything
+        @test !text_compare(a, w("edge.tex",
+          "\\fill[s57] (8.508,4.123)--(9.012,4.556)--(8.998,3.221)--cycle;\n"))
+      end
+
+      @testset "structure must still match exactly" begin
+        # same numbers, different command
+        @test !text_compare(a, w("cmd.tex",
+          "\\draw[s57] (8.506,4.123)--(9.012,4.556)--(8.998,3.221)--cycle;\n"))
+        # shade index is a genuine output difference
+        @test !text_compare(a, w("shade.tex",
+          "\\fill[s58] (8.506,4.123)--(9.012,4.556)--(8.998,3.221)--cycle;\n"))
+        # a extra vertex changes the number count
+        @test !text_compare(a, w("extra.tex",
+          "\\fill[s57] (8.506,4.123)--(9.012,4.556)--(8.998,3.221)--(1.0,1.0)--cycle;\n"))
+      end
+
+      @testset "line endings are not silently tolerated" begin
+        # keeping the goldens LF everywhere is .gitattributes' job (test/golden/** -text),
+        # not something this comparison should paper over
+        @test !text_compare(a, w("crlf.tex", replace(base, "\n" => "\r\n")))
+      end
+    end
+  end
+end

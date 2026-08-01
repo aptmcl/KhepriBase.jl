@@ -1341,8 +1341,63 @@ end
 
 # ── Comparison functions ──────────────────────────────────────────────
 
-text_compare(test_path, golden_path; kwargs...) =
-  read(test_path) == read(golden_path)
+"Matches a numeric literal: optional sign, digits with an optional decimal point in
+either position, optional exponent."
+const numeric_literal_re = r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?"
+
+"""
+Split `s` into everything that is not a number, with each number replaced by NUL,
+plus the numbers themselves. Two texts are structurally identical exactly when
+their skeletons are equal, which lets the numbers be compared on their own terms.
+"""
+split_numeric_text(s::AbstractString) =
+  let skeleton = IOBuffer(),
+      numbers = Float64[],
+      cursor = 1
+    for m in eachmatch(numeric_literal_re, s)
+      write(skeleton, SubString(s, cursor, prevind(s, m.offset)))
+      write(skeleton, '\0')
+      push!(numbers, parse(Float64, m.match))
+      cursor = m.offset + ncodeunits(m.match)
+    end
+    write(skeleton, SubString(s, cursor))
+    (String(take!(skeleton)), numbers)
+  end
+
+numerically_equal_text(a, b; atol, rtol) =
+  let (skeleton_a, numbers_a) = split_numeric_text(a),
+      (skeleton_b, numbers_b) = split_numeric_text(b)
+    skeleton_a == skeleton_b &&
+      length(numbers_a) == length(numbers_b) &&
+      all(isapprox(x, y; atol=atol, rtol=rtol) for (x, y) in zip(numbers_a, numbers_b))
+  end
+
+"""
+    text_compare(test_path, golden_path; atol=1.5e-3, rtol=1e-9)
+
+Compare two generated text files: byte equality first, and failing that a
+structural comparison where numeric literals are compared numerically while every
+surrounding character must still match exactly.
+
+The fallback exists because these goldens embed floating-point coordinates. The
+same scene evaluated on another architecture can differ by an ulp in a `sin`
+result, and once rounded for printing that surfaces as a one-in-the-last-digit
+textual difference -- TikZ prints three decimals, so 8.506 becomes 8.507. Byte
+comparison reports that as a visual regression; it is not one. This is what made
+the macOS jobs fail once they moved from x64-under-Rosetta to native aarch64.
+
+`atol` defaults to just over one unit in TikZ's last printed place. On a scene
+spanning tens of units that is ~0.01%, far below anything visible, so genuine
+geometry changes still fail. Commands, ordering and structure are unaffected --
+they live in the skeleton, which must match exactly -- so this does not loosen the
+check in any way that matters. Backends needing a different bound pass their own:
+`compare = (t, g; kw...) -> text_compare(t, g; atol=1e-6)`.
+"""
+text_compare(test_path, golden_path; atol=1.5e-3, rtol=1e-9, kwargs...) =
+  let a = read(test_path, String),
+      b = read(golden_path, String)
+    a == b || numerically_equal_text(a, b; atol=atol, rtol=rtol)
+  end
 
 #=
 PNGFiles is loaded lazily, on the first non-byte-identical comparison: the
