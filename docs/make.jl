@@ -3,6 +3,12 @@ using Documenter
 
 makedocs(;
     modules=[KhepriBase],
+    # Only exported names are required to appear in the manual. Internal helpers
+    # are documented for the benefit of people reading the source -- _align_offset
+    # is one -- and forcing them into the public reference to satisfy the default
+    # checkdocs=:all is the wrong trade: it either publishes internals or pressures
+    # us to strip their docstrings.
+    checkdocs=:exports,
     authors="António Menezes Leitão <antonio.menezes.leitao@gmail.com>",
     repo="https://github.com/aptmcl/KhepriBase.jl/blob/{commit}{path}#L{line}",
     sitename="KhepriBase.jl",

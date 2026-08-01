@@ -61,6 +61,13 @@ Modules = [KhepriBase]
 Pages = ["Paths.jl"]
 ```
 
+### Surfaces
+
+```@autodocs
+Modules = [KhepriBase]
+Pages = ["Surfaces.jl"]
+```
+
 ### Geometry
 
 ```@autodocs
@@ -105,6 +112,16 @@ Pages = ["Backends.jl"]
 ```@autodocs
 Modules = [KhepriBase]
 Pages = ["Primitives.jl"]
+```
+
+### Model Summary
+
+Structural summaries of a model, and comparison between them — used to check that
+a generated program reproduces the model it was derived from.
+
+```@autodocs
+Modules = [KhepriBase]
+Pages = ["Summary.jl"]
 ```
 
 ### Camera
