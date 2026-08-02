@@ -353,34 +353,6 @@ register_scene(
 )
 
 # ==================================================================
-# Adjacency diagram
-# ==================================================================
-
-register_scene(
-  id = "concepts_adjacency_basic",
-  section = "concepts",
-  filename = "adjacency-basic.svg",
-  backend = :svg,
-  build = () -> begin
-    # 2x2 house floorplan
-    _labelled_rect(0, 0, 5, 4, ":living")
-    _labelled_rect(5, 0, 3, 4, ":kitchen")
-    _labelled_rect(0, 4, 4, 3, ":bed")
-    _labelled_rect(4, 4, 4, 3, ":bath")
-
-    # Adjacency markers: thick segments where rooms share walls
-    # (we'll use surface_rectangle as a highlight)
-    surface_rectangle(xy(5 - 0.08, 0.1), 0.16, 3.8)    # living-kitchen (interior)
-    surface_rectangle(xy(0.1, 4 - 0.08), 3.8, 0.16)    # living-bed (interior)
-    surface_rectangle(xy(4 - 0.08, 4.1), 0.16, 2.8)    # bed-bath (interior)
-    surface_rectangle(xy(5.1, 4 - 0.08), 2.8, 0.16)    # kitchen-bath (interior)
-
-    text("Interior adjacencies (shared walls) highlighted.",
-         xy(0, -0.9), 0.3)
-  end,
-)
-
-# ==================================================================
 # Constraint violations
 # ==================================================================
 
@@ -446,22 +418,3 @@ register_scene(
   end,
 )
 
-# ==================================================================
-# Family variants (same family, different parameters)
-# ==================================================================
-
-register_scene(
-  id = "concepts_family_variants",
-  section = "concepts",
-  filename = "family-variants.svg",
-  backend = :svg,
-  build = () -> begin
-    # Three walls of same family, different lengths/widths
-    _labelled_rect(0, 0, 4, 0.2, "")
-    text("wall(p1, p2, family)", xy(0, -0.5), 0.25)
-    _labelled_rect(0, 2, 6, 0.3, "")
-    text("wall(p1, p2, family; width=0.3)", xy(0, 1.5), 0.25)
-    _labelled_rect(0, 4, 5, 0.25, "")
-    text("wall(p1, p2, family_tall; height=3.5)", xy(0, 3.5), 0.25)
-  end,
-)

@@ -2,73 +2,13 @@
 Scenes for docs/src/tutorials/*.md - 3D progression shots.
 =#
 
-# ==================================================================
-# Building tutorial - 4 stages from empty to two-storey
-# ==================================================================
-
-register_scene(
-  id = "tutorials_building_step1_slab",
-  section = "tutorials",
-  filename = "building-step1_slab.png",
-  backend = :blender,
-  view = iso_view(5, 4, 0, 10),
-  build = () -> begin
-    slab(rectangular_path(xy(0, 0), 10, 8), level(0))
-  end,
-)
-
-register_scene(
-  id = "tutorials_building_step2_walls",
-  section = "tutorials",
-  filename = "building-step2_walls.png",
-  backend = :blender,
-  view = iso_view(5, 4, 1.5, 11),
-  build = () -> begin
-    slab(rectangular_path(xy(0, 0), 10, 8), level(0))
-    wall(closed_polygonal_path([
-        xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
-      level(0), level(3.0))
-  end,
-)
-
-# Step 3/4 originally placed a door + windows on the perimeter wall;
-# KhepriBlender's subtract_ref path for that combination has a
-# NativeRefs encoding bug, so the openings are dropped for now and
-# the tutorial shot progresses from walls directly to the roof.
-
-register_scene(
-  id = "tutorials_building_step3_roof",
-  section = "tutorials",
-  filename = "building-step3_roof.png",
-  backend = :blender,
-  view = iso_view(5, 4, 1.8, 12),
-  build = () -> begin
-    slab(rectangular_path(xy(0, 0), 10, 8), level(0))
-    wall(closed_polygonal_path([
-        xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
-      level(0), level(3.0))
-    roof(rectangular_path(xy(-0.3, -0.3), 10.6, 8.6), level(3.0))
-  end,
-)
-
-register_scene(
-  id = "tutorials_building_step5_two_storey",
-  section = "tutorials",
-  filename = "building-step5_two_storey.png",
-  backend = :blender,
-  view = iso_view(5, 4, 3, 16),
-  build = () -> begin
-    slab(rectangular_path(xy(0, 0), 10, 8), level(0))
-    wall(closed_polygonal_path([
-        xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
-      level(0), level(3.0))
-    slab(rectangular_path(xy(0, 0), 10, 8), level(3.0))
-    wall(closed_polygonal_path([
-        xy(0, 0), xy(10, 0), xy(10, 8), xy(0, 8)]),
-      level(3.0), level(6.0))
-    roof(rectangular_path(xy(-0.3, -0.3), 10.6, 8.6), level(6.0))
-  end,
-)
+# The "building tutorial" progression (slab -> walls -> roof -> two storeys)
+# used to live here. No page ever referenced its four renders, so both the
+# scenes and the images were removed. Note for anyone reinstating them:
+# steps 3/4 originally placed a door and windows on the perimeter wall, and
+# KhepriBlender's subtract_ref path for that combination has a NativeRefs
+# encoding bug, so the openings were dropped and the shot went straight from
+# walls to roof.
 
 # ==================================================================
 # Spaces tutorial progression

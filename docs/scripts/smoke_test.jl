@@ -10,8 +10,13 @@ atexit(() -> close(io))
 logp(args...) = (println(io, args...); flush(io); println(args...))
 
 using Dates
-outdir = abspath(joinpath(@__DIR__, "..", "src", "assets"))
+# Scratch, NOT docs/src/assets. This is a throwaway smoke test, and pointing it
+# at the published asset tree meant every run left _smoke_svg.svg behind there --
+# twice over, since render_kind_dir defaults to "Render" (src/Camera.jl) and one
+# run overrides it to ".". Those strays shipped in the package tarball.
+outdir = mktempdir(; cleanup = false)
 mkpath(outdir)
+logp_outdir_note = outdir
 
 logp("[", Dates.now(), "] Starting smoke test")
 logp("==== SVG smoke test ====")
