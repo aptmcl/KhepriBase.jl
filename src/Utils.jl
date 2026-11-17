@@ -154,7 +154,7 @@ function process_named_params(def)
   opt_inits = map(opt -> opt.args[2], opts)
   mk_param(name,typ,init) = Expr(:kw, Expr(:(::), name, esc(typ)), init)
   opt_params = map(mk_param, opt_names, opt_types, opt_inits)
-  key_params = map(mk_param, opt_names, opt_types, opt_names)
+  key_params = map(mk_param, map(esc, opt_names), opt_types, opt_names)
   # protect stuff
   name = esc(name)
   mand = map(esc, mand)
