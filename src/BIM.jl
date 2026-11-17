@@ -307,6 +307,7 @@ macro deffamily(name, parent, fields...)
   opt_params = map(mk_param, field_renames, field_types, map(init -> replace_in(init, field_replacements), field_inits))
   key_params = map(mk_param, field_names, field_types, field_renames)
   instance_params = map(mk_param, field_names, field_types, map(name -> :(family.$(name)), field_names))
+  with_params = map(mk_param, map(esc, field_names), field_types, map(name -> :(family.$(name)), field_names))
   constructor_name = esc(name)
   instance_name = esc(Symbol(name_str, "_element")) #"_instance")) beam_family_element or beam_family_instance?
   default_name = esc(Symbol("default_", name_str))
@@ -343,7 +344,7 @@ macro deffamily(name, parent, fields...)
     KhepriBase._register_family_default!($(default_name))
     $(predicate_name)(v::$(struct_name)) = true
     $(predicate_name)(v::Any) = false
-    $(with_name)(f::Function; family :: $(struct_name) = $(default_name)(), $(instance_params...)) =
+    $(with_name)(f::Function; family :: $(struct_name) = $(default_name)(), $(with_params...)) =
       with(f, $(default_name), $(instance_name)(family; $([:($(esc(p))=$(esc(p))) for p in field_names]...)))
 #    $(map((selector_name, field_name) -> :($(selector_name)(v::$(struct_name)) = v.$(field_name)),
 #          selector_names, field_names)...)
